@@ -53,8 +53,8 @@ git add services/uploadService.ts utils/parsers.ts components/UploadMenu.tsx || 
 git commit -m "feat: OCR multi-modal uploads and parsers" || true
 
 # 13
-git add firebase.ts firebase.json firestore.rules firestore.indexes.json .firebaserc services/cloudSync.ts || true
-git commit -m "feat: local-first firestore integration" || true
+git add supabase.ts supabase_schema.sql services/cloudSync.ts || true
+git commit -m "feat: local-first supabase integration" || true
 
 # 14
 git add services/auth.ts components/AuthModal.tsx || true

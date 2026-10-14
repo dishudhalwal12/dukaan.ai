@@ -3,6 +3,7 @@ import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
 import { generateDynamicInsights } from '../services/ai.ts';
+import { syncProductsToCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 
 interface ProductContextType {
@@ -10,6 +11,7 @@ interface ProductContextType {
   addProduct: (product: Omit<Product, 'id'>) => void;
   updateProduct: (product: Product) => void;
   deleteProduct: (productId: string) => void;
+  loadProducts: (products: Product[]) => void;
   loading: boolean;
 }
 
@@ -144,6 +146,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (!loading) {
         try {
             localStorage.setItem('dukan-products', JSON.stringify(products));
+            syncProductsToCloud(products);
         } catch (error) {
              if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
                 console.error("LocalStorage quota exceeded. Cannot save products.");
@@ -202,7 +205,16 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     setProducts(prevProducts => prevProducts.filter(p => p.id !== productId));
   };
   
-  const productContextValue = { products, addProduct, updateProduct, deleteProduct, loading };
+  const loadProducts = useCallback((newProducts: Product[]) => {
+    setProducts(newProducts);
+    try {
+      localStorage.setItem('dukan-products', JSON.stringify(newProducts));
+    } catch (e) {
+      console.error('Failed to cache products', e);
+    }
+  }, []);
+
+  const productContextValue = { products, addProduct, updateProduct, deleteProduct, loadProducts, loading };
   const insightContextValue = { insights, isLoadingInsights, error, refreshInsights };
 
   return (
