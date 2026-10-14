@@ -343,6 +343,51 @@ export function parseOpenRouterReply(replyText, jid, customerPhone, defaultName,
     }
   }
 
+  // Layer 1B: Tool call / Python function call detection (e.g. [order_order(...)] or <|tool_call_start|>[...]<|tool_call_end|>)
+  if (!newOrder) {
+    const toolCallMatch = replyText.match(/(?:order_order|CREATE_ORDER)\s*\(([\s\S]*)\)\s*(?:\]|\<|$)/i);
+    if (toolCallMatch && toolCallMatch[1]) {
+      try {
+        const content = toolCallMatch[1];
+        let customerName = defaultName || 'Customer';
+        const nameMatch = content.match(/customer_name\s*=\s*['"]([^'"]+)['"]/i);
+        if (nameMatch) customerName = nameMatch[1];
+
+        let deliveryAddress = 'Address not specified';
+        const addrMatch = content.match(/delivery_address\s*=\s*['"]([^'"]+)['"]/i);
+        if (addrMatch) deliveryAddress = addrMatch[1];
+
+        let totalAmount = 0;
+        const totalMatch = content.match(/total_amount\s*=\s*(\d+(?:\.\d+)?)/i);
+        if (totalMatch) totalAmount = parseFloat(totalMatch[1]);
+
+        let items = [];
+        const itemsMatch = content.match(/items\s*=\s*(\[\s*\{[\s\S]*?\}\s*\])/i);
+        if (itemsMatch) {
+          try {
+            items = JSON.parse(itemsMatch[1].replace(/'/g, '"'));
+          } catch (e) {}
+        }
+
+        if (items.length > 0 || totalAmount > 0) {
+          newOrder = dukanOrders.createOrder({
+            customerJid: jid,
+            customerPhone: resolvedPhone,
+            customerName,
+            deliveryAddress,
+            items,
+            totalAmount: totalAmount || items.reduce((s, it) => s + (it.total || 0), 0),
+            notes: 'Cash on Delivery'
+          });
+          pendingOrders.delete(jid);
+          console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 1B Tool Call for ${resolvedPhone} (₹${newOrder.totalAmount})`);
+        }
+      } catch (e) {
+        console.error('[Dukan AI] Failed to parse Layer 1B Tool Call:', e.message);
+      }
+    }
+  }
+
   // Layer 2: Natural Language Summary Detection in AI Reply
   if (!newOrder) {
     const isOrderConfirmed = /(?:order\s*(?:confirmed|received|placed|sent|created)|sent to the shopkeeper|notified the shopkeeper)/i.test(replyText);
@@ -415,7 +460,8 @@ export function parseOpenRouterReply(replyText, jid, customerPhone, defaultName,
   cleanReply = cleanReply
     .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
     .replace(/<\|[\s\S]*?\|>/g, '')
-    .replace(/\[(?:order_order|CREATE_ORDER)[\s\S]*?\]/gi, '')
+    .replace(/\[\s*(?:order_order|CREATE_ORDER)[\s\S]*?\]/gi, '')
+    .replace(/(?:order_order|CREATE_ORDER)\s*\([\s\S]*?\)/gi, '')
     .trim();
 
   // If an order was created, guarantee a clean, warm confirmation message for the customer
