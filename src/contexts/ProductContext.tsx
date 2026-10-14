@@ -4,6 +4,7 @@ import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
 import { generateDynamicInsights } from '../services/ai.ts';
 import { useLanguage } from './LanguageContext.tsx';
+import { whatsappService } from '../services/whatsappService.ts';
 
 interface ProductContextType {
   products: Product[];
@@ -151,6 +152,14 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
             } else {
                 console.error("Failed to save products to localStorage", error);
             }
+        }
+
+        // Auto-sync live store catalog to Baileys WhatsApp bot
+        if (products.length > 0) {
+            whatsappService.syncCatalog(products).catch(err => {
+                // Deferred or offline during initial frontend boot
+                console.debug('[ProductContext] WhatsApp catalog auto-sync deferred:', err?.message || err);
+            });
         }
     }
   }, [products, loading]);

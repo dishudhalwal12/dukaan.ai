@@ -63,6 +63,7 @@ export interface Order {
   paymentMethod: 'COD' | 'UPI';
   status: OrderStatus;
   timestamp: string; // ISO String
+  customerJid?: string;
 }
 
 export interface UnityDeal {

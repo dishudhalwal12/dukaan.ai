@@ -1,0 +1,46 @@
+[
+  {
+    "id": "prod1",
+    "name": "product_maggi",
+    "category": "General",
+    "price": 96,
+    "unit": "packs",
+    "inStock": true,
+    "keywords": [
+      "product_maggi"
+    ]
+  },
+  {
+    "id": "prod2",
+    "name": "product_amul_milk",
+    "category": "General",
+    "price": 68,
+    "unit": "cartons",
+    "inStock": true,
+    "keywords": [
+      "product_amul_milk"
+    ]
+  },
+  {
+    "id": "prod3",
+    "name": "product_parle_g",
+    "category": "General",
+    "price": 80,
+    "unit": "packs",
+    "inStock": true,
+    "keywords": [
+      "product_parle_g"
+    ]
+  },
+  {
+    "id": "prod4",
+    "name": "product_tata_salt",
+    "category": "General",
+    "price": 28,
+    "unit": "packs",
+    "inStock": true,
+    "keywords": [
+      "product_tata_salt"
+    ]
+  }
+]

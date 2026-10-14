@@ -21,6 +21,8 @@ import AuthModal from './components/AuthModal.tsx';
 import { listenToAuthState, signOutUser } from './services/auth.ts';
 import { User } from 'firebase/auth';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
+import { playOrderChime } from './utils/audioAlert.ts';
+import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 
 const AppContent: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>(Screen.DASHBOARD);
@@ -149,19 +151,29 @@ const AppContent: React.FC = () => {
   const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
     const orderToUpdate = orders.find(o => o.id === orderId);
 
-    // If an order is accepted (moved from NEW to PREPARING), update inventory.
+    // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
     if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
         orderToUpdate.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId);
+            const product = products.find(p => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase());
             if (product) {
                 const newStock = Math.max(0, product.stock - item.quantity);
                 updateProduct({ ...product, stock: newStock });
             }
         });
+
+        // Trigger real WhatsApp confirmation message via Baileys backend
+        whatsappService.acceptOrder(orderId).catch(err => {
+            console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
+        });
+    } else if (orderToUpdate && status === OrderStatus.REJECTED) {
+        // Trigger real WhatsApp rejection message via Baileys backend
+        whatsappService.rejectOrder(orderId).catch(err => {
+            console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
+        });
     } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
         // If an order is cancelled, restore the stock
         orderToUpdate.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId);
+            const product = products.find(p => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase());
             if (product) {
                 const newStock = product.stock + item.quantity;
                 updateProduct({ ...product, stock: newStock });
@@ -179,97 +191,158 @@ const AppContent: React.FC = () => {
     setOrders(prev => [...newOrders, ...prev]);
   }, []);
 
-  // Keep refs in sync so polling closure always reads current values without being a dep
+  // Keep refs in sync so event listeners always read current values without stale closures
   useEffect(() => { activeScreenRef.current = activeScreen; }, [activeScreen]);
   useEffect(() => { isOtherModalShowingRef.current = isOtherModalShowing; }, [isOtherModalShowing]);
 
-  // Poll n8n webhook for real orders — stable interval, never recreated on navigation
-  useEffect(() => {
-    if (!isInteractionDone) return;
-
-    // Normalize a raw webhook payload so every required field is present
-    // (the webhook may omit `total`, use bare numeric prices, etc.)
-    const normalizeWebhookOrder = (raw: Record<string, unknown>): Order => {
-      // Normalize items first — price may arrive as number 14 or string "₹14"
-      const rawItems = Array.isArray(raw.items) ? raw.items as Array<Record<string, unknown>> : [];
-      const items: OrderItem[] = rawItems.map(item => {
-        const rawPrice = item.price ?? 0;
-        // Ensure price is always a "₹XX" formatted string
-        const priceNum = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace('₹', '') || '0');
-        const price = `₹${priceNum}`;
-        return {
-          productId: String(item.productId ?? ''),
-          name: String(item.name ?? 'Item'),
-          quantity: Number(item.quantity ?? 1),
-          price,
-        };
-      });
-
-      // Compute total from items if webhook doesn't send it (or sends 0/null)
-      const rawTotal = typeof raw.total === 'number' ? raw.total : parseFloat(String(raw.total ?? '0'));
-      const computedTotal = rawTotal > 0
-        ? rawTotal
-        : items.reduce((sum, item) => sum + item.quantity * parseFloat(item.price.replace('₹', '') || '0'), 0);
-
+  // Normalize real WhatsApp order payload to Dukaan Order interface
+  const normalizeIncomingOrder = useCallback((raw: Record<string, any>): Order => {
+    const rawItems = Array.isArray(raw.items) ? raw.items : [];
+    const items: OrderItem[] = rawItems.map((item: any) => {
+      const rawPrice = item.price ?? 0;
+      const priceNum = typeof rawPrice === 'number'
+        ? rawPrice
+        : parseFloat(String(rawPrice).replace(/[^\d.]/g, '') || '0');
       return {
-        id: String(raw.id ?? ''),
-        status: (raw.status as OrderStatus) ?? OrderStatus.NEW,
-        paymentMethod: (raw.paymentMethod as 'COD' | 'UPI') ?? 'COD',
-        total: computedTotal,
-        timestamp: String(raw.timestamp ?? new Date().toISOString()),
-        items,
-        customer: {
-          name: String((raw.customer as Record<string, unknown>)?.name ?? raw.customerName ?? 'Walk-in Customer'),
-          address: String((raw.customer as Record<string, unknown>)?.address ?? raw.address ?? '—'),
-          whatsappNumber: String((raw.customer as Record<string, unknown>)?.whatsappNumber ?? raw.phone ?? ''),
-        },
+        productId: String(item.id || item.productId || ''),
+        name: String(item.name || 'Item'),
+        quantity: Number(item.quantity || 1),
+        price: `₹${priceNum}`,
       };
+    });
+
+    const rawTotal = typeof raw.totalAmount === 'number'
+      ? raw.totalAmount
+      : (typeof raw.total === 'number' ? raw.total : parseFloat(String(raw.totalAmount || raw.total || '0')));
+
+    const computedTotal = rawTotal > 0
+      ? rawTotal
+      : items.reduce((sum, item) => sum + item.quantity * parseFloat(item.price.replace('₹', '') || '0'), 0);
+
+    let mappedStatus = OrderStatus.NEW;
+    if (raw.status === 'ACCEPTED' || raw.status === 'PREPARING') mappedStatus = OrderStatus.PREPARING;
+    else if (raw.status === 'OUT_FOR_DELIVERY' || raw.status === 'READY_FOR_PICKUP') mappedStatus = OrderStatus.READY_FOR_PICKUP;
+    else if (raw.status === 'DELIVERED' || raw.status === 'COMPLETED') mappedStatus = OrderStatus.COMPLETED;
+    else if (raw.status === 'REJECTED') mappedStatus = OrderStatus.REJECTED;
+    else if (raw.status === 'CANCELLED') mappedStatus = OrderStatus.CANCELLED;
+
+    const customerPhone = String(raw.customer?.whatsappNumber || raw.customerPhone || raw.phone || '');
+
+    return {
+      id: String(raw.id || ''),
+      status: mappedStatus,
+      paymentMethod: (raw.paymentMethod as 'COD' | 'UPI') || 'COD',
+      total: computedTotal,
+      timestamp: String(raw.createdAt || raw.timestamp || new Date().toISOString()),
+      items,
+      customer: {
+        name: String(raw.customer?.name || raw.customerName || 'WhatsApp Customer'),
+        address: String(raw.customer?.address || raw.deliveryAddress || '—'),
+        whatsappNumber: customerPhone,
+      },
+      customerJid: raw.customerJid || (customerPhone ? `${customerPhone}@s.whatsapp.net` : undefined),
     };
+  }, []);
 
-    const pollWebhook = async () => {
-      try {
-        const response = await fetch('/webhook/latest-order');
-        if (!response.ok) return;
+  // Sync real orders from WhatsApp backend on mount
+  useEffect(() => {
+    whatsappService.fetchOrders().then(res => {
+      if (res?.orders && res.orders.length > 0) {
+        const backendOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+        setOrders(prev => {
+          const prevIds = new Set(prev.map(p => p.id));
+          const toAdd = backendOrders.filter(b => !prevIds.has(b.id));
+          if (toAdd.length === 0) {
+            return prev.map(p => {
+              const matched = backendOrders.find(b => b.id === p.id);
+              return matched ? { ...p, status: matched.status } : p;
+            });
+          }
+          return [...toAdd, ...prev];
+        });
+      }
+    }).catch(err => {
+      console.warn('[Dukan] Failed to fetch backend orders on mount:', err);
+    });
+  }, [normalizeIncomingOrder]);
 
-        const rawOrder = await response.json();
-        if (!rawOrder || !rawOrder.id) return;
+  // Real-time WhatsApp Baileys SSE listener + 2.5s robust polling fallback
+  useEffect(() => {
+    const unsubscribe = whatsappService.subscribeToEvents((event: WhatsAppEvent) => {
+      if (event.type === 'dukan_new_order' && event.order) {
+        const incomingOrder = normalizeIncomingOrder(event.order);
+        if (!incomingOrder.id) return;
 
-        const fetchedOrder = normalizeWebhookOrder(rawOrder as Record<string, unknown>);
+        // Dedup: already alerted/seen
+        if (seenOrderIds.current.has(incomingOrder.id)) return;
 
-        // Guard: already shown the modal for this order (survives refresh via localStorage)
-        if (seenOrderIds.current.has(fetchedOrder.id)) return;
+        // Play dual-tone chime
+        playOrderChime();
 
         setOrders(prevOrders => {
-          // Check for duplicate injection using authoritative ID
-          if (prevOrders.some(o => o.id === fetchedOrder.id)) {
+          if (prevOrders.some(o => o.id === incomingOrder.id)) {
             return prevOrders;
           }
 
-          // Mark as seen — persist immediately so a refresh can't re-trigger the modal
-          seenOrderIds.current.add(fetchedOrder.id);
+          seenOrderIds.current.add(incomingOrder.id);
           localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
 
-          // It's a new order — read current screen/modal state from refs (no stale closure)
+          // Trigger popup unless suppressed by active subscreen or another open modal
           if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
-              console.log('New webhook order fetched, but popup suppressed due to active screen or another modal being open.');
+            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
           } else {
-              // Trigger modal in the next tick to prevent stale state conflicts
-              setTimeout(() => {
-                  setNewOrderForPopup(fetchedOrder);
-              }, 0);
+            setTimeout(() => {
+              setNewOrderForPopup(incomingOrder);
+            }, 0);
           }
 
-          return [fetchedOrder, ...prevOrders];
+          return [incomingOrder, ...prevOrders];
         });
-      } catch (err) {
-        // Silently ignore connection errors so app remains stable if n8n goes offline
+      } else if (event.type === 'dukan_order_updated' && event.order) {
+        const updated = normalizeIncomingOrder(event.order);
+        if (updated.id) {
+          setOrders(prev => prev.map(o => (o.id === updated.id ? { ...o, status: updated.status } : o)));
+        }
       }
-    };
+    });
 
-    pollWebhook(); // immediate first check — no waiting for first tick
-    const intervalId = setInterval(pollWebhook, 3000); // poll every 3 s
-    return () => clearInterval(intervalId);
-  }, [isInteractionDone]); // Stable: interval created once, never torn down on navigation
+    // 2.5s polling fallback to ensure 100% delivery guarantee
+    const pollInterval = setInterval(() => {
+      whatsappService.fetchOrders().then(res => {
+        if (!res?.orders || !Array.isArray(res.orders)) return;
+        const freshOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+
+        for (const order of freshOrders) {
+          if (order.status === OrderStatus.NEW && !seenOrderIds.current.has(order.id)) {
+            console.log(`[Dukan Polling] Detected new order #${order.id} from ${order.customer?.name}`);
+            playOrderChime();
+            seenOrderIds.current.add(order.id);
+            localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+            setTimeout(() => {
+              setNewOrderForPopup(order);
+            }, 0);
+          }
+        }
+
+        setOrders(prev => {
+          const prevIds = new Set(prev.map(p => p.id));
+          const toAdd = freshOrders.filter(b => !prevIds.has(b.id));
+          if (toAdd.length === 0) {
+            return prev.map(p => {
+              const matched = freshOrders.find(b => b.id === p.id);
+              return matched ? { ...p, status: matched.status } : p;
+            });
+          }
+          return [...toAdd, ...prev];
+        });
+      }).catch(() => {});
+    }, 2500);
+
+    return () => {
+      unsubscribe();
+      clearInterval(pollInterval);
+    };
+  }, [normalizeIncomingOrder]);
 
   const renderScreen = () => {
     switch (activeScreen) {

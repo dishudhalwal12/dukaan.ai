@@ -1,0 +1,22 @@
+[
+  {
+    "id": "DKN-1001",
+    "customerJid": "136786168832016@lid",
+    "customerPhone": "917300372323",
+    "customerName": "Pulkit Khowal",
+    "deliveryAddress": "Jaipur Street No. 17",
+    "items": [
+      {
+        "name": "Parle-G Biscuits (product_parle_g)",
+        "quantity": 10,
+        "price": 80,
+        "total": 800
+      }
+    ],
+    "totalAmount": 800,
+    "status": "ACCEPTED",
+    "createdAt": "2026-10-14T19:07:29.279Z",
+    "updatedAt": "2026-10-14T19:07:40.725Z",
+    "notes": "Cash on Delivery"
+  }
+]

@@ -9,8 +9,12 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         proxy: {
-          '/webhook': {
-            target: 'http://localhost:5679',
+          '/api': {
+            target: 'http://localhost:5001',
+            changeOrigin: true,
+          },
+          '/events': {
+            target: 'http://localhost:5001',
             changeOrigin: true,
           }
         }
@@ -19,12 +23,14 @@ export default defineConfig(({ mode }) => {
       publicDir: 'public',
       base: '/',
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.OPENROUTER_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.OPENROUTER_API_KEY': JSON.stringify(env.OPENROUTER_API_KEY || env.VITE_OPENROUTER_API_KEY),
+        'process.env.OPENROUTER_MODEL': JSON.stringify(env.OPENROUTER_MODEL || env.VITE_OPENROUTER_MODEL || 'liquid/lfm-2.5-2.6b:free')
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          '@': path.resolve(__dirname, './src'),
         }
       }
     };

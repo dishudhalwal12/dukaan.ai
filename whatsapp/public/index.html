@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Web & n8n Bridge</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dark-theme">
+  <!-- Top App Navigation -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-box">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+          <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.59 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19.01L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 14.99 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67M9.53 7.03C9.36 7.03 9.08 7.09 8.84 7.35C8.6 7.61 7.92 8.25 7.92 9.55C7.92 10.85 8.87 12.1 9 12.27C9.13 12.44 10.87 15.13 13.53 16.28C14.16 16.55 14.66 16.71 15.04 16.83C15.68 17.03 16.26 17 16.72 16.93C17.23 16.85 18.28 16.29 18.5 15.68C18.72 15.07 18.72 14.54 18.65 14.43C18.58 14.32 18.41 14.26 18.15 14.13C17.89 14 16.6 13.37 16.36 13.28C16.12 13.19 15.95 13.15 15.78 13.41C15.61 13.67 15.12 14.26 14.97 14.43C14.82 14.6 14.67 14.62 14.41 14.49C14.15 14.36 13.32 14.09 12.33 13.21C11.56 12.52 11.04 11.67 10.89 11.41C10.74 11.15 10.87 11.01 11 10.88C11.12 10.76 11.26 10.58 11.4 10.42C11.54 10.26 11.58 10.13 11.67 9.96C11.76 9.79 11.71 9.64 11.65 9.51C11.59 9.38 11.08 8.12 10.87 7.61C10.66 7.1 10.45 7.17 10.29 7.16C10.14 7.15 9.96 7.15 9.79 7.15L9.53 7.03Z"/>
+        </svg>
+        <span class="logo-text">WhatsApp <span class="badge-mini">Baileys + n8n</span></span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div id="connectionPill" class="connection-pill status-disconnected">
+        <span class="dot"></span>
+        <span id="connectionText">Checking status...</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <a href="/dukan" class="btn btn-primary" style="font-weight: 700; text-decoration: none;">
+        🏪 Dukan Orders
+      </a>
+      <button id="btnN8nModal" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        n8n Webhook
+      </button>
+      <button id="btnApiDocsModal" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"></polyline>
+          <polyline points="8 6 2 12 8 18"></polyline>
+        </svg>
+        API Reference
+      </button>
+      <button id="btnLogout" class="btn btn-danger-ghost" title="Logout session">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Logout
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+    <!-- SCREEN 1: QR & Pairing Code (Shown when not connected) -->
+    <section id="authScreen" class="auth-screen">
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button id="tabQr" class="tab-btn active">Scan QR Code</button>
+          <button id="tabPhone" class="tab-btn">Pair with Phone Number</button>
+        </div>
+
+        <!-- Tab 1: QR Code -->
+        <div id="tabContentQr" class="tab-content active">
+          <h2>Link WhatsApp to your Laptop</h2>
+          <p class="subtitle">Use your phone to scan this QR code and link your WhatsApp instance.</p>
+
+          <div class="qr-container">
+            <div id="qrSpinner" class="spinner"></div>
+            <img id="qrImage" src="" alt="WhatsApp QR Code" class="qr-img hidden">
+            <div id="qrExpired" class="qr-overlay hidden">
+              <span>QR Code expired</span>
+              <button id="btnReloadQr" class="btn btn-primary btn-sm">Refresh QR</button>
+            </div>
+          </div>
+
+          <div style="text-align: center; margin-bottom: 20px;">
+            <button id="btnManualRefreshQr" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+              </svg>
+              Refresh QR Code
+            </button>
+            <div style="font-size: 0.8rem; color: #8696a0; margin-top: 8px;">
+              💡 <b>Tip:</b> If WhatsApp says <i>"Try Again"</i> or fails to scan, click <b>Refresh QR</b> above or use <b>Pair with Phone Number</b> tab!
+            </div>
+          </div>
+
+          <ol class="instructions-list">
+            <li>Open WhatsApp on your phone</li>
+            <li>Tap <b>Menu</b> (⋮ on Android) or <b>Settings</b> (⚙ on iPhone)</li>
+            <li>Select <b>Linked Devices</b> and tap <b>Link a Device</b></li>
+            <li>Point your phone camera at this screen to capture the QR code</li>
+          </ol>
+        </div>
+
+        <!-- Tab 2: Phone Pairing Code -->
+        <div id="tabContentPhone" class="tab-content">
+          <h2>Pair with Phone Number</h2>
+          <p class="subtitle">Receive an 8-digit linking code on WhatsApp without using the camera.</p>
+
+          <div class="pairing-form">
+            <label for="phoneNumberInput">Phone Number (with country code):</label>
+            <div class="input-group">
+              <input type="text" id="phoneNumberInput" placeholder="e.g. 919876543210" class="input-field">
+              <button id="btnGetPairingCode" class="btn btn-primary">Get Code</button>
+            </div>
+            <p class="hint">Include country code without + or spaces (e.g. 919876543210 for India, 14155552671 for US).</p>
+
+            <div id="pairingCodeResult" class="pairing-code-box hidden">
+              <div class="pairing-code-label">Your WhatsApp Pairing Code:</div>
+              <div id="pairingCodeDisplay" class="pairing-code-digits">---- ----</div>
+              <div class="pairing-code-sub">Enter this 8-digit code in the WhatsApp notification on your phone.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN 2: WhatsApp Web Chat Interface (Shown when connected) -->
+    <section id="chatScreen" class="chat-screen hidden">
+      <!-- Left Panel: Chat List -->
+      <aside class="chat-sidebar">
+        <div class="sidebar-top">
+          <div class="user-profile">
+            <div id="myAvatar" class="avatar">WA</div>
+            <div class="user-details">
+              <div id="myName" class="name">WhatsApp User</div>
+              <div id="myPhone" class="phone">+...</div>
+            </div>
+          </div>
+          <button id="btnNewChat" class="btn-icon" title="Start new chat">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="chatSearch" placeholder="Search chats or phone numbers...">
+        </div>
+
+        <div id="chatList" class="chat-list">
+          <div class="chat-empty">No conversations yet. Click "+" above or send a message!</div>
+        </div>
+      </aside>
+
+      <!-- Center Panel: Active Chat Messages -->
+      <section class="chat-main">
+        <!-- Empty Placeholder -->
+        <div id="emptyChatPlaceholder" class="empty-chat-placeholder">
+          <div class="placeholder-content">
+            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor" opacity="0.3">
+              <path d="M12 2C6.48 2 2 6.48 2 12C2 13.85 2.5 15.55 3.38 17L2 22L7.14 20.64C8.55 21.5 10.22 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z"/>
+            </svg>
+            <h3>WhatsApp Web Chat & n8n Bridge</h3>
+            <p>Select a chat on the left or click <b>+</b> to start a new chat. Messages sent here are synced with your phone, and incoming messages can be triggered in n8n!</p>
+          </div>
+        </div>
+
+        <!-- Chat Conversation Area -->
+        <div id="activeChatContainer" class="active-chat-container hidden">
+          <div class="chat-header">
+            <div class="chat-header-info">
+              <div id="activeAvatar" class="avatar">?</div>
+              <div>
+                <div id="activeContactName" class="active-name">Contact</div>
+                <div id="activeContactJid" class="active-jid">91...@s.whatsapp.net</div>
+              </div>
+            </div>
+            <div class="chat-header-actions">
+              <button id="btnQuickTestN8n" class="btn btn-secondary btn-sm" title="Send a test webhook event for this chat">
+                Trigger n8n
+              </button>
+            </div>
+          </div>
+
+          <div id="messagesContainer" class="messages-container">
+            <!-- Message bubbles injected by JS -->
+          </div>
+
+          <form id="sendMessageForm" class="message-input-bar">
+            <input type="text" id="messageInput" placeholder="Type a message (or type in n8n via API)..." autocomplete="off">
+            <button type="submit" class="btn btn-send" id="btnSend">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+              </svg>
+            </button>
+          </form>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- MODAL 1: n8n Webhook Settings & Live Event Logs -->
+  <div id="n8nModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>⚡ n8n Webhook Integration</h3>
+        <button class="modal-close" id="btnCloseN8nModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="description">
+          When anyone sends you a message on WhatsApp, this bridge automatically forwards the event payload to your n8n workflow webhook URL via HTTP POST.
+        </p>
+
+        <div class="form-group">
+          <label for="inputWebhookUrl">n8n Webhook URL:</label>
+          <div class="input-group">
+            <input type="url" id="inputWebhookUrl" placeholder="http://localhost:5678/webhook/whatsapp" class="input-field">
+            <button id="btnSaveWebhook" class="btn btn-primary">Save URL</button>
+            <button id="btnTestWebhook" class="btn btn-secondary">Test Ping</button>
+          </div>
+          <span id="webhookSaveStatus" class="status-msg"></span>
+        </div>
+
+        <div class="section-title">
+          <h4>Live Delivery Logs to n8n</h4>
+          <button id="btnRefreshLogs" class="btn-link">Refresh</button>
+        </div>
+        <div class="webhook-logs-table-wrapper">
+          <table class="logs-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>From</th>
+                <th>Message</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="webhookLogsBody">
+              <tr><td colspan="4" class="empty-cell">No webhook logs yet. Send a message to test!</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: API Documentation & n8n Node Config -->
+  <div id="apiDocsModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog modal-lg">
+      <div class="modal-header">
+        <h3>📖 REST API & n8n Integration Guide</h3>
+        <button class="modal-close" id="btnCloseApiModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h4>1. Sending WhatsApp Messages from n8n (HTTP Request Node)</h4>
+        <p>In your n8n workflow, add an <b>HTTP Request</b> node to send messages anytime:</p>
+        <div class="code-box">
+          <code><b>Method:</b> POST<br>
+<b>URL:</b> http://localhost:3000/api/send<br>
+<b>Headers:</b> Content-Type: application/json<br>
+<b>Body Parameters (JSON):</b><br>
+{<br>
+  &nbsp;&nbsp;"to": "919876543210",<br>
+  &nbsp;&nbsp;"message": "Hello from n8n! Your automation completed successfully."<br>
+}</code>
+        </div>
+
+        <h4>2. Incoming Message Payload Received by n8n Webhook</h4>
+        <p>Your n8n <b>Webhook node</b> receives this clean JSON structure on every incoming WhatsApp message:</p>
+        <div class="code-box">
+          <code>{<br>
+  &nbsp;&nbsp;"event": "message.received",<br>
+  &nbsp;&nbsp;"from": "919876543210",<br>
+  &nbsp;&nbsp;"name": "Alice Smith",<br>
+  &nbsp;&nbsp;"text": "Hey, what's my order status?",<br>
+  &nbsp;&nbsp;"timestamp": "2026-10-13T17:15:00.000Z",<br>
+  &nbsp;&nbsp;"isGroup": false,<br>
+  &nbsp;&nbsp;"fromMe": false<br>
+}</code>
+        </div>
+
+        <h4>3. Quick cURL Test</h4>
+        <div class="code-box">
+          <code>curl -X POST http://localhost:3000/api/send \<br>
+  -H "Content-Type: application/json" \<br>
+  -d '{"to": "919876543210", "message": "Test from terminal"}'</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: New Chat Modal -->
+  <div id="newChatModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog modal-sm">
+      <div class="modal-header">
+        <h3>Start New WhatsApp Chat</h3>
+        <button class="modal-close" id="btnCloseNewChatModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="newChatForm">
+          <div class="form-group">
+            <label for="newChatPhone">Phone Number (with Country Code):</label>
+            <input type="text" id="newChatPhone" placeholder="e.g. 919876543210" class="input-field" required>
+          </div>
+          <div class="form-group">
+            <label for="newChatMessage">First Message (Optional):</label>
+            <input type="text" id="newChatMessage" placeholder="Hello!" class="input-field">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Open Chat</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
