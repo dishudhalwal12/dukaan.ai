@@ -32,7 +32,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5001;
 const AUTH_DIR = path.resolve(process.cwd(), process.env.AUTH_DIR || './auth_info');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
@@ -732,6 +732,18 @@ app.get('/api/dukan/catalog', (req, res) => {
   res.json({ catalog: dukanCatalog.getAll() });
 });
 
+// Bulk Sync Catalog from Shopkeeper POS
+app.post('/api/dukan/catalog/sync', (req, res) => {
+  const { products } = req.body;
+  if (!products || !Array.isArray(products)) {
+    return res.status(400).json({ error: 'Array of products is required' });
+  }
+  const updatedCatalog = dukanCatalog.syncFromStore(products);
+  broadcastSSE({ type: 'dukan_catalog_updated' });
+  console.log(`[Dukan Catalog] Synced ${updatedCatalog.length} products from store.`);
+  res.json({ success: true, count: updatedCatalog.length, catalog: updatedCatalog });
+});
+
 // Add Product to Catalog
 app.post('/api/dukan/catalog', (req, res) => {
   const { name, category, price, unit, inStock } = req.body;
@@ -790,7 +802,7 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
 
   // Notify customer on WhatsApp
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} has been accepted by Dukan. It is being prepared now and will be delivered in 15-20 minutes. Total: ₹${order.totalAmount} (Cash / UPI on delivery).`;
+    const notifyText = `✅ *Order Accepted by Dukan! (Order #${order.id})*\n\nThe shopkeeper has accepted your order and is packing it now!\n🛵 Estimated delivery: 15-20 minutes.\n💰 Total to pay: ₹${order.totalAmount} (Cash / UPI on delivery).\n\nThank you for ordering with Dukan!`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
@@ -845,34 +857,17 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Sorry, we could not accept order #${order.id} (Reason: ${reason}). Please try again later.`;
+    const notifyText = `❌ *Order Update (Order #${order.id})*\n\nSorry, the shopkeeper could not accept your order right now (${reason || 'Item temporarily unavailable'}).\n\nPlease message us again later.`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to notify customer of rejection:', e.message);
+    }
   }
 
   broadcastSSE({ type: 'dukan_order_updated', order });
   res.json({ success: true, order });
-});
-
-// Test/Simulate Order for Shopkeeper UI
-app.post('/api/dukan/orders/test-order', (req, res) => {
-  const testOrder = dukanOrders.createOrder({
-    customerJid: '919876543210@s.whatsapp.net',
-    customerPhone: '919876543210',
-    customerName: 'Rahul Sharma (Test)',
-    deliveryAddress: 'Flat 402, Sunshine Towers, Sector 15',
-    items: [
-      { id: 'p1', name: 'Maggi 2-Minute Noodles', price: 15, quantity: 2, total: 30 },
-      { id: 'p7', name: 'Coca-Cola (750ml)', price: 45, quantity: 1, total: 45 }
-    ],
-    totalAmount: 75,
-    notes: 'Test order from Shopkeeper dashboard'
-  });
-
-  broadcastSSE({ type: 'dukan_new_order', order: testOrder });
-  res.json({ success: true, order: testOrder });
 });
 
 // Server-Sent Events (SSE) for Real-Time Updates

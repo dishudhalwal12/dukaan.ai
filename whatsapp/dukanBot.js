@@ -91,7 +91,7 @@ HOW TO HANDLE ORDERS:
 }
 \`\`\`
 
-Along with the JSON, send a short confirmation: "Order placed! The shopkeeper is packing it now and it will be delivered in 15-20 mins."`;
+Along with the JSON, send a short confirmation: "Order received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted."`;
 }
 
 /**
@@ -300,7 +300,7 @@ export const dukanBot = {
         session.stage = 'IDLE';
 
         return {
-          reply: `Order #${order.id} placed! The shopkeeper is packing your items now and they will be delivered in 15-20 minutes. Total: ${formatCurrency(totalAmount)} (Cash/UPI on delivery).`,
+          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ${formatCurrency(totalAmount)} (Cash/UPI on delivery)`,
           newOrder: order
         };
       } else {

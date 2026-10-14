@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const DATA_DIR = path.resolve(process.cwd(), 'store');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DATA_DIR = path.resolve(__dirname, 'store');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
 
 if (!fs.existsSync(DATA_DIR)) {

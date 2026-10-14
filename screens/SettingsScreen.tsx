@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { XIcon } from '../components/Icons.tsx';
+import { XIcon, WhatsAppIcon } from '../components/Icons.tsx';
 import EditProfileScreen from './settings/EditProfileScreen.tsx';
 import ManageStoreScreen from './settings/ManageStoreScreen.tsx';
+import WhatsAppSettingsScreen from './settings/WhatsAppSettingsScreen.tsx';
 import NotificationsScreen from './settings/NotificationsScreen.tsx';
 import ChangeLanguageScreen from './settings/ChangeLanguageScreen.tsx';
 import BrandGuideScreen from './settings/BrandGuideScreen.tsx';
@@ -46,12 +47,17 @@ interface SettingsItemProps {
     icon: string;
     label: string;
     onClick?: () => void;
+    customIcon?: React.ReactNode;
 }
 
-const SettingsItem: React.FC<SettingsItemProps> = ({ icon, label, onClick }) => (
+const SettingsItem: React.FC<SettingsItemProps> = ({ icon, label, onClick, customIcon }) => (
     <button onClick={onClick} className="w-full flex items-center justify-between p-4 bg-[#1A1A1A] rounded-lg text-left transition-colors active:bg-neutral-800">
         <div className="flex items-center gap-4">
-            <span className="material-symbols-outlined text-neutral-300">{icon}</span>
+            {customIcon ? (
+                customIcon
+            ) : (
+                <span className="material-symbols-outlined text-neutral-300">{icon}</span>
+            )}
             <p className="font-semibold text-white">{label}</p>
         </div>
         <span className="material-symbols-outlined text-neutral-500">chevron_right</span>
@@ -140,6 +146,12 @@ const MainSettings: React.FC<{
                   <div className="space-y-2">
                       <SettingsItem icon="account_circle" label={t('settings_edit_profile')} onClick={() => onNavigate('profile')} />
                       <SettingsItem icon="store" label={t('settings_manage_store')} onClick={() => onNavigate('store')} />
+                      <SettingsItem
+                        icon="chat"
+                        customIcon={<WhatsAppIcon className="w-6 h-6 text-emerald-400" />}
+                        label="WhatsApp Store & Ordering"
+                        onClick={() => onNavigate('whatsapp')}
+                      />
                       <SettingsItem icon="notifications" label={t('settings_notifications')} onClick={() => onNavigate('notifications')} />
                       <SettingsItem icon="language" label={t('settings_change_language')} onClick={() => onNavigate('language')} />
                   </div>
@@ -190,6 +202,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
             return <EditProfileScreen onBack={handleBack} />;
         case 'store':
             return <ManageStoreScreen onBack={handleBack} />;
+        case 'whatsapp':
+            return <WhatsAppSettingsScreen onBack={handleBack} />;
         case 'notifications':
             return <NotificationsScreen onBack={handleBack} />;
         case 'language':

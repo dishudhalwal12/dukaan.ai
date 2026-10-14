@@ -9,17 +9,13 @@ export default defineConfig(({ mode }) => {
         port: 3000,
         host: '0.0.0.0',
         proxy: {
-          '/webhook': {
-            target: 'http://localhost:5679',
+          '/api': {
+            target: 'http://localhost:5001',
             changeOrigin: true,
-            configure: (proxy) => {
-              proxy.on('error', (_err, _req, res) => {
-                if ('writeHead' in res && !(res as any).headersSent) {
-                  (res as any).writeHead(204, { 'Content-Type': 'application/json' });
-                  (res as any).end(JSON.stringify({ status: 'offline' }));
-                }
-              });
-            }
+          },
+          '/events': {
+            target: 'http://localhost:5001',
+            changeOrigin: true,
           }
         }
       },

@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
-const DATA_DIR = path.resolve(process.cwd(), 'store');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DATA_DIR = path.resolve(__dirname, 'store');
 const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
 
 if (!fs.existsSync(DATA_DIR)) {
@@ -103,5 +106,31 @@ export const dukanCatalog = {
     catalog.splice(index, 1);
     saveCatalog();
     return true;
+  },
+
+  syncFromStore(products) {
+    if (!Array.isArray(products)) return catalog;
+    catalog = products.map(p => {
+      let priceNum = 0;
+      if (typeof p.price === 'number') {
+        priceNum = p.price;
+      } else if (typeof p.price === 'string') {
+        priceNum = parseFloat(p.price.replace(/[^\d.]/g, '')) || 0;
+      }
+
+      const name = String(p.name || '').trim();
+      const words = name.toLowerCase().split(/\s+/).filter(Boolean);
+      return {
+        id: String(p.id || 'p' + Date.now()),
+        name: name,
+        category: p.category || 'General',
+        price: priceNum,
+        unit: p.stockUnit || p.unit || 'unit',
+        inStock: typeof p.stock === 'number' ? p.stock > 0 : (p.inStock !== false),
+        keywords: Array.from(new Set([name.toLowerCase(), ...(p.keywords || []), ...words]))
+      };
+    });
+    saveCatalog();
+    return catalog;
   }
 };
