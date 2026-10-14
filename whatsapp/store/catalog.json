@@ -1,235 +1,46 @@
 [
   {
-    "id": "p1",
-    "name": "Maggi 2-Minute Noodles",
-    "category": "Snacks",
-    "price": 15,
-    "unit": "packet (70g)",
+    "id": "prod1",
+    "name": "product_maggi",
+    "category": "General",
+    "price": 96,
+    "unit": "packs",
     "inStock": true,
     "keywords": [
-      "maggi",
-      "maggie",
-      "noodles",
-      "2-minute"
+      "product_maggi"
     ]
   },
   {
-    "id": "p2",
-    "name": "Maggi Special Masala Noodles",
-    "category": "Snacks",
-    "price": 20,
-    "unit": "packet (70g)",
+    "id": "prod2",
+    "name": "product_amul_milk",
+    "category": "General",
+    "price": 68,
+    "unit": "cartons",
     "inStock": true,
     "keywords": [
-      "maggi",
-      "maggie",
-      "masala",
-      "special"
+      "product_amul_milk"
     ]
   },
   {
-    "id": "p3",
-    "name": "Maggi Atta Noodles",
-    "category": "Snacks",
-    "price": 25,
-    "unit": "packet (72.5g)",
+    "id": "prod3",
+    "name": "product_parle_g",
+    "category": "General",
+    "price": 80,
+    "unit": "packs",
     "inStock": true,
     "keywords": [
-      "maggi",
-      "maggie",
-      "atta",
-      "wheat"
+      "product_parle_g"
     ]
   },
   {
-    "id": "p4",
-    "name": "Amul Taaza Milk",
-    "category": "Dairy",
-    "price": 27,
-    "unit": "500ml pouch",
-    "inStock": true,
-    "keywords": [
-      "milk",
-      "doodh",
-      "amul",
-      "taaza"
-    ]
-  },
-  {
-    "id": "p5",
-    "name": "Amul Butter",
-    "category": "Dairy",
-    "price": 0,
-    "unit": "100g pack",
-    "inStock": true,
-    "keywords": [
-      "butter",
-      "makhan",
-      "amul"
-    ]
-  },
-  {
-    "id": "p6",
-    "name": "Britannia White Bread",
-    "category": "Bakery",
-    "price": 35,
-    "unit": "400g loaf",
-    "inStock": true,
-    "keywords": [
-      "bread",
-      "white bread",
-      "britannia"
-    ]
-  },
-  {
-    "id": "p7",
-    "name": "Coca-Cola",
-    "category": "Beverages",
-    "price": 45,
-    "unit": "750ml bottle",
-    "inStock": true,
-    "keywords": [
-      "coca cola",
-      "coke",
-      "cold drink",
-      "soda"
-    ]
-  },
-  {
-    "id": "p8",
-    "name": "Thums Up",
-    "category": "Beverages",
-    "price": 45,
-    "unit": "750ml bottle",
-    "inStock": true,
-    "keywords": [
-      "thums up",
-      "thumbs up",
-      "coke",
-      "cold drink"
-    ]
-  },
-  {
-    "id": "p9",
-    "name": "Kurkure Masala Munch",
-    "category": "Snacks",
-    "price": 20,
-    "unit": "packet (85g)",
-    "inStock": true,
-    "keywords": [
-      "kurkure",
-      "chips",
-      "namkeen",
-      "munch"
-    ]
-  },
-  {
-    "id": "p10",
-    "name": "Lay's Classic Salted",
-    "category": "Snacks",
-    "price": 20,
-    "unit": "packet (50g)",
-    "inStock": true,
-    "keywords": [
-      "lays",
-      "lay's",
-      "chips",
-      "salted"
-    ]
-  },
-  {
-    "id": "p11",
-    "name": "Parle-G Biscuits",
-    "category": "Biscuits",
-    "price": 10,
-    "unit": "pack (130g)",
-    "inStock": true,
-    "keywords": [
-      "parle-g",
-      "parleg",
-      "biscuit",
-      "chai biscuit"
-    ]
-  },
-  {
-    "id": "p12",
-    "name": "Good Day Butter Cookies",
-    "category": "Biscuits",
-    "price": 20,
-    "unit": "pack (100g)",
-    "inStock": true,
-    "keywords": [
-      "good day",
-      "goodday",
-      "cookies",
-      "biscuit"
-    ]
-  },
-  {
-    "id": "p13",
-    "name": "Red Label Tea (Chai Patti)",
-    "category": "Groceries",
-    "price": 110,
-    "unit": "250g pack",
-    "inStock": true,
-    "keywords": [
-      "tea",
-      "chai",
-      "chai patti",
-      "red label"
-    ]
-  },
-  {
-    "id": "p14",
-    "name": "Tata Salt",
-    "category": "Groceries",
+    "id": "prod4",
+    "name": "product_tata_salt",
+    "category": "General",
     "price": 28,
-    "unit": "1kg pack",
+    "unit": "packs",
     "inStock": true,
     "keywords": [
-      "salt",
-      "namak",
-      "tata salt"
-    ]
-  },
-  {
-    "id": "p15",
-    "name": "Aashirvaad Shudh Chakki Atta",
-    "category": "Groceries",
-    "price": 245,
-    "unit": "5kg bag",
-    "inStock": true,
-    "keywords": [
-      "atta",
-      "flour",
-      "wheat flour",
-      "aashirvaad"
-    ]
-  },
-  {
-    "id": "p16",
-    "name": "Farm Fresh Eggs",
-    "category": "Dairy",
-    "price": 42,
-    "unit": "pack of 6",
-    "inStock": true,
-    "keywords": [
-      "egg",
-      "eggs",
-      "ande",
-      "anda"
-    ]
-  },
-  {
-    "id": "p1791913706790",
-    "name": "deit coke",
-    "category": "Beverages",
-    "price": 50,
-    "unit": "500",
-    "inStock": true,
-    "keywords": [
-      "deit",
-      "coke"
+      "product_tata_salt"
     ]
   }
 ]
