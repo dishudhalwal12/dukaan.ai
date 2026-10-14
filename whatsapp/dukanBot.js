@@ -1,11 +1,155 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // In-memory conversation history per customer for OpenRouter LLM: jid -> messages[]
 const conversationHistories = new Map();
 
 // In-memory rule sessions for fallback state machine: jid -> session
 const ruleSessions = new Map();
+
+// In-memory pending order cache: jid -> { items, totalAmount, deliveryAddress, customerName, timestamp }
+export const pendingOrders = new Map();
+
+// Regex matching common affirmative replies (handles typos like "yeas", Hinglish "haan", etc.)
+export const AFFIRMATIVE_REGEX = /^(yes|yeas|yep|yeah|yup|y|ok|okay|confirm|confirmed|sure|proceed|done|order|order now|haan|ha|sahi hai|bhejo|pack karo)[\s.!,]*$/i;
+
+/**
+ * Resolves real phone number from WhatsApp JID (maps privacy LIDs like 136786168832016@lid -> 917300372323)
+ */
+export function resolvePhoneNumber(jid, authDir) {
+  if (!jid) return '';
+  const cleanJid = jid.trim();
+  if (!cleanJid.endsWith('@lid')) {
+    return cleanJid.replace(/@.*$/, '').replace(/:\d+/, '');
+  }
+  const lid = cleanJid.replace(/@.*$/, '');
+  const dir = authDir || path.resolve(__dirname, 'auth_info');
+  const reverseFile = path.join(dir, `lid-mapping-${lid}_reverse.json`);
+  if (fs.existsSync(reverseFile)) {
+    try {
+      const content = JSON.parse(fs.readFileSync(reverseFile, 'utf8'));
+      if (typeof content === 'string' && /^\d+$/.test(content)) {
+        return content;
+      }
+    } catch (e) {}
+  }
+  try {
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        if (file.startsWith('lid-mapping-') && !file.includes('_reverse')) {
+          const filePath = path.join(dir, file);
+          const mappedLid = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+          if (mappedLid === lid) {
+            return file.replace('lid-mapping-', '').replace('.json', '');
+          }
+        }
+      }
+    }
+  } catch (e) {}
+  return lid;
+}
+
+/**
+ * Extracts order items, total amount, and delivery address from natural language order summary text.
+ */
+export function extractOrderFromSummaryText(text, defaultAddress = '') {
+  if (!text) return null;
+
+  // 1. Total Amount
+  let totalAmount = 0;
+  const totalMatch = text.match(/(?:Total(?:\s*Amount)?|Order\s*Total|Grand\s*Total)[:\s*]+(?:₹|Rs\.?)?\s*(\d+(?:\.\d+)?)/i);
+  if (totalMatch) {
+    totalAmount = parseFloat(totalMatch[1]);
+  }
+
+  // 2. Delivery Address
+  let deliveryAddress = defaultAddress;
+  const addrMatch = text.match(/(?:Delivery\s*Address|Address|Delivering\s*to)[:\s*]+([^\n\r*]+)/i);
+  if (addrMatch && addrMatch[1].trim()) {
+    deliveryAddress = addrMatch[1].trim().replace(/^[-•*]\s*/, '');
+  }
+
+  // 3. Items Extraction
+  const items = [];
+
+  // Pattern A: Multi-line Block format: "Item: <name> ... Quantity: <qty> ... Price: ₹<price>"
+  const blockRegex = /(?:[-*•]\s*)?Item[:\s*]+([^\n\r*]+)[\s\S]*?(?:Quantity|Qty)[:\s*]+(\d+)(?:[\s\S]*?(?:Price|Rate)[:\s*]+(?:₹|Rs\.?)?\s*(\d+))?/gi;
+  let matchA;
+  while ((matchA = blockRegex.exec(text)) !== null) {
+    const name = matchA[1].trim().replace(/^[-*•]\s*/, '');
+    const quantity = parseInt(matchA[2], 10) || 1;
+    const price = matchA[3] ? parseFloat(matchA[3]) : 0;
+    items.push({
+      name,
+      quantity,
+      price,
+      total: price ? price * quantity : 0
+    });
+  }
+
+  // Pattern B: Single line items e.g. "- 10x Parle-G Biscuits - ₹100" or "• Item Name x 10: ₹100"
+  if (items.length === 0) {
+    const lines = text.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (/^(?:total|delivery\s*address|address|payment|order\s*(?:summary|confirmed|placed)|reply\s*yes)/i.test(line)) continue;
+
+      const matchB1 = line.match(/^[-*•\s]*(\d+)\s*(?:x|packs?|units?|packets?)?\s+([A-Za-z0-9\s()\-]+?)(?:\s*[:\-–=]\s*(?:₹|Rs\.?)?\s*(\d+))?$/i);
+      const matchB2 = line.match(/^[-*•\s]*([A-Za-z0-9\s()\-]+?)\s*[xX]\s*(\d+)(?:\s*[:\-–=]\s*(?:₹|Rs\.?)?\s*(\d+))?$/i);
+
+      if (matchB1 && matchB1[2]) {
+        const qty = parseInt(matchB1[1], 10) || 1;
+        const name = matchB1[2].trim();
+        const price = matchB1[3] ? parseFloat(matchB1[3]) : 0;
+        if (name.length > 2 && !/^(?:total|address|payment|order|notes)$/i.test(name)) {
+          items.push({ name, quantity: qty, price: price ? price / qty : 0, total: price });
+        }
+      } else if (matchB2 && matchB2[1]) {
+        const name = matchB2[1].trim();
+        const qty = parseInt(matchB2[2], 10) || 1;
+        const price = matchB2[3] ? parseFloat(matchB2[3]) : 0;
+        if (name.length > 2 && !/^(?:total|address|payment|order|notes)$/i.test(name)) {
+          items.push({ name, quantity: qty, price: price ? price / qty : 0, total: price });
+        }
+      }
+    }
+  }
+
+  if (items.length === 0 && !totalAmount) {
+    return null;
+  }
+
+  // Calculate missing totals
+  for (const item of items) {
+    if (!item.total && item.price && item.quantity) {
+      item.total = item.price * item.quantity;
+    }
+  }
+
+  const calculatedTotal = items.reduce((sum, it) => sum + (it.total || 0), 0);
+  if (!totalAmount && calculatedTotal > 0) {
+    totalAmount = calculatedTotal;
+  }
+
+  if (items.length === 1 && items[0].total === 0 && totalAmount > 0) {
+    items[0].total = totalAmount;
+    items[0].price = totalAmount / (items[0].quantity || 1);
+  }
+
+  return {
+    items,
+    totalAmount,
+    deliveryAddress
+  };
+}
 
 function getConversationHistory(jid) {
   if (!conversationHistories.has(jid)) {
@@ -75,8 +219,18 @@ HOW TO HANDLE ORDERS:
   - Total in ₹ (Cash / UPI on delivery)
   - Delivery address
   - Ask: "Reply YES to confirm your order."
-- Step 4: WHEN CUSTOMER REPLIES "YES" / "CONFIRM" / "OK":
-  - Output this exact JSON block at the very end of your response to notify the shopkeeper:
+- Step 4: WHEN CUSTOMER REPLIES "YES" / "CONFIRM" / "OK" / "YEAS" / "HAAN":
+  - First, send confirmation text with the summary:
+    "Order confirmed! 🎉
+    *Order Summary*
+    - Item: <Product Name>
+    Quantity: <Quantity>
+    Price: ₹<Price> per pack
+    Total: ₹<TotalAmount>
+    - Delivery Address: <Address>
+    - Payment: Cash on Delivery
+    Sent to the shopkeeper for confirmation."
+  - Second, append this JSON block at the very end:
 
 \`\`\`json
 {
@@ -149,33 +303,125 @@ async function callOpenRouter(userText, customerName, customerPhone, jid) {
 }
 
 /**
- * Parse OpenRouter response for order creation JSON
+ * Multi-layer OpenRouter response parser:
+ * Layer 1: JSON block (fenced or unfenced)
+ * Layer 2: Natural language summary extraction from AI response
+ * Layer 3: Cached pending order fallback on affirmative user reply
+ * Layer 4: Order summary detection to cache pending order for confirmation
  */
-function parseOpenRouterReply(replyText, jid, customerPhone, defaultName) {
+export function parseOpenRouterReply(replyText, jid, customerPhone, defaultName, userText = '') {
   if (!replyText) return { reply: '', newOrder: null };
 
-  const jsonRegex = /```json\s*(\{[\s\S]*?"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})\s*```/i;
-  const match = replyText.match(jsonRegex);
-
+  const resolvedPhone = customerPhone || resolvePhoneNumber(jid);
   let newOrder = null;
   let cleanReply = replyText;
 
-  if (match && match[1]) {
-    try {
-      const orderData = JSON.parse(match[1]);
-      newOrder = dukanOrders.createOrder({
-        customerJid: jid,
-        customerPhone: customerPhone || jid.replace(/@.*$/, ''),
-        customerName: orderData.customerName || defaultName || 'Customer',
-        deliveryAddress: orderData.deliveryAddress || 'Address not specified',
-        items: orderData.items || [],
-        totalAmount: Number(orderData.totalAmount) || 0,
-        notes: orderData.notes || ''
-      });
+  // Layer 1: JSON Block (fenced or unfenced)
+  const jsonMatch = replyText.match(/```json\s*(\{[\s\S]*?"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})\s*```/i) ||
+                    replyText.match(/(\{[\s\S]*?"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})/i);
 
-      cleanReply = replyText.replace(match[0], '').trim();
+  if (jsonMatch && jsonMatch[1]) {
+    try {
+      const orderData = JSON.parse(jsonMatch[1]);
+      if (orderData && Array.isArray(orderData.items) && orderData.items.length > 0) {
+        newOrder = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: resolvedPhone,
+          customerName: orderData.customerName || defaultName || 'Customer',
+          deliveryAddress: orderData.deliveryAddress || 'Address not specified',
+          items: orderData.items || [],
+          totalAmount: Number(orderData.totalAmount) || 0,
+          notes: orderData.notes || 'Cash on Delivery'
+        });
+
+        cleanReply = replyText.replace(jsonMatch[0], '').trim();
+        pendingOrders.delete(jid);
+        console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 1 JSON for ${resolvedPhone} (₹${newOrder.totalAmount})`);
+      }
     } catch (e) {
-      console.error('[Dukan] Failed to parse AI order JSON:', e.message);
+      console.error('[Dukan AI] Failed to parse Layer 1 AI order JSON:', e.message);
+    }
+  }
+
+  // Layer 2: Natural Language Summary Detection in AI Reply
+  if (!newOrder) {
+    const isOrderConfirmed = /(?:order\s*(?:confirmed|received|placed|sent|created)|sent to the shopkeeper|notified the shopkeeper)/i.test(replyText);
+    const hasOrderSummary = /(?:order\s*summary|item[:\s*]|total[:\s*])/i.test(replyText);
+
+    if (isOrderConfirmed || hasOrderSummary) {
+      const cached = pendingOrders.get(jid);
+      const summaryData = extractOrderFromSummaryText(replyText, cached?.deliveryAddress || '');
+
+      if (summaryData && summaryData.items && summaryData.items.length > 0 && isOrderConfirmed) {
+        newOrder = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: resolvedPhone,
+          customerName: defaultName || 'Customer',
+          deliveryAddress: summaryData.deliveryAddress || cached?.deliveryAddress || 'Address not specified',
+          items: summaryData.items,
+          totalAmount: summaryData.totalAmount,
+          notes: 'Cash on Delivery'
+        });
+
+        pendingOrders.delete(jid);
+        console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 2 Natural Summary for ${resolvedPhone} (₹${newOrder.totalAmount})`);
+      }
+    }
+  }
+
+  // Layer 3: Cached Pending Order Fallback (when customer sends affirmative confirmation or AI confirms)
+  if (!newOrder) {
+    const isAffirmative = Boolean(userText && AFFIRMATIVE_REGEX.test(userText.trim()));
+    const isAIConfirming = /(?:order\s*(?:confirmed|received|placed|sent)|sent to the shopkeeper)/i.test(replyText);
+
+    if (isAffirmative || isAIConfirming) {
+      const cached = pendingOrders.get(jid);
+      if (cached && cached.items && cached.items.length > 0 && (Date.now() - cached.timestamp < 30 * 60 * 1000)) {
+        newOrder = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: resolvedPhone,
+          customerName: cached.customerName || defaultName || 'Customer',
+          deliveryAddress: cached.deliveryAddress || 'Address not specified',
+          items: cached.items,
+          totalAmount: cached.totalAmount,
+          notes: 'Cash on Delivery'
+        });
+
+        pendingOrders.delete(jid);
+        console.log(`[Dukan AI] Order #${newOrder.id} finalized via Layer 3 Pending Session for ${resolvedPhone} (₹${newOrder.totalAmount})`);
+      }
+    }
+  }
+
+  // Layer 4: Cache Pending Order when AI outputs an Order Summary asking for confirmation
+  if (!newOrder) {
+    const isAskingConfirmation = /(?:reply\s*yes|confirm your order|to confirm|order summary)/i.test(replyText);
+    if (isAskingConfirmation) {
+      const extracted = extractOrderFromSummaryText(replyText);
+      if (extracted && extracted.items && extracted.items.length > 0) {
+        pendingOrders.set(jid, {
+          items: extracted.items,
+          totalAmount: extracted.totalAmount,
+          deliveryAddress: extracted.deliveryAddress,
+          customerName: defaultName,
+          timestamp: Date.now()
+        });
+        console.log(`[Dukan AI] Cached pending order for ${jid} (${extracted.items.length} items, ₹${extracted.totalAmount})`);
+      }
+    }
+  }
+
+  // Sanitize reply: strip any tool call tokens or python-style function call tokens
+  cleanReply = cleanReply
+    .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
+    .replace(/<\|[\s\S]*?\|>/g, '')
+    .replace(/\[(?:order_order|CREATE_ORDER)[\s\S]*?\]/gi, '')
+    .trim();
+
+  // If an order was created, guarantee a clean, warm confirmation message for the customer
+  if (newOrder) {
+    if (!cleanReply || cleanReply.length < 5 || /tool_call|CREATE_ORDER|order_order/i.test(cleanReply)) {
+      cleanReply = `Order received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.`;
     }
   }
 
@@ -193,7 +439,7 @@ export const dukanBot = {
     const jid = msg.remoteJid;
     const text = (msg.text || '').trim();
     const pushName = msg.pushName || '';
-    const phone = jid.replace(/@.*$/, '');
+    const phone = msg.from || resolvePhoneNumber(jid);
 
     if (!text && !locationData) return null;
 
@@ -211,7 +457,7 @@ export const dukanBot = {
         const aiResponse = await callOpenRouter(promptText, pushName, phone, jid);
 
         if (aiResponse) {
-          const parsed = parseOpenRouterReply(aiResponse, jid, phone, pushName);
+          const parsed = parseOpenRouterReply(aiResponse, jid, phone, pushName, text);
           return parsed;
         }
       } catch (err) {
@@ -230,9 +476,64 @@ export const dukanBot = {
     const jid = msg.remoteJid;
     const text = (msg.text || '').trim();
     const pushName = msg.pushName || '';
+    const phone = msg.from || resolvePhoneNumber(jid);
 
     const session = getRuleSession(jid, pushName);
     const lower = text.toLowerCase();
+
+    // 0. Affirmative confirmation check against pending orders or active cart
+    if (AFFIRMATIVE_REGEX.test(lower)) {
+      if (pendingOrders.has(jid)) {
+        const cached = pendingOrders.get(jid);
+        pendingOrders.delete(jid);
+        const order = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: phone,
+          customerName: cached.customerName || pushName || 'Customer',
+          deliveryAddress: cached.deliveryAddress || 'Address not specified',
+          items: cached.items || [],
+          totalAmount: cached.totalAmount || 0,
+          notes: 'Cash on Delivery'
+        });
+
+        return {
+          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ₹${order.totalAmount} (Cash/UPI on delivery)`,
+          newOrder: order
+        };
+      }
+
+      if (session.stage === 'CONFIRMING_ORDER') {
+        if (session.cart.length === 0) {
+          session.stage = 'IDLE';
+          return { reply: `Your cart is empty. What would you like to order?` };
+        }
+
+        const totalAmount = calculateCartTotal(session.cart);
+        const order = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: phone,
+          customerName: session.customerName,
+          deliveryAddress: session.deliveryAddress,
+          items: [...session.cart],
+          totalAmount,
+          notes: ''
+        });
+
+        session.cart = [];
+        session.stage = 'IDLE';
+
+        return {
+          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ${formatCurrency(totalAmount)} (Cash/UPI on delivery)`,
+          newOrder: order
+        };
+      }
+
+      if (session.cart.length === 0) {
+        return {
+          reply: `You don't have an active order right now. What would you like to order today? (e.g., "2 Maggi and 1 Parle-G")`
+        };
+      }
+    }
 
     // 1. Location Pin Received
     if (locationData) {
@@ -277,37 +578,11 @@ export const dukanBot = {
       };
     }
 
-    // 4. Confirming Order stage
+    // 4. Confirming Order stage non-affirmative
     if (session.stage === 'CONFIRMING_ORDER') {
-      if (lower === 'yes' || lower === 'confirm' || lower === 'y' || lower === 'ok' || lower === 'order') {
-        if (session.cart.length === 0) {
-          session.stage = 'IDLE';
-          return { reply: `Your cart is empty. What would you like to order?` };
-        }
-
-        const totalAmount = calculateCartTotal(session.cart);
-        const order = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: jid.replace(/@.*$/, ''),
-          customerName: session.customerName,
-          deliveryAddress: session.deliveryAddress,
-          items: [...session.cart],
-          totalAmount,
-          notes: ''
-        });
-
-        session.cart = [];
-        session.stage = 'IDLE';
-
-        return {
-          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ${formatCurrency(totalAmount)} (Cash/UPI on delivery)`,
-          newOrder: order
-        };
-      } else {
-        return {
-          reply: `Please reply YES to place the order, or CANCEL to cancel.`
-        };
-      }
+      return {
+        reply: `Please reply YES to place the order, or CANCEL to cancel.`
+      };
     }
 
     // 5. Asking Name stage

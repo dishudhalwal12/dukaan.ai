@@ -25,13 +25,22 @@ export interface WhatsAppEvent {
   [key: string]: any;
 }
 
+const getApiUrl = (endpoint: string): string => {
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    if (window.location.port && window.location.port !== '5001') {
+      return `http://localhost:5001${endpoint}`;
+    }
+  }
+  return endpoint;
+};
+
 export const whatsappService = {
   /**
    * Fetches the current connection status and linked user info
    */
   async fetchStatus(): Promise<WhatsAppStatus> {
     try {
-      const res = await fetch('/api/status');
+      const res = await fetch(getApiUrl('/api/status'));
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -46,7 +55,7 @@ export const whatsappService = {
    * Fetches the current live QR code data URL
    */
   async fetchQR(): Promise<{ status: string; qr: string | null; raw: string | null }> {
-    const res = await fetch('/api/qr');
+    const res = await fetch(getApiUrl('/api/qr'));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -55,7 +64,7 @@ export const whatsappService = {
    * Requests a fresh QR code from Baileys
    */
   async refreshQR(): Promise<{ success: boolean; message?: string }> {
-    const res = await fetch('/api/refresh-qr', { method: 'POST' });
+    const res = await fetch(getApiUrl('/api/refresh-qr'), { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -65,7 +74,7 @@ export const whatsappService = {
    */
   async requestPairingCode(phoneNumber: string): Promise<{ success: boolean; code?: string; error?: string }> {
     const cleanNumber = phoneNumber.replace(/\D/g, '');
-    const res = await fetch('/api/pairing-code', {
+    const res = await fetch(getApiUrl('/api/pairing-code'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber: cleanNumber }),
@@ -81,7 +90,7 @@ export const whatsappService = {
    * Logs out / unlinks the current WhatsApp session
    */
   async logout(): Promise<{ success: boolean }> {
-    const res = await fetch('/api/logout', { method: 'POST' });
+    const res = await fetch(getApiUrl('/api/logout'), { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -90,7 +99,7 @@ export const whatsappService = {
    * Accepts a pending customer order and sends a WhatsApp confirmation message
    */
   async acceptOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(`/api/dukan/orders/${encodeURIComponent(orderId)}/accept`, {
+    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/accept`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -105,7 +114,7 @@ export const whatsappService = {
    * Rejects a pending customer order and sends a WhatsApp rejection message
    */
   async rejectOrder(orderId: string, reason?: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(`/api/dukan/orders/${encodeURIComponent(orderId)}/reject`, {
+    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/reject`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason }),
@@ -121,7 +130,7 @@ export const whatsappService = {
    * Synchronizes Dukaan POS products into the Baileys catalog
    */
   async syncCatalog(products: Product[]): Promise<{ success: boolean; count?: number }> {
-    const res = await fetch('/api/dukan/catalog/sync', {
+    const res = await fetch(getApiUrl('/api/dukan/catalog/sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ products }),
@@ -131,6 +140,20 @@ export const whatsappService = {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
     return await res.json();
+  },
+
+  /**
+   * Fetches all real customer orders stored in the backend
+   */
+  async fetchOrders(): Promise<{ orders: any[] }> {
+    try {
+      const res = await fetch(getApiUrl('/api/dukan/orders'));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.warn('[WhatsAppService] fetchOrders error:', err);
+      return { orders: [] };
+    }
   },
 
   /**
@@ -147,7 +170,7 @@ export const whatsappService = {
       if (isDisposed) return;
 
       try {
-        eventSource = new EventSource('/events');
+        eventSource = new EventSource(getApiUrl('/events'));
 
         eventSource.onmessage = (e) => {
           try {

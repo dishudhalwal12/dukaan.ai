@@ -244,10 +244,30 @@ const AppContent: React.FC = () => {
     };
   }, []);
 
-  // Real-time WhatsApp Baileys SSE listener: chime, instant order popup, auto-reconnect
+  // Sync real orders from WhatsApp backend on mount
   useEffect(() => {
-    if (!isInteractionDone) return;
+    whatsappService.fetchOrders().then(res => {
+      if (res?.orders && res.orders.length > 0) {
+        const backendOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+        setOrders(prev => {
+          const prevIds = new Set(prev.map(p => p.id));
+          const toAdd = backendOrders.filter(b => !prevIds.has(b.id));
+          if (toAdd.length === 0) {
+            return prev.map(p => {
+              const matched = backendOrders.find(b => b.id === p.id);
+              return matched ? { ...p, status: matched.status } : p;
+            });
+          }
+          return [...toAdd, ...prev];
+        });
+      }
+    }).catch(err => {
+      console.warn('[Dukan] Failed to fetch backend orders on mount:', err);
+    });
+  }, [normalizeIncomingOrder]);
 
+  // Real-time WhatsApp Baileys SSE listener + 2.5s robust polling fallback
+  useEffect(() => {
     const unsubscribe = whatsappService.subscribeToEvents((event: WhatsAppEvent) => {
       if (event.type === 'dukan_new_order' && event.order) {
         const incomingOrder = normalizeIncomingOrder(event.order);
@@ -286,10 +306,43 @@ const AppContent: React.FC = () => {
       }
     });
 
+    // 2.5s polling fallback to ensure 100% delivery guarantee
+    const pollInterval = setInterval(() => {
+      whatsappService.fetchOrders().then(res => {
+        if (!res?.orders || !Array.isArray(res.orders)) return;
+        const freshOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+
+        for (const order of freshOrders) {
+          if (order.status === OrderStatus.NEW && !seenOrderIds.current.has(order.id)) {
+            console.log(`[Dukan Polling] Detected new order #${order.id} from ${order.customer?.name}`);
+            playOrderChime();
+            seenOrderIds.current.add(order.id);
+            localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+            setTimeout(() => {
+              setNewOrderForPopup(order);
+            }, 0);
+          }
+        }
+
+        setOrders(prev => {
+          const prevIds = new Set(prev.map(p => p.id));
+          const toAdd = freshOrders.filter(b => !prevIds.has(b.id));
+          if (toAdd.length === 0) {
+            return prev.map(p => {
+              const matched = freshOrders.find(b => b.id === p.id);
+              return matched ? { ...p, status: matched.status } : p;
+            });
+          }
+          return [...toAdd, ...prev];
+        });
+      }).catch(() => {});
+    }, 2500);
+
     return () => {
       unsubscribe();
+      clearInterval(pollInterval);
     };
-  }, [isInteractionDone, normalizeIncomingOrder]);
+  }, [normalizeIncomingOrder]);
 
   const renderScreen = () => {
     switch (activeScreen) {

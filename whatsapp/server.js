@@ -10,7 +10,7 @@ import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
-import { dukanBot } from './dukanBot.js';
+import { dukanBot, resolvePhoneNumber } from './dukanBot.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -33,7 +33,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const AUTH_DIR = path.resolve(process.cwd(), process.env.AUTH_DIR || './auth_info');
+const AUTH_DIR = path.resolve(__dirname, process.env.AUTH_DIR || './auth_info');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
 app.use(cors());
@@ -297,11 +297,12 @@ async function initWhatsApp() {
           const isGroup = remoteJid.endsWith('@g.us');
           const pushName = msg.pushName || '';
           const timestamp = Number(msg.messageTimestamp) * 1000 || Date.now();
+          const customerPhone = resolvePhoneNumber(remoteJid, AUTH_DIR);
 
           const messageRecord = {
             id: msg.key.id,
             remoteJid,
-            from: remoteJid.replace(/@.*$/, ''),
+            from: customerPhone || remoteJid.replace(/@.*$/, ''),
             fromMe,
             senderJid: msg.key.participant || remoteJid,
             pushName,
@@ -335,7 +336,7 @@ async function initWhatsApp() {
                   const botReplyRecord = {
                     id: replyResult?.key?.id || ('bot-' + Date.now()),
                     remoteJid,
-                    from: remoteJid.replace(/@.*$/, ''),
+                    from: customerPhone || remoteJid.replace(/@.*$/, ''),
                     fromMe: true,
                     pushName: 'Dukan Assistant',
                     text: botResult.reply,
@@ -348,7 +349,12 @@ async function initWhatsApp() {
                 }
 
                 if (botResult?.newOrder) {
-                  console.log(`\n🛎️ [Dukan] NEW ORDER PLACED! Order #${botResult.newOrder.id} from ${botResult.newOrder.customerName} (₹${botResult.newOrder.totalAmount})`);
+                  console.log(`\n🛎️ [Dukan] NEW ORDER CREATED & BROADCAST!`);
+                  console.log(`   Order ID: #${botResult.newOrder.id}`);
+                  console.log(`   Customer: ${botResult.newOrder.customerName} (${botResult.newOrder.customerPhone})`);
+                  console.log(`   Address:  ${botResult.newOrder.deliveryAddress}`);
+                  console.log(`   Items:    ${(botResult.newOrder.items || []).map(it => `${it.quantity}x ${it.name} (₹${it.price || 0})`).join(', ')}`);
+                  console.log(`   Total:    ₹${botResult.newOrder.totalAmount}\n`);
                   broadcastSSE({
                     type: 'dukan_new_order',
                     order: botResult.newOrder,
