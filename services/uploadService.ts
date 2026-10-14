@@ -47,17 +47,17 @@ const createOrderFromItems = (items: OrderItem[], orderIdSuffix?: string): Order
   };
 };
 
-const callGeminiWithTimeout = async (prompt: string, timeoutMs: number = 3000): Promise<OrderItem[]> => {
+const callGeminiWithTimeout = async (prompt: string, timeoutMs: number = 15000): Promise<OrderItem[]> => {
   const systemInstruction = `You are a data extraction assistant. Extract shopping receipt items from the provided text.
 Return ONLY a valid JSON array of objects. No markdown. Each object must have "name" (string), "quantity" (number), and "price" (string).`;
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error('Gemini API timeout')), timeoutMs)
+    setTimeout(() => reject(new Error('AI API timeout')), timeoutMs)
   );
 
   const fetchPromise = withGeminiFailover((client) =>
     client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
       contents: prompt,
       config: {
         systemInstruction,
@@ -80,7 +80,7 @@ Return ONLY a valid JSON array of objects. No markdown. Each object must have "n
   }));
 };
 
-const callGeminiVisionWithTimeout = async (file: File, timeoutMs: number = 3000): Promise<OrderItem[]> => {
+const callGeminiVisionWithTimeout = async (file: File, timeoutMs: number = 20000): Promise<OrderItem[]> => {
     const base64Data = await fileToBase64(file);
     const mimeType = file.type || "image/jpeg";
 
@@ -92,7 +92,7 @@ Each object in the array must have ONLY these three keys:
 
     const fetchPromise = withGeminiFailover((client) =>
       client.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
         contents: [
           {
             inlineData: {
@@ -110,7 +110,7 @@ Each object in the array must have ONLY these three keys:
     );
   
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini Vision API timeout')), timeoutMs)
+      setTimeout(() => reject(new Error('AI Vision API timeout')), timeoutMs)
     );
   
     const response = await Promise.race([fetchPromise, timeoutPromise]);
@@ -224,12 +224,12 @@ Each order object MUST have "id", "customer" (object), "items" (array), "total" 
 Each item within "items" MUST have "productId", "name" (string), "quantity" (number), "price" (string). Ensure order IDs and structures are perfectly preserved.`;
 
             const timeoutPromise = new Promise<never>((_, rej) =>
-              setTimeout(() => rej(new Error('Gemini API timeout')), 3000)
+              setTimeout(() => rej(new Error('AI API timeout')), 15000)
             );
 
             const fetchPromise = withGeminiFailover((client) =>
               client.models.generateContent({
-                model: "gemini-2.5-flash",
+                model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
                 contents: `Normalize these orders: ${rawJsonString}`,
                 config: {
                   systemInstruction,
@@ -249,7 +249,7 @@ Each item within "items" MUST have "productId", "name" (string), "quantity" (num
                  return;
             }
         } catch (geminiError) {
-             console.warn("CSV Normalization via Gemini failed/timed out, falling back to raw PapaParse parsed grouped orders", geminiError);
+             console.warn("CSV Normalization via OpenRouter failed/timed out, falling back to raw PapaParse parsed grouped orders", geminiError);
         }
 
         // Fallback: Use Raw PapaParse output

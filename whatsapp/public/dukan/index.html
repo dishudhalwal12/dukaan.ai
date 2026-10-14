@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dukan — Shopkeeper Live Orders Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="dukan-theme">
+
+  <!-- Top Navigation Bar -->
+  <header class="dukan-header">
+    <div class="header-left">
+      <div class="dukan-logo">
+        <span class="dukan-icon">🏪</span>
+        <div>
+          <h1 class="dukan-title">DUKAN</h1>
+          <span class="dukan-subtitle">Live Shopkeeper POS</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div id="connectionPill" class="status-pill status-connected">
+        <span class="dot"></span>
+        <span id="connectionText">WhatsApp Connected</span>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button id="btnSoundToggle" class="btn btn-icon" title="Toggle Sound Alert">
+        <span id="soundIcon">🔔</span>
+      </button>
+      <button id="btnOpenAiModal" class="btn btn-secondary">
+        🤖 AI Model: <span id="headerAiStatus" style="color: #f59e0b; margin-left: 4px;">Free Engine</span>
+      </button>
+      <button id="btnSimulateOrder" class="btn btn-warning-soft">
+        ⚡ Test Order Popup
+      </button>
+      <a href="/" class="btn btn-secondary" title="Switch to WhatsApp Chat view">
+        💬 Chats
+      </a>
+    </div>
+  </header>
+
+  <!-- Metrics / Quick Bar -->
+  <section class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">Pending Orders</div>
+      <div class="stat-value text-warning" id="statPendingCount">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active / Preparing</div>
+      <div class="stat-value text-info" id="statActiveCount">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Delivered Today</div>
+      <div class="stat-value text-success" id="statDeliveredCount">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Revenue</div>
+      <div class="stat-value text-primary" id="statRevenue">₹0</div>
+    </div>
+  </section>
+
+  <!-- Main View Tabs -->
+  <nav class="nav-tabs">
+    <button id="tabOrders" class="tab-btn active">📦 Live Orders (<span id="tabOrderCount">0</span>)</button>
+    <button id="tabCatalog" class="tab-btn">🏷️ Products & Catalog (<span id="tabCatalogCount">16</span>)</button>
+  </nav>
+
+  <!-- TAB 1: LIVE ORDERS VIEW -->
+  <main id="viewOrders" class="view-content active">
+    <div class="view-header">
+      <div class="filter-pills">
+        <button class="filter-pill active" data-filter="ALL">All</button>
+        <button class="filter-pill" data-filter="PENDING">Pending Action <span class="badge" id="badgePending">0</span></button>
+        <button class="filter-pill" data-filter="ACCEPTED">Accepted / Preparing</button>
+        <button class="filter-pill" data-filter="OUT_FOR_DELIVERY">Out for Delivery</button>
+        <button class="filter-pill" data-filter="DELIVERED">Delivered</button>
+      </div>
+      <button id="btnRefreshOrders" class="btn btn-sm btn-secondary">🔄 Refresh</button>
+    </div>
+
+    <div id="ordersGrid" class="orders-grid">
+      <!-- Order cards injected by JS -->
+      <div class="empty-state">
+        <span class="empty-icon">📭</span>
+        <h3>No orders received yet</h3>
+        <p>When customers message your WhatsApp number, orders appear here in real-time!</p>
+        <button class="btn btn-primary" onclick="triggerTestOrder()">Click to Simulate an Order</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- TAB 2: CATALOG MANAGEMENT VIEW -->
+  <main id="viewCatalog" class="view-content">
+    <div class="view-header">
+      <input type="text" id="catalogSearch" placeholder="Search Maggi, Bread, Milk..." class="input-search">
+      <button id="btnOpenAddProduct" class="btn btn-primary">➕ Add New Product</button>
+    </div>
+
+    <div id="catalogGrid" class="catalog-grid">
+      <!-- Catalog cards injected by JS -->
+    </div>
+  </main>
+
+  <!-- ================= POP-UP MODAL: INCOMING ORDER ALERT ================= -->
+  <div id="newOrderModal" class="modal-overlay hidden">
+    <div class="modal-card modal-alert-card">
+      <div class="modal-alert-header">
+        <div class="alert-pulse">🔔</div>
+        <div>
+          <h2 class="alert-title">NEW ORDER INCOMING!</h2>
+          <span class="alert-subtitle" id="modalOrderTimestamp">Just now</span>
+        </div>
+      </div>
+
+      <div class="modal-alert-body">
+        <div class="order-id-badge" id="modalOrderId">#DKN-1001</div>
+
+        <div class="customer-info-box">
+          <div class="info-row">
+            <span class="label">👤 Customer:</span>
+            <span class="val font-bold" id="modalCustomerName">Rahul Sharma</span>
+          </div>
+          <div class="info-row">
+            <span class="label">📞 Mobile:</span>
+            <span class="val" id="modalCustomerPhone">+91 9256487182</span>
+          </div>
+          <div class="info-row address-row">
+            <span class="label">📍 Address:</span>
+            <span class="val font-bold text-accent" id="modalDeliveryAddress">Flat 302, Green Valley Apartments</span>
+          </div>
+        </div>
+
+        <div class="items-list-box">
+          <div class="items-list-title">Ordered Items:</div>
+          <div id="modalOrderItems" class="items-list-content">
+            <!-- Items injected by JS -->
+          </div>
+        </div>
+
+        <div class="order-total-bar">
+          <span>Total to Collect (COD/UPI):</span>
+          <span class="total-price" id="modalOrderTotal">₹75</span>
+        </div>
+      </div>
+
+      <div class="modal-alert-actions">
+        <button id="btnAcceptOrder" class="btn btn-success btn-lg btn-block">
+          ✅ ACCEPT ORDER (Notify Customer)
+        </button>
+        <button id="btnRejectOrder" class="btn btn-danger-soft btn-block">
+          ❌ Reject / Out of Stock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD PRODUCT MODAL -->
+  <div id="addProductModal" class="modal-overlay hidden">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h3>Add Product to Dukan</h3>
+        <button class="btn-close" id="btnCloseAddProduct">&times;</button>
+      </div>
+      <form id="addProductForm" class="modal-body">
+        <div class="form-group">
+          <label>Product Name</label>
+          <input type="text" id="addProdName" placeholder="e.g. Maggi Veg Atta Noodles" required class="input-field">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Price (₹)</label>
+            <input type="number" id="addProdPrice" placeholder="25" required class="input-field">
+          </div>
+          <div class="form-group">
+            <label>Unit / Size</label>
+            <input type="text" id="addProdUnit" placeholder="72.5g pack" required class="input-field">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="addProdCategory" class="input-field">
+            <option value="Snacks">Snacks</option>
+            <option value="Dairy">Dairy</option>
+            <option value="Bakery">Bakery</option>
+            <option value="Beverages">Beverages</option>
+            <option value="Biscuits">Biscuits</option>
+            <option value="Groceries">Groceries</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Save to Catalog</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- AI SETTINGS MODAL -->
+  <div id="aiSettingsModal" class="modal-overlay hidden">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h3>🤖 OpenRouter AI Configuration</h3>
+        <button class="btn-close" id="btnCloseAiModal">&times;</button>
+      </div>
+      <form id="aiSettingsForm" class="modal-body">
+        <p style="font-size: 0.85rem; color: #8b949e; line-height: 1.5; margin-bottom: 14px;">
+          Empower Dukan with OpenRouter's LLMs to chat like an authentic, real-human neighborhood shopkeeper with full catalog awareness.
+        </p>
+
+        <div class="form-group">
+          <label>OpenRouter API Key:</label>
+          <input type="password" id="inputOpenRouterKey" placeholder="sk-or-v1-..." class="input-field">
+          <span style="font-size: 0.75rem; color: #8b949e; margin-top: 4px; display: block;">
+            Get your key from <a href="https://openrouter.ai/keys" target="_blank" style="color: #38bdf8;">openrouter.ai/keys</a>
+          </span>
+        </div>
+
+        <div class="form-group">
+          <label>Model ID:</label>
+          <input type="text" id="inputOpenRouterModel" value="openrouter/free" placeholder="openrouter/free" class="input-field" required>
+          <span style="font-size: 0.75rem; color: #8b949e; margin-top: 4px; display: block;">
+            Default: <code>openrouter/free</code> (Auto routes to best free model)
+          </span>
+        </div>
+
+        <div id="aiSaveStatus" style="font-size: 0.82rem; margin-bottom: 10px;"></div>
+
+        <div style="display: flex; gap: 8px;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Save AI Settings</button>
+          <button type="button" id="btnTestAiConnection" class="btn btn-secondary">⚡ Test Ping</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

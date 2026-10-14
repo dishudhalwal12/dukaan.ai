@@ -1,0 +1,6 @@
+node_modules/
+store/temp_audio/
+auth_info/
+*.log
+wa-logs.txt
+.DS_Store

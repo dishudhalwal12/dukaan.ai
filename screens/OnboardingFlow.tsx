@@ -137,7 +137,7 @@ const BusinessContextStep: React.FC<{
     const fetchGeminiData = async () => {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1500);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const userName = sanitizeForPrompt(localStorage.getItem('dukan-profile-name') || 'the owner');
         const safeCategory = sanitizeForPrompt(details.storeCategory);
@@ -147,7 +147,7 @@ const BusinessContextStep: React.FC<{
 
         const response = await withGeminiFailover((client) =>
           client.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || 'liquid/lfm-2.5-2.6b:free',
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -165,7 +165,7 @@ const BusinessContextStep: React.FC<{
           }
         }
       } catch (e) {
-        console.warn('Gemini AI SDK failed, falling back to preset', e);
+        console.warn('OpenRouter AI failed, falling back to preset', e);
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -346,7 +346,7 @@ Return format:
 
       const response = await withGeminiFailover((client) =>
         client.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || 'liquid/lfm-2.5-2.6b:free',
           contents: prompt,
           config: { responseMimeType: 'application/json' },
         })

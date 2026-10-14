@@ -12,6 +12,14 @@ export default defineConfig(({ mode }) => {
           '/webhook': {
             target: 'http://localhost:5679',
             changeOrigin: true,
+            configure: (proxy) => {
+              proxy.on('error', (_err, _req, res) => {
+                if ('writeHead' in res && !(res as any).headersSent) {
+                  (res as any).writeHead(204, { 'Content-Type': 'application/json' });
+                  (res as any).end(JSON.stringify({ status: 'offline' }));
+                }
+              });
+            }
           }
         }
       },
@@ -19,8 +27,10 @@ export default defineConfig(({ mode }) => {
       publicDir: 'public',
       base: '/',
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.OPENROUTER_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.OPENROUTER_API_KEY': JSON.stringify(env.OPENROUTER_API_KEY || env.VITE_OPENROUTER_API_KEY),
+        'process.env.OPENROUTER_MODEL': JSON.stringify(env.OPENROUTER_MODEL || env.VITE_OPENROUTER_MODEL || 'liquid/lfm-2.5-2.6b:free')
       },
       resolve: {
         alias: {

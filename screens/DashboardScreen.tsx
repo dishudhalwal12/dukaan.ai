@@ -16,9 +16,9 @@ const InsightCard: React.FC<{
     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2D2D2D]">
       <span className="material-symbols-outlined text-2xl text-[#E6E6FA]">{icon}</span>
     </div>
-    <div className="flex flex-1 flex-col gap-1.5">
-      <p className="text-base font-bold leading-tight text-white">{title}</p>
-      <p className="text-sm font-normal leading-normal text-neutral-400">{description}</p>
+    <div className="flex flex-1 flex-col gap-1.5 min-w-0">
+      <p className="text-base font-bold leading-tight text-white truncate">{title}</p>
+      <p className="text-sm font-normal leading-snug text-neutral-400 line-clamp-3 overflow-hidden break-words">{description}</p>
     </div>
   </div>
 );
@@ -99,12 +99,6 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           <h1 className="text-xl font-bold tracking-tight text-white">
             {storeName || t('dashboard_title')}
           </h1>
-          {storeName && (
-            <span className="mt-0.5 flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 border border-emerald-500/20 text-[10px] font-bold tracking-wider text-emerald-400 uppercase shadow-[0_0_10px_rgba(16,185,129,0.1)]">
-              <span className="material-symbols-outlined" style={{ fontSize: '13px', lineHeight: 1 }}>storefront</span>
-              powered by dukaan.ai
-            </span>
-          )}
         </div>
         <div className="flex w-12 items-center justify-end">
           <button onClick={toggleUploadMenu} className="flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#E6E6FA] text-black">
@@ -172,6 +166,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
                 {isLoadingInsights && Array.from({ length: Math.max(0, 5 - insights.length) }).map((_, index) => (
                   <InsightSkeleton key={`skel-${index}`} />
                 ))}
+                {!isLoadingInsights && insights.length === 0 && (
+                  <div className="flex flex-col items-center justify-center p-6 bg-[#1A1A1A] rounded-xl text-center border border-[#2D2D2D]">
+                    <span className="material-symbols-outlined text-3xl text-neutral-400 mb-2">auto_awesome</span>
+                    <p className="text-sm font-semibold text-white mb-1">No insights generated yet</p>
+                    <p className="text-xs text-neutral-400 mb-3">Tap refresh to analyze your store catalog.</p>
+                    <button
+                      onClick={refreshInsights}
+                      className="px-4 py-1.5 bg-[#E6E6FA] text-black text-xs font-semibold rounded-lg hover:bg-white transition-colors"
+                    >
+                      Generate Insights
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>
