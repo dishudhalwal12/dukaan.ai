@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '../services/auth.ts';
+import { claimUnassignedRecords, syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 
 interface AuthModalProps {
@@ -41,6 +42,21 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       : await signInWithEmail(email, password);
 
     if (result.user) {
+      // 1. Immediately cache user ID and email
+      localStorage.setItem('dukan-auth-user', JSON.stringify({
+        id: result.user.id,
+        email: result.user.email,
+      }));
+      localStorage.removeItem('dukan-guest-mode');
+
+      // 2. Explicitly claim unassigned records and sync under this user's UUID
+      try {
+        await claimUnassignedRecords(result.user.id);
+        await syncOnLogin([], [], result.user);
+      } catch (err) {
+        console.warn('Post-email auth sync error:', err);
+      }
+
       onSuccess();
     } else {
       setError(

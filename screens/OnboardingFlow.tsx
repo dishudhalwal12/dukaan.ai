@@ -103,7 +103,7 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
               {businessPresets.map((preset) => (
                 <option key={preset.key} className="bg-[#1A1A1A] text-white" value={preset.displayName}>{preset.displayName}</option>
               ))}
-              <option className="bg-[#1A1A1A] text-white" value="Other">Other</option>
+              <option className="bg-[#1A1A1A] text-white" value="Other Grocery">Other Grocery</option>
             </select>
           </div>
         </div>

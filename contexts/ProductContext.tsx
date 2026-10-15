@@ -3,7 +3,7 @@ import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
 import { generateDynamicInsights } from '../services/ai.ts';
-import { syncProductsToCloud } from '../services/cloudSync.ts';
+import { syncProductsToCloud, deleteProductFromCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 
 interface ProductContextType {
@@ -52,7 +52,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
       const storedProducts = localStorage.getItem('dukan-products');
       const seededForCategory = localStorage.getItem('dukaan-catalog-seeded-for');
       const category = localStorage.getItem('dukan-store-category');
-      const isOther = category === 'Other' || category === 'category_other';
+      const isOther = category === 'Other' || category === 'Other Grocery' || category === 'category_other';
 
       // ── FIREWALL: "Other" category has its own sealed seeding path ──────────
       // We NEVER use initialProducts (grocery) for "Other".
@@ -203,6 +203,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const deleteProduct = (productId: string) => {
     setProducts(prevProducts => prevProducts.filter(p => p.id !== productId));
+    deleteProductFromCloud(productId);
   };
   
   const loadProducts = useCallback((newProducts: Product[]) => {

@@ -3,6 +3,33 @@ import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 
 /**
+ * Helper to resolve the active user ID from explicit argument, Supabase session,
+ * or localStorage cached auth state (dukan-auth-user).
+ */
+export const resolveActiveUserId = async (explicitUserId?: string): Promise<string | null> => {
+  if (explicitUserId) return explicitUserId;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) return session.user.id;
+  } catch (e) {
+    // Ignore error
+  }
+
+  try {
+    const cached = localStorage.getItem('dukan-auth-user');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed?.id) return parsed.id;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+
+  return null;
+};
+
+/**
  * Claims any rows in business_profiles, products, or orders that were created
  * during guest onboarding (where user_id IS NULL) and links them to this user.
  */
@@ -17,8 +44,7 @@ export const claimUnassignedRecords = async (userId: string): Promise<void> => {
       await supabase
         .from('business_profiles')
         .update({ user_id: userId, updated_at: new Date().toISOString() })
-        .eq('id', docId)
-        .is('user_id', null);
+        .eq('id', docId);
     }
 
     // Link unassigned products
@@ -41,7 +67,7 @@ export const claimUnassignedRecords = async (userId: string): Promise<void> => {
 
 /**
  * Safely saves the business profile to Supabase database without blocking the UI.
- * Associates record with user_id if user is logged in.
+ * Associates record with user_id if user is logged in or cached.
  */
 export const saveBusinessProfileToCloud = async (
   storeName: string, 
@@ -55,13 +81,7 @@ export const saveBusinessProfileToCloud = async (
       return;
     }
 
-    let userId = explicitUserId ?? null;
-    if (!userId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id ?? null;
-    }
-
-    // Consistent docId based on store name slug
+    const userId = await resolveActiveUserId(explicitUserId);
     const docId = storeName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
 
     const { error } = await supabase
@@ -80,7 +100,7 @@ export const saveBusinessProfileToCloud = async (
       console.log(`Business profile saved in Supabase for user: ${userId || 'guest'}`);
     }
 
-    // Ensure any previously null user_id row with this docId is claimed
+    // Ensure any existing record for this store ID is claimed by userId
     if (userId) {
       await supabase
         .from('business_profiles')
@@ -100,8 +120,7 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
   try {
     if (!isSupabaseConfigured()) return null;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id;
+    const userId = await resolveActiveUserId();
 
     if (userId) {
       const { data, error } = await supabase
@@ -146,11 +165,7 @@ export const syncProductsToCloud = async (
     if (!products || products.length === 0) return;
     if (!isSupabaseConfigured()) return;
 
-    let userId = explicitUserId ?? null;
-    if (!userId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id ?? null;
-    }
+    const userId = await resolveActiveUserId(explicitUserId);
 
     const rows = products.map(product => ({
       id: product.id,
@@ -178,19 +193,41 @@ export const syncProductsToCloud = async (
 };
 
 /**
+ * Deletes a product from the Supabase database.
+ */
+export const deleteProductFromCloud = async (productId: string): Promise<void> => {
+  try {
+    if (!productId || !isSupabaseConfigured()) return;
+
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId);
+
+    if (error) {
+      console.warn('Supabase DB Error (deleteProductFromCloud):', error.message);
+    } else {
+      console.log('Successfully deleted product from Supabase cloud:', productId);
+    }
+  } catch (error) {
+    console.warn('Failed to delete product from Supabase database.', error);
+  }
+};
+
+/**
  * Fetches products from Supabase database for the active user.
  */
 export const fetchProductsFromCloud = async (): Promise<Product[] | null> => {
   try {
     if (!isSupabaseConfigured()) return null;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) return null;
+    const userId = await resolveActiveUserId();
+    if (!userId) return null;
 
     const { data, error } = await supabase
       .from('products')
       .select('*')
-      .eq('user_id', session.user.id);
+      .eq('user_id', userId);
 
     if (error) {
       console.warn('Supabase DB Error (fetchProductsFromCloud):', error.message);
@@ -224,11 +261,7 @@ export const syncOrdersToCloud = async (
     if (!orders || orders.length === 0) return;
     if (!isSupabaseConfigured()) return;
 
-    let userId = explicitUserId ?? null;
-    if (!userId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id ?? null;
-    }
+    const userId = await resolveActiveUserId(explicitUserId);
 
     const rows = orders.map(order => ({
       id: order.id,
@@ -263,13 +296,13 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
   try {
     if (!isSupabaseConfigured()) return null;
 
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) return null;
+    const userId = await resolveActiveUserId();
+    if (!userId) return null;
 
     const { data, error } = await supabase
       .from('orders')
       .select('*')
-      .eq('user_id', session.user.id)
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -311,12 +344,7 @@ export const syncOnLogin = async (
       return { profile: null, products: null, orders: null };
     }
 
-    let userId = loggedInUser?.id;
-    if (!userId) {
-      const { data: { session } } = await supabase.auth.getSession();
-      userId = session?.user?.id;
-    }
-
+    const userId = await resolveActiveUserId(loggedInUser?.id);
     if (!userId) {
       console.warn('syncOnLogin: no active user ID');
       return { profile: null, products: null, orders: null };
@@ -348,7 +376,7 @@ export const syncOnLogin = async (
       };
     }
 
-    // Otherwise, first-time Google sign-in:
+    // Otherwise, first-time sign-in / registration:
     // Persist current store details, products, and orders under the user's UUID!
     const storeName = localStorage.getItem('dukan-store-name') || 'My Store';
     const storeContext = localStorage.getItem('dukan-store-context');
@@ -358,7 +386,7 @@ export const syncOnLogin = async (
       const profileData = {
         storeDetails: {
           storeName,
-          category: category || 'Grocery',
+          category: category || 'Kirana / General Store',
         },
         answers: storeContext ? JSON.parse(storeContext) : {},
         timestamp: new Date().toISOString()

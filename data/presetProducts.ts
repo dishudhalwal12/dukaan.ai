@@ -1,11 +1,20 @@
 import { Product } from '../types.ts';
 
 /**
- * Maps business displayName (stored in localStorage 'dukan-store-category')
- * → 6 realistic branded Indian products for that business type.
+ * Maps Kirana & Grocery business displayNames (stored in localStorage 'dukan-store-category')
+ * → realistic branded Indian products for that category.
  * Used to seed the catalog on first launch so the inventory is relevant.
  */
 export const presetProductsByDisplayName: Record<string, Product[]> = {
+  'Kirana / General Store': [
+    { id: 'kirana_1', name: 'Maggi 2-Minute Noodles (70g)', price: '₹15', stock: 120, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1585703900468-13c7a978ad86?w=600&h=600&fit=crop' },
+    { id: 'kirana_2', name: 'Tata Salt Vaccum Evaporated (1kg)', price: '₹28', stock: 80, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1576791128879-1e6a6d2c9f71?w=600&h=600&fit=crop' },
+    { id: 'kirana_3', name: 'Aashirvaad Shudh Chakki Atta (5kg)', price: '₹245', stock: 35, stockUnit: 'bags', imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&h=600&fit=crop' },
+    { id: 'kirana_4', name: 'Fortune Sunlite Sunflower Oil (1L)', price: '₹165', stock: 24, stockUnit: 'pouches', imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=600&h=600&fit=crop' },
+    { id: 'kirana_5', name: 'Parle-G Gold Biscuits (1kg)', price: '₹85', stock: 60, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&h=600&fit=crop' },
+    { id: 'kirana_6', name: 'Tata Tea Premium (500g)', price: '₹290', stock: 40, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&h=600&fit=crop' },
+  ],
+
   'Grocery / Kirana': [
     { id: 'groc_1', name: 'Maggi 2-Minute Noodles', price: '₹15', stock: 100, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1585703900468-13c7a978ad86?w=600&h=600&fit=crop' },
     { id: 'groc_2', name: 'Amul Gold Milk (1L)', price: '₹68', stock: 30, stockUnit: 'cartons', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=600&h=600&fit=crop' },
@@ -15,66 +24,37 @@ export const presetProductsByDisplayName: Record<string, Product[]> = {
     { id: 'groc_6', name: 'Colgate Max Fresh Toothpaste', price: '₹55', stock: 40, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1605492453965-9e2a4c74df4c?w=600&h=600&fit=crop' },
   ],
 
-  'Restaurant': [
-    { id: 'rest_1', name: 'Butter Chicken', price: '₹350', stock: 40, stockUnit: 'portions', imageUrl: 'https://images.unsplash.com/photo-1603894584373-5ac82b2ae39f?w=600&h=600&fit=crop' },
-    { id: 'rest_2', name: 'Paneer Tikka', price: '₹280', stock: 25, stockUnit: 'portions', imageUrl: 'https://images.unsplash.com/photo-1599487405620-8e10696515b2?w=600&h=600&fit=crop' },
-    { id: 'rest_3', name: 'Garlic Naan', price: '₹60', stock: 150, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc0?w=600&h=600&fit=crop' },
-    { id: 'rest_4', name: 'Dal Makhani', price: '₹220', stock: 30, stockUnit: 'portions', imageUrl: 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=600&h=600&fit=crop' },
-    { id: 'rest_5', name: 'Veg Fried Rice', price: '₹180', stock: 35, stockUnit: 'portions', imageUrl: 'https://images.unsplash.com/photo-1512058556646-c4da40fba323?w=600&h=600&fit=crop' },
-    { id: 'rest_6', name: 'Mango Lassi', price: '₹80', stock: 50, stockUnit: 'glasses', imageUrl: 'https://images.unsplash.com/photo-1570696516188-ade861b84a49?w=600&h=600&fit=crop' },
+  'Fruits & Vegetables': [
+    { id: 'fv_1', name: 'Fresh Robusta Bananas (1 Dozen)', price: '₹60', stock: 45, stockUnit: 'dozens', imageUrl: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=600&h=600&fit=crop' },
+    { id: 'fv_2', name: 'Farm Fresh Tomatoes (1kg)', price: '₹35', stock: 60, stockUnit: 'kg', imageUrl: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?w=600&h=600&fit=crop' },
+    { id: 'fv_3', name: 'Shimla Royal Apples (1kg)', price: '₹140', stock: 30, stockUnit: 'kg', imageUrl: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=600&h=600&fit=crop' },
+    { id: 'fv_4', name: 'Nashik Red Onions (1kg)', price: '₹40', stock: 80, stockUnit: 'kg', imageUrl: 'https://images.unsplash.com/photo-1618512496248-a07fe83aa8cb?w=600&h=600&fit=crop' },
+    { id: 'fv_5', name: 'Fresh Green Potatoes (1kg)', price: '₹30', stock: 90, stockUnit: 'kg', imageUrl: 'https://images.unsplash.com/photo-1518977676601-b53f82aba655?w=600&h=600&fit=crop' },
+    { id: 'fv_6', name: 'Nagpur Oranges (1kg)', price: '₹90', stock: 25, stockUnit: 'kg', imageUrl: 'https://images.unsplash.com/photo-1547514701-42782101795e?w=600&h=600&fit=crop' },
   ],
 
-  'Cafe': [
-    { id: 'cafe_1', name: 'Cappuccino', price: '₹150', stock: 60, stockUnit: 'cups', imageUrl: 'https://images.unsplash.com/photo-1572442388796-11668a67efec?w=600&h=600&fit=crop' },
-    { id: 'cafe_2', name: 'Iced Latte', price: '₹180', stock: 45, stockUnit: 'cups', imageUrl: 'https://images.unsplash.com/photo-1517701550927-30cf4ba1dba5?w=600&h=600&fit=crop' },
-    { id: 'cafe_3', name: 'Chocolate Croissant', price: '₹120', stock: 20, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1549903072-7e6e0d65bd0f?w=600&h=600&fit=crop' },
-    { id: 'cafe_4', name: 'Blueberry Muffin', price: '₹90', stock: 15, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1608039829572-78524f79c4c7?w=600&h=600&fit=crop' },
-    { id: 'cafe_5', name: 'Cold Brew Coffee', price: '₹200', stock: 12, stockUnit: 'cups', imageUrl: 'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=600&h=600&fit=crop' },
-    { id: 'cafe_6', name: 'Cheese Sandwich', price: '₹140', stock: 25, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1528736235302-52922df5c122?w=600&h=600&fit=crop' },
+  'Dairy & Milk Booth': [
+    { id: 'dairy_1', name: 'Amul Taaza Homogenised Milk (500ml)', price: '₹27', stock: 70, stockUnit: 'packets', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=600&h=600&fit=crop' },
+    { id: 'dairy_2', name: 'Mother Dairy Classic Dahi (400g)', price: '₹35', stock: 45, stockUnit: 'cups', imageUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&h=600&fit=crop' },
+    { id: 'dairy_3', name: 'Amul Pasteurized Salted Butter (100g)', price: '₹58', stock: 50, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=600&h=600&fit=crop' },
+    { id: 'dairy_4', name: 'Fresh Malai Paneer Block (200g)', price: '₹90', stock: 30, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc0?w=600&h=600&fit=crop' },
+    { id: 'dairy_5', name: 'Amul Processed Cheese Slices (200g)', price: '₹140', stock: 20, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1618164435735-413d3b066c9a?w=600&h=600&fit=crop' },
+    { id: 'dairy_6', name: 'Amul Pure Cow Ghee (500ml)', price: '₹340', stock: 15, stockUnit: 'jars', imageUrl: 'https://images.unsplash.com/photo-1589985270826-4b7bb135bc9d?w=600&h=600&fit=crop' },
   ],
 
-  'Salon': [
-    { id: 'salon_1', name: "Men's Haircut", price: '₹250', stock: 20, stockUnit: 'slots', imageUrl: 'https://images.unsplash.com/photo-1582095133179-bfd08e2f108c?w=600&h=600&fit=crop' },
-    { id: 'salon_2', name: "Women's Haircut & Styling", price: '₹600', stock: 15, stockUnit: 'slots', imageUrl: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?w=600&h=600&fit=crop' },
-    { id: 'salon_3', name: 'Beard Trim & Shaping', price: '₹150', stock: 25, stockUnit: 'slots', imageUrl: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=600&h=600&fit=crop' },
-    { id: 'salon_4', name: 'L\'Oreal Hair Color', price: '₹1200', stock: 12, stockUnit: 'sessions', imageUrl: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?w=600&h=600&fit=crop' },
-    { id: 'salon_5', name: 'VLCC Basic Facial', price: '₹800', stock: 8, stockUnit: 'slots', imageUrl: 'https://images.unsplash.com/photo-1570172619644-defd8820bd28?w=600&h=600&fit=crop' },
-    { id: 'salon_6', name: 'Manicure & Pedicure', price: '₹600', stock: 10, stockUnit: 'slots', imageUrl: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?w=600&h=600&fit=crop' },
+  'Daily Essentials & Packaged Goods': [
+    { id: 'fmcg_1', name: 'Dettol Original Germ Protection Soap (125g)', price: '₹55', stock: 90, stockUnit: 'bars', imageUrl: 'https://images.unsplash.com/photo-1605492453965-9e2a4c74df4c?w=600&h=600&fit=crop' },
+    { id: 'fmcg_2', name: 'Surf Excel Easy Wash Detergent (1kg)', price: '₹140', stock: 40, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?w=600&h=600&fit=crop' },
+    { id: 'fmcg_3', name: 'Colgate MaxFresh Spicy Fresh Gel (150g)', price: '₹110', stock: 55, stockUnit: 'tubes', imageUrl: 'https://images.unsplash.com/photo-1559599101-f09722fb4948?w=600&h=600&fit=crop' },
+    { id: 'fmcg_4', name: 'Vim Lemon Dishwash Bar (300g)', price: '₹30', stock: 110, stockUnit: 'bars', imageUrl: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?w=600&h=600&fit=crop' },
+    { id: 'fmcg_5', name: 'Head & Shoulders Cool Menthol (180ml)', price: '₹180', stock: 25, stockUnit: 'bottles', imageUrl: 'https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=600&h=600&fit=crop' },
+    { id: 'fmcg_6', name: 'Good Knight Gold Flash Liquid Refill', price: '₹85', stock: 45, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&h=600&fit=crop' },
   ],
 
-  'Pharmacy': [
-    { id: 'phar_1', name: 'Crocin Tablet (500mg)', price: '₹15', stock: 200, stockUnit: 'strips', imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&h=600&fit=crop' },
-    { id: 'phar_2', name: 'Dolo 650mg', price: '₹30', stock: 150, stockUnit: 'strips', imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&h=600&fit=crop' },
-    { id: 'phar_3', name: 'Vicks VapoRub (50ml)', price: '₹105', stock: 60, stockUnit: 'bottles', imageUrl: 'https://images.unsplash.com/photo-1628771065518-0d82f1938462?w=600&h=600&fit=crop' },
-    { id: 'phar_4', name: 'Band-Aid Assorted (Pack)', price: '₹60', stock: 80, stockUnit: 'boxes', imageUrl: 'https://images.unsplash.com/photo-1628043689369-0268ec387063?w=600&h=600&fit=crop' },
-    { id: 'phar_5', name: 'Himalaya Face Wash', price: '₹160', stock: 35, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1556228578-8c89e6adf883?w=600&h=600&fit=crop' },
-    { id: 'phar_6', name: 'Vitamin C 1000mg (60 tabs)', price: '₹220', stock: 25, stockUnit: 'strips', imageUrl: 'https://images.unsplash.com/photo-1550572017-edb7df02434e?w=600&h=600&fit=crop' },
-  ],
-
-  'Electronics': [
-    { id: 'elec_1', name: 'boAt Airdopes 141 Earbuds', price: '₹1299', stock: 20, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=600&h=600&fit=crop' },
-    { id: 'elec_2', name: 'Ambrane 10000mAh Power Bank', price: '₹999', stock: 15, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=600&h=600&fit=crop' },
-    { id: 'elec_3', name: 'USB Type-C Fast Charger 65W', price: '₹599', stock: 40, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1583095126300-843e9fa80290?w=600&h=600&fit=crop' },
-    { id: 'elec_4', name: 'Tempered Glass Guard (Pack of 2)', price: '₹99', stock: 150, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1541560052-5e137f229371?w=600&h=600&fit=crop' },
-    { id: 'elec_5', name: 'Philips LED Bulb 9W', price: '₹85', stock: 60, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1524484485831-a92ffc0de03f?w=600&h=600&fit=crop' },
-    { id: 'elec_6', name: 'Mi Smart Speaker', price: '₹2499', stock: 8, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1543512214-318c7553f230?w=600&h=600&fit=crop' },
-  ],
-
-  'Clothing': [
-    { id: 'cloth_1', name: 'Cotton T-Shirt (M)', price: '₹499', stock: 45, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&h=600&fit=crop' },
-    { id: 'cloth_2', name: 'Denim Jeans (32)', price: '₹1299', stock: 20, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1542272604-787c3835535d?w=600&h=600&fit=crop' },
-    { id: 'cloth_3', name: 'Printed Kurti (M)', price: '₹799', stock: 30, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1583001931096-959e9a1a6223?w=600&h=600&fit=crop' },
-    { id: 'cloth_4', name: 'Formal Shirt (L)', price: '₹899', stock: 25, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1596755094514-f87e32f85e2c?w=600&h=600&fit=crop' },
-    { id: 'cloth_5', name: 'Cotton Saree (Handloom)', price: '₹1599', stock: 10, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d?w=600&h=600&fit=crop' },
-    { id: 'cloth_6', name: 'Sports Jogger Pants', price: '₹699', stock: 18, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1617952236317-0bd127407984?w=600&h=600&fit=crop' },
-  ],
-
-  'Hardware': [
-    { id: 'hard_1', name: 'Claw Hammer (500g)', price: '₹250', stock: 30, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?w=600&h=600&fit=crop' },
-    { id: 'hard_2', name: 'Taparia Screwdriver Set (8pcs)', price: '₹280', stock: 20, stockUnit: 'sets', imageUrl: 'https://images.unsplash.com/photo-1493033575916-2fd74fe8dd49?w=600&h=600&fit=crop' },
-    { id: 'hard_3', name: 'Philips LED Bulb 9W', price: '₹95', stock: 150, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1546206126-7ad131828cb3?w=600&h=600&fit=crop' },
-    { id: 'hard_4', name: 'Asian Paints Tractor Emulsion (1L)', price: '₹450', stock: 25, stockUnit: 'cans', imageUrl: 'https://images.unsplash.com/photo-1562259929-b4e1fd3aef09?w=600&h=600&fit=crop' },
-    { id: 'hard_5', name: 'Godrej Door Lock', price: '₹550', stock: 12, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&h=600&fit=crop' },
-    { id: 'hard_6', name: 'Supreme PVC Pipe (3m)', price: '₹180', stock: 40, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?w=600&h=600&fit=crop' },
-  ],
+  'Other Grocery': [
+    { id: 'og_1', name: 'Packaged Grocery Item 1', price: '₹50', stock: 50, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1585703900468-13c7a978ad86?w=600&h=600&fit=crop' },
+    { id: 'og_2', name: 'Packaged Grocery Item 2', price: '₹100', stock: 30, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=600&h=600&fit=crop' },
+    { id: 'og_3', name: 'Packaged Grocery Item 3', price: '₹150', stock: 20, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1576791128879-1e6a6d2c9f71?w=600&h=600&fit=crop' },
+    { id: 'og_4', name: 'Packaged Grocery Item 4', price: '₹200', stock: 15, stockUnit: 'pcs', imageUrl: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&h=600&fit=crop' },
+  ]
 };

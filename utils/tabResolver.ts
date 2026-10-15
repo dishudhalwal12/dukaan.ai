@@ -12,26 +12,22 @@ export function resolveTabsFromBusinessType(
 ): TabConfig[] {
   let ordersLabel = 'Orders';
   let catalogLabel = 'Catalog';
-  let catalogIcon = 'inventory_2';
+  let catalogIcon = 'local_grocery_store';
   
   const preset = businessPresets.find(p => p.displayName === businessType || p.key === businessType?.toLowerCase());
 
   if (preset) {
      catalogIcon = preset.icon;
-     if (preset.key === 'restaurant' || preset.key === 'cafe') catalogLabel = 'Menu';
-     if (preset.key === 'salon') {
-       catalogLabel = 'Services';
-       ordersLabel = 'Appointments';
-     }
-     if (preset.key === 'pharmacy') catalogLabel = 'Medicines';
-     if (preset.key === 'electronics' || preset.key === 'clothing') catalogLabel = 'Products';
-     if (preset.key === 'hardware') catalogLabel = 'Tools';
+     if (preset.key === 'fruits_vegetables') catalogLabel = 'Produce';
+     if (preset.key === 'dairy') catalogLabel = 'Dairy';
+     if (preset.key === 'fmcg') catalogLabel = 'Catalog';
+     if (preset.key === 'grocery') catalogLabel = 'Catalog';
   }
 
-  // Handle "Other" or unspecified using the ai context
+  // Handle "Other Grocery" or custom icon
   try {
     const customIcon = localStorage.getItem('dukan-custom-tab-icon');
-    if (customIcon && (businessType === 'Other' || businessType === 'category_other' || !preset)) {
+    if (customIcon && (businessType === 'Other' || businessType === 'Other Grocery' || businessType === 'category_other' || !preset)) {
        catalogIcon = customIcon;
     }
   } catch(e) {}
@@ -42,14 +38,12 @@ export function resolveTabsFromBusinessType(
       const answersText = JSON.stringify(parsedContext.qa || []).toLowerCase();
       const description = parsedContext.businessContext?.storeCategory?.toLowerCase() || '';
 
-      if (answersText.includes('appointment') || description.includes('booking')) {
-        ordersLabel = 'Appointments';
-      }
-      
-      if (answersText.includes('service') || description.includes('service')) {
-        catalogLabel = 'Services';
-      } else if (answersText.includes('food') || description.includes('food')) {
-        catalogLabel = 'Menu';
+      if (answersText.includes('vegetable') || description.includes('fruit')) {
+        catalogLabel = 'Produce';
+        catalogIcon = 'nutrition';
+      } else if (answersText.includes('milk') || description.includes('dairy')) {
+        catalogLabel = 'Dairy';
+        catalogIcon = 'water_drop';
       }
     } catch (e) {
       console.warn("Failed to parse AI context for tab resolution", e);
