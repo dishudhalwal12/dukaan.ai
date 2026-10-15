@@ -453,18 +453,11 @@ const AppContent: React.FC = () => {
         if (!res?.orders || !Array.isArray(res.orders)) return;
         const freshOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
 
-        for (const order of freshOrders) {
-          if (order.status === OrderStatus.NEW && !seenOrderIds.current.has(order.id)) {
-            console.log(`[Dukan Polling] Detected new order #${order.id} from ${order.customer?.name}`);
-            playOrderChime();
-            seenOrderIds.current.add(order.id);
-            localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
-            setTimeout(() => {
-              setNewOrderForPopup(order);
-            }, 0);
-          }
-        }
-
+        // The poll is a state-reconcile path only. It must NOT raise order
+        // alerts: on a fresh browser it sees every pre-existing NEW order at
+        // once and would fire one chime per order (an 898-chime storm here).
+        // New-order alerting belongs to the SSE `dukan_new_order` handler,
+        // which only fires for orders created after the client connected.
         setOrders(prev => {
           const freshMap = new Map(freshOrders.map(f => [f.id, f]));
           return prev.map(p => {
