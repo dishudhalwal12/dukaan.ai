@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '../services/auth.ts';
-import { claimUnassignedRecords, syncOnLogin } from '../services/cloudSync.ts';
+import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 
 interface AuthModalProps {
@@ -49,9 +49,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       }));
       localStorage.removeItem('dukan-guest-mode');
 
-      // 2. Explicitly claim unassigned records and sync under this user's UUID
+      // 2. Sync under this user's UUID (no claiming — rows are owner-scoped now)
       try {
-        await claimUnassignedRecords(result.user.id);
         await syncOnLogin([], [], result.user);
       } catch (err) {
         console.warn('Post-email auth sync error:', err);

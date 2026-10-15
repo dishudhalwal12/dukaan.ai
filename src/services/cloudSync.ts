@@ -29,41 +29,10 @@ export const resolveActiveUserId = async (explicitUserId?: string): Promise<stri
   return null;
 };
 
-/**
- * Claims any rows in business_profiles, products, or orders that were created
- * during guest onboarding (where user_id IS NULL) and links them to this user.
- */
-export const claimUnassignedRecords = async (userId: string): Promise<void> => {
-  try {
-    if (!userId || !isSupabaseConfigured()) return;
-
-    // Link unassigned business profile
-    const storeName = localStorage.getItem('dukan-store-name');
-    if (storeName) {
-      const docId = storeName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-      await supabase
-        .from('business_profiles')
-        .update({ user_id: userId, updated_at: new Date().toISOString() })
-        .eq('id', docId);
-    }
-
-    // Link unassigned products
-    await supabase
-      .from('products')
-      .update({ user_id: userId, updated_at: new Date().toISOString() })
-      .is('user_id', null);
-
-    // Link unassigned orders
-    await supabase
-      .from('orders')
-      .update({ user_id: userId, updated_at: new Date().toISOString() })
-      .is('user_id', null);
-
-    console.log('Unassigned records linked to authenticated user:', userId);
-  } catch (err) {
-    console.warn('Could not claim unassigned records:', err);
-  }
-};
+// NOTE: `claimUnassignedRecords` was removed deliberately. It ran an unscoped
+// `UPDATE ... WHERE user_id IS NULL` on products and orders, so the first
+// account to sign in absorbed every unowned row in the whole database. Guest
+// sessions no longer write to Supabase at all, so there is nothing to claim.
 
 /**
  * Safely saves the business profile to Supabase database without blocking the UI.
@@ -82,6 +51,10 @@ export const saveBusinessProfileToCloud = async (
     }
 
     const userId = await resolveActiveUserId(explicitUserId);
+    // Guests never write to the shared cloud tables — an ownerless profile row
+    // would be adopted by whichever account signs in next.
+    if (!userId) return;
+
     const docId = storeName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
 
     const { error } = await supabase
@@ -97,15 +70,7 @@ export const saveBusinessProfileToCloud = async (
     if (error) {
       console.warn('Supabase DB Error (saveBusinessProfileToCloud):', error.message);
     } else {
-      console.log(`Business profile saved in Supabase for user: ${userId || 'guest'}`);
-    }
-
-    // Ensure any existing record for this store ID is claimed by userId
-    if (userId) {
-      await supabase
-        .from('business_profiles')
-        .update({ user_id: userId, updated_at: new Date().toISOString() })
-        .eq('id', docId);
+      console.log(`Business profile saved in Supabase for user: ${userId}`);
     }
   } catch (error) {
     console.warn('Failed to sync profile to Supabase cloud. Continuing with local data.', error);
@@ -113,8 +78,7 @@ export const saveBusinessProfileToCloud = async (
 };
 
 /**
- * Safely fetches a business profile from Supabase database.
- * Priority: checks for active user's profile first, then by storeName.
+ * Safely fetches a business profile from Supabase database for the active user.
  */
 export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise<any | null> => {
   try {
@@ -134,19 +98,9 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
       }
     }
 
-    if (storeName) {
-      const docId = storeName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-      const { data, error } = await supabase
-        .from('business_profiles')
-        .select('profile_data')
-        .eq('id', docId)
-        .maybeSingle();
-
-      if (!error && data?.profile_data) {
-        return data.profile_data;
-      }
-    }
-
+    // No storeName/id fallback: `business_profiles.id` is no longer the
+    // slugified store name (that made two shops with the same name share one
+    // row), so a profile is only ever resolved by its owner.
     return null;
   } catch (error) {
     console.warn('Failed to fetch profile from Supabase cloud.', error);
@@ -166,6 +120,9 @@ export const syncProductsToCloud = async (
     if (!isSupabaseConfigured()) return;
 
     const userId = await resolveActiveUserId(explicitUserId);
+    // Guests never write to the shared cloud tables — rows without an owner
+    // would be adopted by whichever account signs in next.
+    if (!userId) return;
 
     const rows = products.map(product => ({
       id: product.id,
@@ -262,6 +219,9 @@ export const syncOrdersToCloud = async (
     if (!isSupabaseConfigured()) return;
 
     const userId = await resolveActiveUserId(explicitUserId);
+    // Guests never write to the shared cloud tables — rows without an owner
+    // would be adopted by whichever account signs in next.
+    if (!userId) return;
 
     const rows = orders.map(order => ({
       id: order.id,
@@ -352,10 +312,7 @@ export const syncOnLogin = async (
 
     console.log('Synchronizing Supabase database for user UUID:', userId);
 
-    // 1. First claim any unassigned guest records from onboarding
-    await claimUnassignedRecords(userId);
-
-    // 2. Fetch existing cloud data
+    // Fetch existing cloud data for this owner only
     const cloudProfile = await fetchBusinessProfileFromCloud();
     const cloudProducts = await fetchProductsFromCloud();
     const cloudOrders = await fetchOrdersFromCloud();
