@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
+import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 
 /**
  * Helper to resolve the active user ID from explicit argument, Supabase session,
@@ -295,6 +296,102 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
     console.warn('Failed to fetch orders from Supabase database.', error);
     return null;
   }
+};
+
+/**
+ * Writes this app load's device session row.
+ *
+ * Guests write nothing: there is no account to attribute the row to.
+ */
+export const saveDeviceSessionToCloud = async (explicitUserId?: string): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured()) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return;
+
+    const payload = await collectDeviceSession();
+
+    // The Edge Function is the only writer that can see the caller's public IP,
+    // and it performs the insert itself using the caller's token. If it is not
+    // deployed yet that is not an error: the session is still worth recording,
+    // just without the IP block.
+    const { error: functionError } = await supabase.functions.invoke('capture-session', {
+      body: { session: payload },
+    });
+    if (!functionError) return;
+
+    const { error } = await supabase
+      .from('device_sessions')
+      .upsert(
+        { ...payload, user_id: userId, captured_by: 'client' },
+        { onConflict: 'user_id,session_id' }
+      );
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (saveDeviceSessionToCloud):', error.message);
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save device session to Supabase. Continuing locally.', error);
+  }
+};
+
+/**
+ * One small row of merchant preferences, keyed by owner.
+ */
+export const saveMerchantPreferencesToCloud = async (explicitUserId?: string): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured()) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    // Guests never write to the shared cloud tables — an ownerless row would be
+    // adopted by whichever account signs in next.
+    if (!userId) return;
+
+    const { error } = await supabase
+      .from('merchant_preferences')
+      .upsert(
+        {
+          user_id: userId,
+          preferred_language: localStorage.getItem('dukan-language') || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (saveMerchantPreferencesToCloud):', error.message);
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save merchant preferences to Supabase.', error);
+  }
+};
+
+// The boot path is not called once: React StrictMode runs effects twice, and the
+// auth listener fires separately for the restored session and the fresh sign-in.
+// Both telemetry writes are therefore once-per-load, guarded here rather than at
+// the call site so a second caller cannot reintroduce the duplicate. A retry
+// after a failure is deliberately not attempted — a missing telemetry row costs
+// less than an app that keeps retrying one.
+let deviceSessionRecorded = false;
+let merchantPreferencesRecorded = false;
+
+/** One device session row per app load. */
+export const syncDeviceSessionOnceForAppLoad = async (): Promise<void> => {
+  if (deviceSessionRecorded) return;
+  deviceSessionRecorded = true;
+  await saveDeviceSessionToCloud();
+};
+
+/** One preferences row per app load. */
+export const syncMerchantPreferencesOnceForAppLoad = async (): Promise<void> => {
+  if (merchantPreferencesRecorded) return;
+  merchantPreferencesRecorded = true;
+  await saveMerchantPreferencesToCloud();
 };
 
 /**

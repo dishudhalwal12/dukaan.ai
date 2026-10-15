@@ -18,7 +18,7 @@ import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import { listenToAuthState, signOutUser, User } from './services/auth.ts';
-import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
+import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
@@ -147,6 +147,11 @@ const AppContent: React.FC = () => {
         setShowAuthModal(false); // Close modal on successful authentication
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
+
+        // Telemetry, one row per app load. Neither call is awaited: the Supabase
+        // dashboard is their only reader and neither may delay the shopkeeper.
+        void syncDeviceSessionOnceForAppLoad();
+        void syncMerchantPreferencesOnceForAppLoad();
 
         // Restore store data from Supabase DB or migrate existing local store to cloud with user ID
         const cloudData = await syncOnLogin(ordersRef.current, productsRef.current, user);

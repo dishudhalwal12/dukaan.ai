@@ -28,6 +28,7 @@ const DEVICE_KEYS = new Set([
   'dukan-openrouter-api-key',
   'dukan-auth-user',
   'dukan-oauth-in-progress',
+  'dukan-install-id',
   DATA_OWNER_KEY,
 ]);
 

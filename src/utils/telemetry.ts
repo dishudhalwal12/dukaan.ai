@@ -13,7 +13,8 @@
  *      does, so every probe is optional and every read is guarded.
  *
  * The key names are the `device_sessions` column names verbatim; the write path
- * sends the payload through unmodified.
+ * sends the payload through unmodified. `captured_by` is deliberately NOT here:
+ * it says which path wrote the row, so the writer sets it, not the payload.
  */
 
 export interface DeviceSessionPayload {
@@ -63,8 +64,6 @@ export interface DeviceSessionPayload {
 
   session_timeout_count: number;
   sync_error_count: number;
-
-  captured_by: 'client';
 }
 
 export interface UserAgentInfo {
@@ -497,7 +496,5 @@ export async function collectDeviceSession(): Promise<DeviceSessionPayload> {
 
     session_timeout_count: failedRequestCount,
     sync_error_count: syncErrorCount,
-
-    captured_by: 'client',
   };
 }
