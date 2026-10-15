@@ -42,3 +42,6 @@ scripts/local-ai/__pycache__/
 # Local tooling scratch
 .superpowers/
 .codegraph/
+
+# WhatsApp engine runtime state (orders, chats, message log — contains customer PII)
+whatsapp/store/
