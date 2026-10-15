@@ -37,6 +37,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [error, setError] = useState<string | null>(null);
   const { language, t } = useLanguage();
 
+  /* ─── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ───
   // ─── Neutral fallback for "Other" — mirrors OnboardingFlow's constant ──────
   // This is the last line of defense: if ProductContext somehow runs before
   // OnboardingFlow writes dukaan-custom-catalog-seed, this fires instead of
@@ -47,14 +48,17 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     { name: 'Item 3', price: 200, stock: 10, unit: 'pcs' },
     { name: 'Item 4', price: 250, stock: 10, unit: 'pcs' },
   ];
+  ─── end [MULTI-BUSINESS] ─── */
 
   useEffect(() => {
     try {
       const storedProducts = localStorage.getItem('dukan-products');
       const seededForCategory = localStorage.getItem('dukaan-catalog-seeded-for');
       const category = localStorage.getItem('dukan-store-category');
-      const isOther = category === 'Other' || category === 'Other Grocery' || category === 'category_other';
+      // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
+      // const isOther = category === 'Other' || category === 'Other Grocery' || category === 'category_other';
 
+      /* ── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ──
       // ── FIREWALL: "Other" category has its own sealed seeding path ──────────
       // We NEVER use initialProducts (grocery) for "Other".
       // We NEVER fall through to presetProductsByDisplayName for "Other".
@@ -111,6 +115,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
         setLoading(false);
         return;
       }
+      ── end [MULTI-BUSINESS] ── */
 
       // ── Standard path for all preset categories (Grocery, Salon, etc.) ──────
       const categoryMismatch =

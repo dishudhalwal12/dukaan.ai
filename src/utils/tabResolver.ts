@@ -24,6 +24,7 @@ export function resolveTabsFromBusinessType(
      if (preset.key === 'grocery') catalogLabel = 'Catalog';
   }
 
+  /* ── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ──
   // Handle "Other Grocery" or custom icon
   try {
     const customIcon = localStorage.getItem('dukan-custom-tab-icon');
@@ -49,6 +50,7 @@ export function resolveTabsFromBusinessType(
       console.warn("Failed to parse AI context for tab resolution", e);
     }
   }
+  ── end [MULTI-BUSINESS] ── */
 
   return [
     { key: 'DASHBOARD', label: 'Dashboard', icon: 'grid_view' },

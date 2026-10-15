@@ -103,7 +103,9 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
               {businessPresets.map((preset) => (
                 <option key={preset.key} className="bg-[#1A1A1A] text-white" value={preset.displayName}>{preset.displayName}</option>
               ))}
+              {/* [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable
               <option className="bg-[#1A1A1A] text-white" value="Other Grocery">Other Grocery</option>
+              */}
             </select>
           </div>
         </div>
@@ -174,7 +176,8 @@ const BusinessContextStep: React.FC<{
     return () => { mounted = false; };
   }, [details]);
 
-  const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
+  // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
+  // const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
 
   const q1Options = (() => {
     switch (details.storeCategory) {
@@ -240,19 +243,22 @@ const BusinessContextStep: React.FC<{
         intent: 'primary_goal'
       };
     }
-    if (index === 3 && isOtherCategory) {
-       return {
-         title: "4. Describe your business in one line",
-         type: 'input',
-         placeholder: "e.g. A boutique selling handmade jewelry",
-         intent: 'business_description'
-       };
-    }
+    // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
+    // if (index === 3 && isOtherCategory) {
+    //    return {
+    //      title: "4. Describe your business in one line",
+    //      type: 'input',
+    //      placeholder: "e.g. A boutique selling handmade jewelry",
+    //      intent: 'business_description'
+    //    };
+    // }
     return null;
   };
 
   const currentQ = getQuestionConfig(stepIndex);
-  const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : (isOtherCategory ? 4 : 3);
+  // [MULTI-BUSINESS] grocery-only build: preset step count is 3 (the "Other" 4th step is disabled).
+  // const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : (isOtherCategory ? 4 : 3);
+  const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : 3;
 
   const handleToggle = (opt: string) => {
     // @ts-ignore
@@ -291,6 +297,7 @@ const BusinessContextStep: React.FC<{
     return true;
   };
 
+  /* ─── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ───
   // ─── Neutral fallback (spec-defined) ──────────────────────────────────────
   // Used when AI fails OR schema validation rejects the response.
   // Never uses grocery items. Never uses initialProducts.
@@ -388,6 +395,7 @@ Return format:
       // Neutral fallback was already pre-written at the top of this function
     }
   };
+  ─── end [MULTI-BUSINESS] ─── */
 
 
   const handleNext = async () => {
@@ -420,10 +428,11 @@ Return format:
       };
       localStorage.setItem('dukan-business-intelligence-context', JSON.stringify(completeData));
 
-      if (isOtherCategory) {
-        const contextStr = newAnswers[newAnswers.length - 1]?.[0] || details.storeName;
-        await generateOtherCatalogSeed(contextStr);
-      }
+      // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
+      // if (isOtherCategory) {
+      //   const contextStr = newAnswers[newAnswers.length - 1]?.[0] || details.storeName;
+      //   await generateOtherCatalogSeed(contextStr);
+      // }
 
       onComplete({
         answers: newAnswers,

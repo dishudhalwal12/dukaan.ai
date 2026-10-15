@@ -1,3 +1,6 @@
+// [MULTI-BUSINESS] Unused: nothing imports this file (grep for `presetRegistry` finds no
+// consumers). Kept as reference for the multi-business expansion — safe to delete once
+// the preset catalogue is reworked.
 import { Product } from '../types.ts';
 import { TabConfig } from '../utils/tabResolver.ts';
 
