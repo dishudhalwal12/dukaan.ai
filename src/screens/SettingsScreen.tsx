@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { XIcon, WhatsAppIcon } from '../components/Icons.tsx';
+import { XIcon, WhatsAppIcon, GoogleIcon } from '../components/Icons.tsx';
+import type { User } from '../services/auth.ts';
 import EditProfileScreen from './settings/EditProfileScreen.tsx';
 import ManageStoreScreen from './settings/ManageStoreScreen.tsx';
 import WhatsAppSettingsScreen from './settings/WhatsAppSettingsScreen.tsx';
@@ -122,7 +123,9 @@ const MainSettings: React.FC<{
   onNavigate: (screen: string) => void;
   onModalStateChange: (isOpen: boolean) => void;
   onLogout: () => void;
-}> = ({ onNavigate, onModalStateChange, onLogout }) => {
+  currentUser?: User | null;
+  onOpenAuth?: () => void;
+}> = ({ onNavigate, onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const { t } = useLanguage();
 
@@ -166,14 +169,47 @@ const MainSettings: React.FC<{
                   </div>
               </div>
           </div>
-          <div className="p-4">
-               <button
-                onClick={onLogout}
-                className="w-full flex items-center justify-center p-3 bg-[#1A1A1A] rounded-lg text-left transition-colors active:bg-neutral-800"
-              >
-                  <span className="material-symbols-outlined text-red-400 mr-2">logout</span>
-                  <p className="font-semibold text-red-400">{t('settings_logout')}</p>
-              </button>
+          
+          <div className="p-4 pt-0 space-y-3">
+            {currentUser ? (
+              <div className="p-3.5 bg-emerald-950/20 border border-emerald-800/40 rounded-xl">
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <p className="text-xs text-emerald-400 font-semibold">Supabase Cloud Sync Active</p>
+                  </div>
+                  <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-2 py-0.5 rounded-full font-medium">Synced</span>
+                </div>
+                <p className="text-xs text-neutral-400 truncate">{currentUser.email || 'Google User'}</p>
+              </div>
+            ) : (
+              <div className="p-4 bg-amber-950/20 border border-amber-800/40 rounded-xl">
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="material-symbols-outlined text-amber-400 text-base">cloud_off</span>
+                  <p className="text-xs font-semibold text-amber-300">Guest Mode (Local Only)</p>
+                </div>
+                <p className="text-xs text-neutral-400 mb-3 leading-relaxed">
+                  Your store is currently saved locally on this device. Sign in with Google to sync your catalog and orders into Supabase cloud.
+                </p>
+                {onOpenAuth && (
+                  <button
+                    onClick={onOpenAuth}
+                    className="w-full py-2.5 px-3 bg-white text-gray-900 font-semibold rounded-lg text-xs flex items-center justify-center space-x-2 hover:bg-neutral-100 transition-colors shadow-sm"
+                  >
+                    <GoogleIcon className="w-4 h-4 flex-shrink-0" />
+                    <span>Sync Store with Google</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={onLogout}
+              className="w-full flex items-center justify-center p-3 bg-[#1A1A1A] rounded-xl text-left transition-colors active:bg-neutral-800 border border-neutral-800"
+            >
+              <span className="material-symbols-outlined text-red-400 mr-2 text-lg">logout</span>
+              <p className="font-semibold text-red-400 text-sm">{currentUser ? t('settings_logout') : 'Reset Session / Sign In'}</p>
+            </button>
           </div>
         </div>
       </div>
@@ -185,9 +221,11 @@ const MainSettings: React.FC<{
 interface SettingsScreenProps {
   onModalStateChange: (isOpen: boolean) => void;
   onLogout: () => void;
+  currentUser?: User | null;
+  onOpenAuth?: () => void;
 }
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onLogout }) => {
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
   const [activeSubScreen, setActiveSubScreen] = useState<string | null>(null);
   const [profileKey, setProfileKey] = useState(0);
 
@@ -221,6 +259,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
                 onNavigate={setActiveSubScreen}
                 onModalStateChange={onModalStateChange}
                 onLogout={onLogout}
+                currentUser={currentUser}
+                onOpenAuth={onOpenAuth}
               />
             );
     }

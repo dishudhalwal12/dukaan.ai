@@ -1,42 +1,68 @@
-
-import React from 'react';
-import { WhatsAppIcon } from '../components/Icons.tsx';
+import React, { useState } from 'react';
+import { GoogleIcon } from '../components/Icons.tsx';
+import { signInWithGoogle } from '../services/auth.ts';
 
 interface LoginScreenProps {
   onLogin: () => void;
+  onGuestContinue?: () => void;
 }
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuestContinue }) => {
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setGoogleLoading(true);
+    const result = await signInWithGoogle();
+    if (result.error) {
+      setError(result.error);
+      setGoogleLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full w-full bg-white">
+    <div className="flex flex-col h-full w-full bg-black text-white">
       <div className="p-8 text-center">
-        <h1 className="text-4xl font-bold text-[#3A3E98]">Dukan.AI</h1>
+        <h1 className="text-4xl font-bold text-[#E6E6FA]">Dukan.AI</h1>
       </div>
       <div className="flex-grow flex flex-col justify-center items-center p-8 text-center">
-        <div className="w-64 h-48 bg-gray-100 rounded-xl flex items-center justify-center mb-8 shadow-inner">
-          <div className="w-32 h-40 bg-white rounded-lg shadow-md p-2 flex flex-col space-y-2">
-            <div className="w-full h-4 bg-green-300 rounded-sm"></div>
-            <div className="w-full h-4 bg-yellow-300 rounded-sm"></div>
-            <div className="w-3/4 h-4 bg-blue-300 rounded-sm"></div>
+        <div className="w-64 h-48 bg-neutral-900 rounded-2xl flex items-center justify-center mb-8 border border-neutral-800">
+          <div className="w-32 h-40 bg-neutral-800 rounded-xl shadow-md p-3 flex flex-col space-y-2 border border-neutral-700">
+            <div className="w-full h-4 bg-emerald-500/40 rounded-sm"></div>
+            <div className="w-full h-4 bg-amber-500/40 rounded-sm"></div>
+            <div className="w-3/4 h-4 bg-indigo-500/40 rounded-sm"></div>
             <div className="flex-grow"></div>
-            <div className="w-1/2 h-2 bg-gray-200 rounded-sm"></div>
-             <div className="w-full h-2 bg-gray-200 rounded-sm"></div>
+            <div className="w-1/2 h-2 bg-neutral-600 rounded-sm"></div>
+            <div className="w-full h-2 bg-neutral-600 rounded-sm"></div>
           </div>
         </div>
         
-        <h2 className="text-2xl font-bold text-gray-800">अपने दुकान को दो AI की शक्ति।</h2>
-        <p className="text-md text-gray-600 mt-1">Give your business AI Superpowers.</p>
+        <h2 className="text-2xl font-bold text-white">अपने दुकान को दो AI की शक्ति।</h2>
+        <p className="text-sm text-neutral-400 mt-2">Give your business AI Superpowers with cloud sync.</p>
+        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
       </div>
-      <div className="p-6 bg-white">
+      <div className="p-6 space-y-3">
         <button
-          onClick={onLogin}
-          className="w-full bg-[#FFC857] text-[#3A3E98] font-bold py-4 px-4 rounded-lg flex items-center justify-center text-lg shadow-md hover:opacity-90 transition-opacity active:scale-95 transform"
+          onClick={handleGoogleLogin}
+          disabled={googleLoading}
+          className="w-full bg-white text-gray-900 font-bold py-3.5 px-4 rounded-xl flex items-center justify-center text-base shadow-md hover:bg-neutral-100 transition-colors disabled:opacity-50"
         >
-          <WhatsAppIcon className="w-6 h-6 mr-3" />
-          Get Started with WhatsApp
+          {googleLoading ? (
+            <div className="w-5 h-5 border-2 border-neutral-800 border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <>
+              <GoogleIcon className="w-5 h-5 mr-3" />
+              Continue with Google
+            </>
+          )}
         </button>
-        <button className="w-full mt-4 text-sm font-semibold text-gray-500 hover:text-gray-700">
-          Login with Mobile Number
+
+        <button
+          onClick={onGuestContinue || onLogin}
+          className="w-full bg-transparent border border-neutral-800 text-neutral-400 font-semibold py-3 px-4 rounded-xl text-sm hover:text-white hover:bg-neutral-900 transition-all"
+        >
+          Continue as Guest
         </button>
       </div>
     </div>

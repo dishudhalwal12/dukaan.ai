@@ -3,6 +3,7 @@ import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
 import { generateDynamicInsights } from '../services/ai.ts';
+import { syncProductsToCloud, deleteProductFromCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 import { whatsappService } from '../services/whatsappService.ts';
 
@@ -11,6 +12,7 @@ interface ProductContextType {
   addProduct: (product: Omit<Product, 'id'>) => void;
   updateProduct: (product: Product) => void;
   deleteProduct: (productId: string) => void;
+  loadProducts: (products: Product[]) => void;
   loading: boolean;
 }
 
@@ -51,7 +53,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
       const storedProducts = localStorage.getItem('dukan-products');
       const seededForCategory = localStorage.getItem('dukaan-catalog-seeded-for');
       const category = localStorage.getItem('dukan-store-category');
-      const isOther = category === 'Other' || category === 'category_other';
+      const isOther = category === 'Other' || category === 'Other Grocery' || category === 'category_other';
 
       // ── FIREWALL: "Other" category has its own sealed seeding path ──────────
       // We NEVER use initialProducts (grocery) for "Other".
@@ -145,6 +147,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (!loading) {
         try {
             localStorage.setItem('dukan-products', JSON.stringify(products));
+            syncProductsToCloud(products);
         } catch (error) {
              if (error instanceof DOMException && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
                 console.error("LocalStorage quota exceeded. Cannot save products.");
@@ -213,9 +216,19 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const deleteProduct = (productId: string) => {
     setProducts(prevProducts => prevProducts.filter(p => p.id !== productId));
+    deleteProductFromCloud(productId);
   };
   
-  const productContextValue = { products, addProduct, updateProduct, deleteProduct, loading };
+  const loadProducts = useCallback((newProducts: Product[]) => {
+    setProducts(newProducts);
+    try {
+      localStorage.setItem('dukan-products', JSON.stringify(newProducts));
+    } catch (e) {
+      console.error('Failed to cache products', e);
+    }
+  }, []);
+
+  const productContextValue = { products, addProduct, updateProduct, deleteProduct, loadProducts, loading };
   const insightContextValue = { insights, isLoadingInsights, error, refreshInsights };
 
   return (

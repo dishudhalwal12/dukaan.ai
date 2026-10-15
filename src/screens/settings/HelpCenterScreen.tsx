@@ -42,7 +42,7 @@ const FAQ_ITEMS: FAQItem[] = [
     icon: 'cloud_sync',
     question: 'How do I sync my data to the cloud?',
     answer:
-      'Go to Settings and sign in with your email to enable cloud sync. Your store profile is securely backed up to Firebase. Guest mode keeps all data local on your device only.',
+      'Go to Settings and sign in with your email to enable cloud sync. Your store profile is securely backed up to Supabase. Guest mode keeps all data local on your device only.',
   },
   {
     icon: 'storefront',

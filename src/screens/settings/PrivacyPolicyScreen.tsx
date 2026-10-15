@@ -59,7 +59,7 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </p>
           <p className="text-neutral-400">
             If you enable cloud sync, your store profile is encrypted in transit and stored securely
-            using Firebase (Google Cloud) with strict access controls. Only you can access your data.
+            using Supabase (PostgreSQL Cloud) with strict access controls. Only you can access your data.
           </p>
         </Section>
 
@@ -85,8 +85,8 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             with any third parties for advertising or marketing purposes. Period.
           </p>
           <p className="text-neutral-400">
-            The only third-party service we use is Firebase (for optional cloud sync) and Google Gemini
-            (for AI features), both governed by Google's privacy policies.
+            The only third-party service we use is Supabase (for optional cloud sync) and Google Gemini
+            (for AI features), both governed by standard privacy and security policies.
           </p>
         </Section>
 

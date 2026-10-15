@@ -18,8 +18,8 @@ import { mockCustomers } from './data/mockCustomers.ts';
 import { generateRandomPhoneNumber } from './utils/phone.ts';
 import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
-import { listenToAuthState, signOutUser } from './services/auth.ts';
-import { User } from 'firebase/auth';
+import { listenToAuthState, signOutUser, User } from './services/auth.ts';
+import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
@@ -69,7 +69,12 @@ const AppContent: React.FC = () => {
   const [newOrderForPopup, setNewOrderForPopup] = useState<Order | null>(null);
   const [isInteractionDone, setInteractionDone] = useState(false);
   const [isOtherModalShowing, setIsOtherModalShowing] = useState(false);
-  const { products, updateProduct } = useProducts();
+  const { products, updateProduct, loadProducts } = useProducts();
+  const ordersRef = useRef(orders);
+  const productsRef = useRef(products);
+  useEffect(() => { ordersRef.current = orders; }, [orders]);
+  useEffect(() => { productsRef.current = products; }, [products]);
+
   // Simulation refs removed for Webhook Polling
   const activeScreenRef = useRef<Screen>(Screen.DASHBOARD);
   const isOtherModalShowingRef = useRef(false);
@@ -81,9 +86,20 @@ const AppContent: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Auth state
+  // Auth state with local storage caching for immediate session persistence across page loads
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const cached = localStorage.getItem('dukan-auth-user');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const currentUserRef = useRef<User | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
   const authChecked = useRef(false);
 
   // Dynamic Tabs state — lazy initializer so nav renders immediately on first paint
@@ -100,16 +116,43 @@ const AppContent: React.FC = () => {
     setTabs(resolveTabsFromBusinessType(category, aiContext));
   }, [showOnboarding]);
 
-  // Listen to Auth State
+  // Listen to Auth State and sync data to/from Supabase backend
   useEffect(() => {
-    const unsubscribe = listenToAuthState((user) => {
+    const unsubscribe = listenToAuthState(async (user) => {
       setCurrentUser(user);
+      currentUserRef.current = user;
+
       if (user) {
-        setShowAuthModal(false); // Close if they successfully log in
+        setShowAuthModal(false); // Close modal on successful authentication
+        localStorage.removeItem('dukan-guest-mode');
+        localStorage.removeItem('dukan-oauth-in-progress');
+
+        // Restore store data from Supabase DB or migrate existing local store to cloud with user ID
+        const cloudData = await syncOnLogin(ordersRef.current, productsRef.current, user);
+        if (cloudData.orders && cloudData.orders.length > 0) {
+          setOrders(cloudData.orders);
+        }
+        if (cloudData.products && cloudData.products.length > 0) {
+          loadProducts(cloudData.products);
+        }
+        if (cloudData.profile) {
+          if (cloudData.profile.storeDetails?.storeName) {
+            localStorage.setItem('dukan-store-name', cloudData.profile.storeDetails.storeName);
+          }
+          if (cloudData.profile.storeDetails?.category) {
+            localStorage.setItem('dukan-store-category', cloudData.profile.storeDetails.category);
+          }
+          if (cloudData.profile.answers) {
+            localStorage.setItem('dukan-store-context', JSON.stringify(cloudData.profile.answers));
+          }
+          const cat = localStorage.getItem('dukan-store-category');
+          const aiCtx = localStorage.getItem('dukan-business-intelligence-context');
+          setTabs(resolveTabsFromBusinessType(cat, aiCtx));
+        }
       }
     });
     return () => unsubscribe();
-  }, []);
+  }, [loadProducts]);
 
   useEffect(() => {
     const handleHash = () => {
@@ -132,15 +175,30 @@ const AppContent: React.FC = () => {
             setShowOnboarding(true);
         } else {
             setInteractionDone(true); // Returning users: start webhook polling immediately on mount
+            
+            // Check if returning from Google OAuth or already authenticated
+            const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
+            const isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
+
             if (!authChecked.current && !localStorage.getItem('dukan-guest-mode')) {
-                // Onboarding is complete. If we haven't checked auth yet, do it now.
                 authChecked.current = true;
+
+                // If currently returning from OAuth, suppress auth modal
+                if (hasOAuthParams || isOAuthInProgress) {
+                    return;
+                }
+
+                // If already authenticated, do not show modal
+                if (currentUserRef.current || localStorage.getItem('dukan-auth-user')) {
+                    return;
+                }
+
                 // A slight delay ensures dashboard paints fully before the modal overlays
                 setTimeout(() => {
-                    if (!currentUser) {
+                    if (!currentUserRef.current && !localStorage.getItem('dukan-auth-user') && !localStorage.getItem('dukan-guest-mode')) {
                         setShowAuthModal(true);
                     }
-                }, 1000);
+                }, 1200);
             }
         }
     } catch (error) {
@@ -150,10 +208,11 @@ const AppContent: React.FC = () => {
     }
   }, []);
 
-  // Persist orders to localStorage whenever they change
+  // Persist orders to localStorage and sync to Supabase whenever they change
   useEffect(() => {
     try {
         localStorage.setItem('dukaan-sales-data', JSON.stringify(orders));
+        syncOrdersToCloud(orders);
     } catch (error)
         {
         console.error("Failed to save orders to localStorage", error);
@@ -443,7 +502,14 @@ const AppContent: React.FC = () => {
       case Screen.CATALOG:
         return <CatalogScreen onModalStateChange={handleModalStateChange} />;
       case Screen.SETTINGS:
-        return <SettingsScreen onModalStateChange={handleModalStateChange} onLogout={handleLogout} />;
+        return (
+          <SettingsScreen 
+            onModalStateChange={handleModalStateChange} 
+            onLogout={handleLogout}
+            currentUser={currentUser}
+            onOpenAuth={() => setShowAuthModal(true)}
+          />
+        );
       default:
         return <DashboardScreen orders={orders} onModalStateChange={handleModalStateChange} onAddOrders={handleAddOrders} />;
     }
@@ -458,9 +524,13 @@ const AppContent: React.FC = () => {
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
     setTabs(resolveTabsFromBusinessType(category, aiContext));
 
-    // Trigger auth check immediately post-onboarding
-    if (!currentUser && !localStorage.getItem('dukan-guest-mode')) {
-        setTimeout(() => setShowAuthModal(true), 500);
+    // Trigger auth check immediately post-onboarding if not logged in or in guest mode
+    if (!currentUserRef.current && !localStorage.getItem('dukan-guest-mode') && !localStorage.getItem('dukan-auth-user')) {
+        setTimeout(() => {
+          if (!currentUserRef.current && !localStorage.getItem('dukan-guest-mode') && !localStorage.getItem('dukan-auth-user')) {
+            setShowAuthModal(true);
+          }
+        }, 500);
     }
   };
 
@@ -472,7 +542,9 @@ const AppContent: React.FC = () => {
   const handleLogout = useCallback(async () => {
     await signOutUser();
     localStorage.removeItem('dukan-guest-mode');
+    localStorage.removeItem('dukan-auth-user');
     setCurrentUser(null);
+    currentUserRef.current = null;
     setShowAuthModal(true);
   }, []);
 
