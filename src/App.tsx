@@ -20,19 +20,8 @@ import { listenToAuthState, signOutUser, User } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
+import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
-
-/**
- * Removes every piece of local app state written under the `dukan-` / `dukaan-`
- * prefixes. Called on sign-out so a fresh account never inherits the previous
- * account's orders, catalog, onboarding answers or store identity.
- */
-const clearLocalStore = (): void => {
-  if (typeof window === 'undefined') return;
-  Object.keys(localStorage)
-    .filter((key) => key.startsWith('dukan-') || key.startsWith('dukaan-'))
-    .forEach((key) => localStorage.removeItem(key));
-};
 
 const getInitialScreen = (): Screen => {
   if (typeof window !== 'undefined') {
@@ -51,6 +40,9 @@ const getInitialScreen = (): Screen => {
 const AppContent: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>(getInitialScreen);
   const [orders, setOrders] = useState<Order[]>(() => {
+    // The cache is per-device but orders are per-account: drop another
+    // account's data before reading it, so a new account starts empty.
+    enforceDataOwnership(currentIdentity());
     try {
         const storedOrders = localStorage.getItem('dukaan-sales-data') || localStorage.getItem('dukan-orders');
         if (storedOrders) {
@@ -124,6 +116,27 @@ const AppContent: React.FC = () => {
     const unsubscribe = listenToAuthState(async (user) => {
       setCurrentUser(user);
       currentUserRef.current = user;
+
+      // Local store data belongs to one account. If this device still holds a
+      // different account's data, drop it and reboot clean so nothing leaks
+      // across accounts (the "new account shows the old orders" bug).
+      const identity = user?.id ?? 'guest';
+      const droppedForeignData = enforceDataOwnership(identity);
+      if (user) {
+        // enforceDataOwnership may have just wiped the cached auth user.
+        localStorage.setItem('dukan-auth-user', JSON.stringify({ id: user.id, email: user.email }));
+      }
+      if (droppedForeignData) {
+        setOrders([]);
+        loadProducts([]);
+        if (!sessionStorage.getItem('dukan-ownership-reboot')) {
+          sessionStorage.setItem('dukan-ownership-reboot', '1');
+          window.location.reload();
+          return;
+        }
+      } else {
+        sessionStorage.removeItem('dukan-ownership-reboot');
+      }
 
       if (user) {
         setShowAuthModal(false); // Close modal on successful authentication

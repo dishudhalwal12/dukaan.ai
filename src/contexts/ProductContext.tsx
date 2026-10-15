@@ -3,6 +3,7 @@ import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
 import { generateDynamicInsights } from '../services/ai.ts';
+import { currentIdentity, enforceDataOwnership } from '../utils/localStore.ts';
 import { syncProductsToCloud, deleteProductFromCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 import { whatsappService } from '../services/whatsappService.ts';
@@ -52,6 +53,9 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   useEffect(() => {
     try {
+      // The cache is per-device but the catalogue is per-account: drop another
+      // account's products before reading them.
+      enforceDataOwnership(currentIdentity());
       const storedProducts = localStorage.getItem('dukan-products');
       const seededForCategory = localStorage.getItem('dukaan-catalog-seeded-for');
       const category = localStorage.getItem('dukan-store-category');
