@@ -225,7 +225,14 @@ const AppContent: React.FC = () => {
         // Returning from Google OAuth: the redirect resolves auth by itself, so
         // the modal stays shut.
         const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
-        const isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
+        let isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
+        // The flag is set just before redirecting to Google. Coming back without
+        // OAuth parameters means the consent screen was abandoned, and leaving
+        // the flag set would suppress the sign-in prompt on every later load.
+        if (isOAuthInProgress && !hasOAuthParams) {
+            localStorage.removeItem('dukan-oauth-in-progress');
+            isOAuthInProgress = false;
+        }
 
         const isAuthenticated = Boolean(currentUserRef.current || localStorage.getItem('dukan-auth-user'));
         const isGuest = Boolean(localStorage.getItem('dukan-guest-mode'));

@@ -15,6 +15,22 @@ export const DATA_OWNER_KEY = 'dukan-data-owner';
 
 const APP_KEY_PREFIXES = ['dukan-', 'dukaan-'];
 
+/**
+ * Keys that belong to the DEVICE rather than to a store: the user's own
+ * preferences and the cached auth identity.
+ *
+ * Deliberately a deny-list. Store keys added later are dropped by default, so a
+ * forgotten entry here can only annoy a user, never leak one account's data
+ * into another account's session.
+ */
+const DEVICE_KEYS = new Set([
+  'dukan-language',
+  'dukan-openrouter-api-key',
+  'dukan-auth-user',
+  'dukan-oauth-in-progress',
+  DATA_OWNER_KEY,
+]);
+
 /** The identity that owns the local cache: the signed-in user id, or 'guest'. */
 export const currentIdentity = (): string => {
   if (typeof window === 'undefined') return 'guest';
@@ -39,6 +55,22 @@ export const clearLocalStore = (): void => {
 };
 
 /**
+ * Removes local state that belongs to a store, keeping device-scoped keys.
+ *
+ * Used by the ownership check, which fires on an ordinary page load when the
+ * identity changed — there it would be wrong to also discard the user's
+ * language choice, saved API key or the cached identity the shell reads to
+ * decide whether to prompt for sign-in.
+ */
+const clearStoreData = (): void => {
+  if (typeof window === 'undefined') return;
+  Object.keys(localStorage)
+    .filter((key) => APP_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)))
+    .filter((key) => !DEVICE_KEYS.has(key))
+    .forEach((key) => localStorage.removeItem(key));
+};
+
+/**
  * Drops the local cache when it belongs to someone other than `identity`, then
  * records `identity` as the owner.
  *
@@ -56,7 +88,7 @@ export const enforceDataOwnership = (identity: string): boolean => {
       owner === null || (owner !== 'guest' && owner !== identity);
 
     if (belongsToSomeoneElse) {
-      clearLocalStore();
+      clearStoreData();
       localStorage.setItem(DATA_OWNER_KEY, identity);
       return true;
     }

@@ -1,6 +1,6 @@
 import { User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
-import { markFreshSignIn } from '../utils/authOutcome.ts';
+import { clearFreshSignIn, markFreshSignIn } from '../utils/authOutcome.ts';
 
 export type { User };
 
@@ -67,6 +67,11 @@ export const signUpWithEmail = async (
       };
     }
 
+    // Marked before the request goes out: supabase-js notifies auth listeners
+    // before the sign-in promise resolves, so marking afterwards can be too
+    // late — and leaves the marker behind for a later reload to consume.
+    markFreshSignIn();
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -74,23 +79,28 @@ export const signUpWithEmail = async (
 
     if (error) {
       console.warn('Supabase Auth Error (SignUp):', error.message);
+      clearFreshSignIn();
       return { user: null, error: error.message };
     }
 
-    if (data.user) {
-      localStorage.setItem('dukan-auth-user', JSON.stringify({
-        id: data.user.id,
-        email: data.user.email,
-      }));
-      localStorage.removeItem('dukan-guest-mode');
+    // Only a session means the user is actually signed in. Without one the
+    // project requires email confirmation, and caching an identity here would
+    // make the app believe it is authenticated with no way to act.
+    if (data.session) {
+      if (data.user) {
+        localStorage.setItem('dukan-auth-user', JSON.stringify({
+          id: data.user.id,
+          email: data.user.email,
+        }));
+        localStorage.removeItem('dukan-guest-mode');
+      }
+    } else {
+      clearFreshSignIn();
     }
-
-    // A session means the signup signed the user in; without one the project
-    // requires email confirmation first.
-    if (data.session) markFreshSignIn();
 
     return { user: data.user, error: null, session: data.session };
   } catch (error: any) {
+    clearFreshSignIn();
     console.warn('Supabase Auth Exception (SignUp):', error);
     return { user: null, error: error?.message || 'An unexpected error occurred during sign up.' };
   }
@@ -111,6 +121,8 @@ export const signInWithEmail = async (
       };
     }
 
+    markFreshSignIn();
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -118,21 +130,25 @@ export const signInWithEmail = async (
 
     if (error) {
       console.warn('Supabase Auth Error (SignIn):', error.message);
+      clearFreshSignIn();
       return { user: null, error: error.message };
     }
 
-    if (data.user) {
-      localStorage.setItem('dukan-auth-user', JSON.stringify({
-        id: data.user.id,
-        email: data.user.email,
-      }));
-      localStorage.removeItem('dukan-guest-mode');
+    if (data.session) {
+      if (data.user) {
+        localStorage.setItem('dukan-auth-user', JSON.stringify({
+          id: data.user.id,
+          email: data.user.email,
+        }));
+        localStorage.removeItem('dukan-guest-mode');
+      }
+    } else {
+      clearFreshSignIn();
     }
-
-    if (data.session) markFreshSignIn();
 
     return { user: data.user, error: null, session: data.session };
   } catch (error: any) {
+    clearFreshSignIn();
     console.warn('Supabase Auth Exception (SignIn):', error);
     return { user: null, error: error?.message || 'An unexpected error occurred during sign in.' };
   }

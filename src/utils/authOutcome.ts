@@ -38,3 +38,12 @@ export const consumeFreshSignIn = (): boolean => {
     return false;
   }
 };
+
+/** Drops the marker without reading it, for a sign-in that never completed. */
+export const clearFreshSignIn = (): void => {
+  try {
+    sessionStorage.removeItem(FRESH_SIGNIN_KEY);
+  } catch {
+    // Storage unavailable.
+  }
+};

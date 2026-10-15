@@ -345,7 +345,10 @@ export const syncOnLogin = async (
 
     // Otherwise, first-time sign-in / registration:
     // Persist current store details, products, and orders under the user's UUID!
-    const storeName = localStorage.getItem('dukan-store-name') || 'My Store';
+    // No placeholder: writing a profile row before onboarding would hand the
+    // account a "My Store" store, and a profile row is what marks an account as
+    // already onboarded — the row has to wait for the real name.
+    const storeName = localStorage.getItem('dukan-store-name');
     const storeContext = localStorage.getItem('dukan-store-context');
     const category = localStorage.getItem('dukan-store-category');
     
