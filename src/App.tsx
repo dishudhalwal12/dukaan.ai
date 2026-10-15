@@ -148,6 +148,9 @@ const AppContent: React.FC = () => {
           if (cloudData.profile.answers) {
             localStorage.setItem('dukan-store-context', JSON.stringify(cloudData.profile.answers));
           }
+          if (cloudData.profile.onboarding) {
+            localStorage.setItem('dukan-business-intelligence-context', JSON.stringify(cloudData.profile.onboarding));
+          }
           const cat = localStorage.getItem('dukan-store-category');
           const aiCtx = localStorage.getItem('dukan-business-intelligence-context');
           setTabs(resolveTabsFromBusinessType(cat, aiCtx));

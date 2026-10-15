@@ -39,9 +39,10 @@ export const resolveActiveUserId = async (explicitUserId?: string): Promise<stri
  * Associates record with user_id if user is logged in or cached.
  */
 export const saveBusinessProfileToCloud = async (
-  storeName: string, 
+  storeName: string,
   profileData: any,
-  explicitUserId?: string
+  explicitUserId?: string,
+  onboarding?: any
 ): Promise<void> => {
   try {
     if (!storeName || !profileData) return;
@@ -55,17 +56,16 @@ export const saveBusinessProfileToCloud = async (
     // would be adopted by whichever account signs in next.
     if (!userId) return;
 
-    const docId = storeName.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-
     const { error } = await supabase
       .from('business_profiles')
       .upsert({
-        id: docId,
         user_id: userId,
         store_name: storeName,
+        category: profileData?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
         profile_data: profileData,
+        onboarding: onboarding ?? {},
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      }, { onConflict: 'user_id' });
 
     if (error) {
       console.warn('Supabase DB Error (saveBusinessProfileToCloud):', error.message);
@@ -89,12 +89,18 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
     if (userId) {
       const { data, error } = await supabase
         .from('business_profiles')
-        .select('profile_data, store_name')
+        .select('profile_data, store_name, category, onboarding')
         .eq('user_id', userId)
         .maybeSingle();
 
       if (!error && data?.profile_data) {
-        return data.profile_data;
+        // Merge the dynamic onboarding payload alongside the profile body so
+        // callers can restore the AI Q&A, not just the raw answers.
+        return {
+          ...data.profile_data,
+          category: data.category,
+          onboarding: data.onboarding,
+        };
       }
     }
 
@@ -125,7 +131,7 @@ export const syncProductsToCloud = async (
     if (!userId) return;
 
     const rows = products.map(product => ({
-      id: product.id,
+      external_id: product.id,
       user_id: userId,
       name: product.name,
       price: product.price,
@@ -137,7 +143,7 @@ export const syncProductsToCloud = async (
 
     const { error } = await supabase
       .from('products')
-      .upsert(rows, { onConflict: 'id' });
+      .upsert(rows, { onConflict: 'user_id,external_id' });
 
     if (error) {
       console.warn('Supabase DB Error (syncProductsToCloud):', error.message);
@@ -156,10 +162,14 @@ export const deleteProductFromCloud = async (productId: string): Promise<void> =
   try {
     if (!productId || !isSupabaseConfigured()) return;
 
+    const userId = await resolveActiveUserId();
+    if (!userId) return;
+
     const { error } = await supabase
       .from('products')
       .delete()
-      .eq('id', productId);
+      .eq('user_id', userId)
+      .eq('external_id', productId);
 
     if (error) {
       console.warn('Supabase DB Error (deleteProductFromCloud):', error.message);
@@ -194,7 +204,7 @@ export const fetchProductsFromCloud = async (): Promise<Product[] | null> => {
     if (!data || data.length === 0) return null;
 
     return data.map((item: any) => ({
-      id: item.id,
+      id: item.external_id,
       name: item.name,
       price: item.price,
       stock: item.stock,
@@ -224,7 +234,7 @@ export const syncOrdersToCloud = async (
     if (!userId) return;
 
     const rows = orders.map(order => ({
-      id: order.id,
+      external_id: order.id,
       user_id: userId,
       customer: order.customer,
       items: order.items,
@@ -237,7 +247,7 @@ export const syncOrdersToCloud = async (
 
     const { error } = await supabase
       .from('orders')
-      .upsert(rows, { onConflict: 'id' });
+      .upsert(rows, { onConflict: 'user_id,external_id' });
 
     if (error) {
       console.warn('Supabase DB Error (syncOrdersToCloud):', error.message);
@@ -273,7 +283,7 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
     if (!data || data.length === 0) return null;
 
     return data.map((item: any) => ({
-      id: item.id,
+      id: item.external_id,
       customer: item.customer,
       items: item.items,
       total: Number(item.total),
@@ -348,7 +358,15 @@ export const syncOnLogin = async (
         answers: storeContext ? JSON.parse(storeContext) : {},
         timestamp: new Date().toISOString()
       };
-      await saveBusinessProfileToCloud(storeName, profileData, userId);
+      const onboardingRaw = localStorage.getItem('dukan-business-intelligence-context');
+      let onboarding: any = undefined;
+      try {
+        if (onboardingRaw) onboarding = JSON.parse(onboardingRaw);
+      } catch (e) {
+        console.warn('syncOnLogin: could not parse business intelligence context', e);
+      }
+
+      await saveBusinessProfileToCloud(storeName, profileData, userId, onboarding);
     }
 
     if (currentProducts && currentProducts.length > 0) {

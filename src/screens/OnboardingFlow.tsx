@@ -617,7 +617,17 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
             answers,
             timestamp: new Date().toISOString()
         };
-        saveBusinessProfileToCloud(storeDetails.storeName, profileData);
+        // The dynamic AI-generated Q&A (question/intent/type/answer) is the
+        // point of the adaptive onboarding — persist it rather than letting it
+        // die in localStorage.
+        let onboarding: any = undefined;
+        try {
+          const raw = localStorage.getItem('dukan-business-intelligence-context');
+          if (raw) onboarding = JSON.parse(raw);
+        } catch (e) {
+          console.warn('[Onboarding] Could not read business intelligence context', e);
+        }
+        saveBusinessProfileToCloud(storeDetails.storeName, profileData, undefined, onboarding);
     }
 
     onComplete();
