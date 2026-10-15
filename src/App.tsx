@@ -164,6 +164,11 @@ const AppContent: React.FC = () => {
           if (cloudData.profile.onboarding) {
             localStorage.setItem('dukan-business-intelligence-context', JSON.stringify(cloudData.profile.onboarding));
           }
+          // The cloud profile carries the name across devices; a name the user
+          // just typed locally is fresher, so only fill the gap.
+          if (cloudData.profile.ownerName && !localStorage.getItem('dukan-profile-name')) {
+            localStorage.setItem('dukan-profile-name', cloudData.profile.ownerName);
+          }
           const cat = localStorage.getItem('dukan-store-category');
           const aiCtx = localStorage.getItem('dukan-business-intelligence-context');
           setTabs(resolveTabsFromBusinessType(cat, aiCtx));

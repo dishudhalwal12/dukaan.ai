@@ -615,6 +615,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
         const profileData = {
             storeDetails,
             answers,
+            // Mirrored so "Welcome back, <name>!" still works on another device.
+            ownerName: localStorage.getItem('dukan-profile-name') || undefined,
             timestamp: new Date().toISOString()
         };
         // The dynamic AI-generated Q&A (question/intent/type/answer) is the

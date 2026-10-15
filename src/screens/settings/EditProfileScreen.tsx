@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
+import { saveBusinessProfileToCloud } from '../../services/cloudSync.ts';
 
 const FormField: React.FC<{ label: string; type: string; value: string; placeholder?: string; disabled?: boolean; isVerified?: boolean; onChange: (value: string) => void }> = 
 ({ label, type, value, placeholder, disabled, isVerified, onChange }) => (
@@ -88,6 +89,24 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             }
 
             console.log('Saving profile:', { name, email });
+
+            // Mirror the name into the cloud profile so the greeting survives a
+            // device change. Fire-and-forget: it never blocks the save.
+            const storeName = localStorage.getItem('dukan-store-name');
+            if (storeName) {
+                const readJson = (key: string) => {
+                    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+                };
+                saveBusinessProfileToCloud(storeName, {
+                    storeDetails: {
+                        storeName,
+                        category: localStorage.getItem('dukan-store-category') || undefined,
+                    },
+                    answers: readJson('dukan-store-context'),
+                    ownerName: name,
+                    timestamp: new Date().toISOString(),
+                }, undefined, readJson('dukan-business-intelligence-context'));
+            }
             // Simulate API call
             setTimeout(() => {
                 setIsSaving(false);

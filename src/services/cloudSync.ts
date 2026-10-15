@@ -356,6 +356,7 @@ export const syncOnLogin = async (
           category: category || 'Kirana / General Store',
         },
         answers: storeContext ? JSON.parse(storeContext) : {},
+        ownerName: localStorage.getItem('dukan-profile-name') || undefined,
         timestamp: new Date().toISOString()
       };
       const onboardingRaw = localStorage.getItem('dukan-business-intelligence-context');
