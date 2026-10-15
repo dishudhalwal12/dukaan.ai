@@ -16,12 +16,15 @@ import OnboardingFlow from './screens/OnboardingFlow.tsx';
 import { generateRandomPhoneNumber } from './utils/phone.ts';
 import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
+import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import { listenToAuthState, signOutUser, User } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
-import { markFreshSignIn } from './utils/authOutcome.ts';
+import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
+import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboardingStatus.ts';
+import { PROFILE_NAME_KEY, resolveGreetingName } from './utils/greetingName.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 
 const getInitialScreen = (): Screen => {
@@ -80,6 +83,7 @@ const AppContent: React.FC = () => {
     new Set(JSON.parse(localStorage.getItem('dukan-seen-order-ids') ?? '[]') as string[])
   );
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // Auth state with local storage caching for immediate session persistence across page loads
@@ -174,6 +178,25 @@ const AppContent: React.FC = () => {
           const aiCtx = localStorage.getItem('dukan-business-intelligence-context');
           setTabs(resolveTabsFromBusinessType(cat, aiCtx));
         }
+
+        // An account that has already onboarded goes straight in — onboarding
+        // is only for stores that have never been set up. The fresh-sign-in
+        // marker is one-shot, so a silent session restore stays silent.
+        const freshSignIn = consumeFreshSignIn();
+        if (hasCompletedOnboarding(cloudData.profile)) {
+          localStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
+          setShowOnboarding(false);
+          if (freshSignIn) {
+            setWelcomeBackName(resolveGreetingName({
+              localName: localStorage.getItem(PROFILE_NAME_KEY),
+              cloudName: cloudData.profile?.ownerName,
+              user,
+            }));
+          }
+        } else {
+          setWelcomeBackName(null);
+          setShowOnboarding(true);
+        }
       }
     });
     return () => unsubscribe();
@@ -220,7 +243,7 @@ const AppContent: React.FC = () => {
 
         if (isGuest) {
             // Guests onboard locally — no account, no cloud writes.
-            if (localStorage.getItem('dukan-onboarding-complete') !== 'true') {
+            if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') {
                 setShowOnboarding(true);
             } else {
                 setInteractionDone(true);
@@ -550,28 +573,21 @@ const AppContent: React.FC = () => {
 
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
+    setWelcomeBackName(null);
     setInteractionDone(true); // Start simulation engine after onboarding
 
     // Re-resolve tabs now that category is written to localStorage
     const category = localStorage.getItem('dukan-store-category');
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
     setTabs(resolveTabsFromBusinessType(category, aiContext));
-
-    // Trigger auth check immediately post-onboarding if not logged in or in guest mode
-    if (!currentUserRef.current && !localStorage.getItem('dukan-guest-mode') && !localStorage.getItem('dukan-auth-user')) {
-        setTimeout(() => {
-          if (!currentUserRef.current && !localStorage.getItem('dukan-guest-mode') && !localStorage.getItem('dukan-auth-user')) {
-            setShowAuthModal(true);
-          }
-        }, 500);
-    }
+    // No auth prompt here any more: sign-in already happened before onboarding.
   };
 
   const handleGuestContinue = () => {
     setShowAuthModal(false);
     localStorage.setItem('dukan-guest-mode', 'true');
     // Guests onboard locally; the auth-first gate no longer runs it for them.
-    if (localStorage.getItem('dukan-onboarding-complete') !== 'true') {
+    if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') {
       setShowOnboarding(true);
     }
   };
@@ -601,6 +617,9 @@ const AppContent: React.FC = () => {
           )}
         </>
         {showOnboarding && <OnboardingFlow onComplete={handleOnboardingComplete} />}
+        {welcomeBackName && (
+          <WelcomeBackModal name={welcomeBackName} onContinue={() => setWelcomeBackName(null)} />
+        )}
         {showAuthModal && (
           <AuthModal 
             onClose={handleGuestContinue} 
