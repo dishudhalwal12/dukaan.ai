@@ -188,42 +188,51 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     try {
-        const isOrdersRoute = typeof window !== 'undefined' && (window.location.hash.toLowerCase().includes('orders') || window.location.search.toLowerCase().includes('orders'));
-        const onboardingComplete = localStorage.getItem('dukan-onboarding-complete');
-        if (onboardingComplete !== 'true' && !isOrdersRoute) {
-            setShowOnboarding(true);
-        } else {
-            setInteractionDone(true); // Returning users: start webhook polling immediately on mount
-            
-            // Check if returning from Google OAuth or already authenticated
-            const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
-            const isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
+        // The #orders deep link is the WhatsApp webhook path — it must not be
+        // interrupted by the first-run gates.
+        const isOrdersRoute = typeof window !== 'undefined' &&
+            (window.location.hash.toLowerCase().includes('orders') || window.location.search.toLowerCase().includes('orders'));
 
-            if (!authChecked.current && !localStorage.getItem('dukan-guest-mode')) {
-                authChecked.current = true;
+        // Returning from Google OAuth: the redirect resolves auth by itself, so
+        // the modal stays shut.
+        const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
+        const isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
 
-                // If currently returning from OAuth, suppress auth modal
-                if (hasOAuthParams || isOAuthInProgress) {
-                    return;
-                }
+        const isAuthenticated = Boolean(currentUserRef.current || localStorage.getItem('dukan-auth-user'));
+        const isGuest = Boolean(localStorage.getItem('dukan-guest-mode'));
 
-                // If already authenticated, do not show modal
-                if (currentUserRef.current || localStorage.getItem('dukan-auth-user')) {
-                    return;
-                }
+        if (isOrdersRoute || hasOAuthParams || isOAuthInProgress) {
+            setInteractionDone(true);
+            return;
+        }
 
-                // A slight delay ensures dashboard paints fully before the modal overlays
-                setTimeout(() => {
-                    if (!currentUserRef.current && !localStorage.getItem('dukan-auth-user') && !localStorage.getItem('dukan-guest-mode')) {
-                        setShowAuthModal(true);
-                    }
-                }, 1200);
+        if (isGuest) {
+            // Guests onboard locally — no account, no cloud writes.
+            if (localStorage.getItem('dukan-onboarding-complete') !== 'true') {
+                setShowOnboarding(true);
+            } else {
+                setInteractionDone(true);
             }
+            return;
+        }
+
+        if (isAuthenticated) {
+            // Onboarding, if still needed, is raised by the auth listener.
+            setInteractionDone(true); // Returning users: start webhook polling immediately on mount
+            return;
+        }
+
+        // Onboarding is no longer a mount-time gate. Sign in / sign up comes
+        // first; the auth listener starts onboarding only for accounts that
+        // have not completed it. See the listener below.
+        if (!authChecked.current) {
+            authChecked.current = true;
+            setShowAuthModal(true);
         }
     } catch (error) {
         console.error("Failed to check onboarding status from localStorage", error);
         setError("Failed to load onboarding status.");
-        setShowOnboarding(true);
+        setShowAuthModal(true);
     }
   }, []);
 
@@ -549,6 +558,10 @@ const AppContent: React.FC = () => {
   const handleGuestContinue = () => {
     setShowAuthModal(false);
     localStorage.setItem('dukan-guest-mode', 'true');
+    // Guests onboard locally; the auth-first gate no longer runs it for them.
+    if (localStorage.getItem('dukan-onboarding-complete') !== 'true') {
+      setShowOnboarding(true);
+    }
   };
 
   const handleLogout = useCallback(async () => {
