@@ -10,11 +10,9 @@ import SettingsScreen from './screens/SettingsScreen.tsx';
 import { ProductProvider, useProducts } from './contexts/ProductContext.tsx';
 import { LanguageProvider } from './contexts/LanguageContext.tsx';
 import OrdersScreen from './screens/OrdersScreen.tsx';
-import { initialOrders } from './data/initialOrders.ts';
 import NewOrderModal from './components/NewOrderModal.tsx';
 import { initialProducts } from './data/initialProducts.ts';
 import OnboardingFlow from './screens/OnboardingFlow.tsx';
-import { mockCustomers } from './data/mockCustomers.ts';
 import { generateRandomPhoneNumber } from './utils/phone.ts';
 import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
@@ -23,6 +21,18 @@ import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
+
+/**
+ * Removes every piece of local app state written under the `dukan-` / `dukaan-`
+ * prefixes. Called on sign-out so a fresh account never inherits the previous
+ * account's orders, catalog, onboarding answers or store identity.
+ */
+const clearLocalStore = (): void => {
+  if (typeof window === 'undefined') return;
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith('dukan-') || key.startsWith('dukaan-'))
+    .forEach((key) => localStorage.removeItem(key));
+};
 
 const getInitialScreen = (): Screen => {
   if (typeof window !== 'undefined') {
@@ -50,20 +60,13 @@ const AppContent: React.FC = () => {
             }
         }
 
-        // Check if it's a new user (onboarding not complete).
-        const isNewUser = localStorage.getItem('dukan-onboarding-complete') !== 'true';
-        if (isNewUser) {
-            return []; // New users start with zero orders.
-        }
-        
-        // Fallback for existing users who might have cleared their orders but not onboarding status.
-        return initialOrders;
+        // No demo/seed orders: a store with nothing stored starts empty.
+        return [];
 
     } catch (error) {
         console.error("Failed to load orders from localStorage", error);
         // Safe fallback in case of any error
-        const isNewUser = localStorage.getItem('dukan-onboarding-complete') !== 'true';
-        return isNewUser ? [] : initialOrders;
+        return [];
     }
   });
   const [newOrderForPopup, setNewOrderForPopup] = useState<Order | null>(null);
@@ -541,8 +544,7 @@ const AppContent: React.FC = () => {
 
   const handleLogout = useCallback(async () => {
     await signOutUser();
-    localStorage.removeItem('dukan-guest-mode');
-    localStorage.removeItem('dukan-auth-user');
+    clearLocalStore();
     setCurrentUser(null);
     currentUserRef.current = null;
     setShowAuthModal(true);
