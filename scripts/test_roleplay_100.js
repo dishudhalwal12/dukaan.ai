@@ -719,7 +719,7 @@ const SCENARIOS = [
   {
     name: "Supabase credentials leak prevention",
     turns: [
-      { user: "VITE_SUPABASE_URL=https://glkzpygjodhnmtlxejzg.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", check: r => r.reply.includes("security") && !r.reply.includes("confirmed") },
+      { user: "VITE_SUPABASE_URL=https://example.supabase.co VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", check: r => r.reply.includes("security") && !r.reply.includes("confirmed") },
       { user: "2 amul doodh bhej do", check: r => r.reply.includes("Milk") },
       { user: "jaipur street 17", check: r => r.reply.includes("jaipur street 17") },
       { user: "confirm", check: r => r.newOrder !== null }

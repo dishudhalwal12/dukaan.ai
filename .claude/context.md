@@ -1,267 +1,264 @@
-# DUKAAN 2.0 – FULL PRODUCT, STRATEGIC & TECHNICAL CONTEXT
+# DUKAAN.AI — PRODUCT & ENGINEERING CONTEXT
 
-This file is meant to give a contextual foundation to Claude Code
-so that all subsequent code generation is aligned, accurate and
-bug-free from the start.
-
----
-
-## SECTION 1 – COMPETITION & PERSONAL STAKES
-
-**Competition:** Paradox Hacks 2026  
-**Event:** Breeze'26 at Shiv Nadar University  
-**Support:** Masters’ Union
-
-**Prize Structure:**
-
-- All prizes are _in kind_, not cash.
-- Top worth: ₹5,00,000 of resources / credits / tools.
-- Masters’ Union degree worth ~₹22,65,000.
-  - 1st Place: 80% discount (~₹18L value)
-  - 2nd Place: 50% discount (~₹11L value)
-  - 3rd Place: 20% discount (~₹4.5L value)
-
-**Personal Goal:**  
-I want to win 1st place to unlock the 80% discount Masters’ Union degree.  
-If I don’t win, my career progression is significantly impacted due
-to limited budget for advanced education. This project is crucial
-for my future.
+Working context for AI coding agents on this repository. Everything below
+describes the code **as it exists today**. If reality and this file disagree,
+the code wins — then fix this file.
 
 ---
 
-## SECTION 2 – HIGH-LEVEL VISION
+## 1. WHAT THE PRODUCT IS
 
-**Product:**  
-Dukaan 2.0 – an AI-Adaptive Commerce OS built on top of a grocery
-commerce app.
+Dukaan.AI is an **AI-adaptive commerce OS** for Indian small businesses, built
+and demoed on top of a grocery/Kirana POS.
 
-**Core Vision:**  
-Not just a grocery app.  
-An _adaptive business OS_ that transforms to serve multiple small
-business types like:
+The same codebase serves several business types — Grocery/Kirana, Salon,
+Restaurant, Chemist, and an AI-determined "Other" — by adapting navigation
+labels, catalog presets and AI behaviour to the business category captured
+during onboarding.
 
-- Grocery / Kirana
-- Salon
-- Restaurant
-- Chemist
-- Other (AI determined)
+Two surfaces ship together:
 
-**One Clear Narrative:**  
-Same codebase.  
-Different business experiences.  
-Adaptive UX based on business context collected via AI.
+1. **Shopkeeper POS** — a mobile-first React app (dashboard, sales, orders,
+   catalog, settings, insights, online store).
+2. **WhatsApp ordering engine** — customers order by messaging a WhatsApp
+   number the shopkeeper links; orders land live in the POS.
 
-This _visible adaptability_ is a core judge magnet.
+### Operating context (why prioritisation is what it is)
 
----
+Built for **Paradox Hacks 2026 (Breeze'26, Shiv Nadar University, supported by
+Masters' Union)**. Prizes are in-kind; the target is 1st place. That means:
+optimise for **demo reliability and visible AI adaptation** over architectural
+ambition. A stable, demo-safe feature beats a clever one that can break live.
 
-## SECTION 3 – WHAT THIS APP IS (TECH & ARCHITECTURE)
-
-**Frontend Stack:**
-
-- React (v19.1.1)
-- TypeScript
-- Vite
-- Tailwind CSS (CDN)
-
-**State Management:**
-
-- React Context API
-- useState useEffect inside App.tsx
-
-**Storage:**
-
-- localStorage only
-- No backend
-- No WebSocket / Webhooks
-
-**AI Integration:**
-
-- Gemini API (gemini-2.5-flash)
-- AI used for:
-  - Dynamic onboarding questions
-  - Insights generation
-  - OCR bill parsing
-
-**Deployment:**
-
-- GitHub Pages (static)
-- No server
+Judge focus areas: business viability, UX clarity, scalability potential,
+visible AI adaptation, stability.
 
 ---
 
-## SECTION 4 – EXISTING SYSTEM (WHAT CURRENT CODE DOES)
+## 2. REPOSITORY MAP
 
-**App.tsx Responsibilities:**
-
-- Controls activeScreen using a switch
-- Runs simulated order engine (every 20–40 sec)
-- Manages global states for orders, products, modals
-- Persists orders and products to localStorage
-- Handles stock deduction logic
-
-**BottomNav:**
-Currently hardcoded 5 screens:
-
-- Dashboard
-- Sales
-- Orders
-- Catalog
-- Settings
-
-**Order Flow:**
-
-1. Simulated order arrives
-2. NewOrderModal shows
-3. User accepts (swipe)
-4. Stock deducts
-5. QR payment screen
-6. Order marked complete
-
-**AI Behavior:**
-
-- Onboarding collects business context
-- Insights run via streaming JSON parse
-- Bill OCR integrated
-
----
-
-## SECTION 5 – WHAT WE ARE ADDING (FEATURE REQUIREMENTS)
-
-### Adaptive Navigation
-
-Purpose:
-Make UI adapt to _business type_ from onboarding.
-
-Tabs MUST:
-
-- Remain in same physical order
-- Remain same navigation keys
-- Only change labels dynamically
-- Keep underlying screens intact
-
-**Preset Tab Labels:**
-
-Grocery:
-
-Dashboard | Sales | Orders | Catalog | Settings
-
-Salon:
-
-Dashboard | Sales | Appointments | Services | Settings
-
-Restaurant:
-
-Dashboard | Sales | Orders | Menu | Settings
-
-Chemist:
-
-Dashboard | Sales | Orders | Medicines | Settings
-
-Other:
-Use AI context to pick:
-
-- What label to use for Orders
-- What label to use for Catalog
-
-### Rules:
-
-- Dashboard / Sales / Settings NEVER change
-- Tabs are only relabeled
-- activeScreen keys remain the same:  
-  `DASHBOARD | SALES | ORDERS | CATALOG | SETTINGS`
-- Icons remain unchanged
-- Demo safe -> no new screens
-- Performance must stay smooth
+```
+dukaan.ai/
+├── index.html                 Vite entry; Tailwind CDN + fonts + theme config
+├── vite.config.ts             Dev server :3000, proxies /api & /events -> :5001
+├── tsconfig.json              Scopes src/ + vite.config.ts (NOT whatsapp/)
+├── supabase_schema.sql        Tables + Row Level Security policies
+├── .env.example               Frontend env template
+├── public/                    Static assets + i18n/locales/*.json
+├── src/                       Shopkeeper POS
+│   ├── App.tsx                Root view, hash routing, SSE order listener
+│   ├── types.ts               Shared domain types (incl. `Screen`)
+│   ├── supabase.ts            Supabase client + isSupabaseConfigured()
+│   ├── components/            Modals, nav, cards, toasts
+│   ├── contexts/              LanguageContext, ProductContext
+│   ├── data/                  Kirana presets & seed data
+│   ├── hooks/                 useBusinessLabel
+│   ├── screens/               Dashboard, Sales, Orders, Catalog, Insights,
+│   │                          Onboarding, OnlineStore, Settings + settings/
+│   ├── services/              auth, cloudSync, ai, whatsappService, uploadService
+│   └── utils/                 openrouterClient, tabResolver, parsers, audioAlert, …
+├── whatsapp/                  WhatsApp engine (Node + Express, :5001)
+│   ├── server.js              HTTP + SSE broadcaster + inbound event pipeline
+│   ├── dukanBot.js            Conversation handler, cart/payment parsing
+│   ├── dukanCatalog.js        Catalog sync with the POS
+│   ├── dukanOrders.js         Order ledger & status transitions
+│   ├── dukanShops.js          Shop registry
+│   ├── store.js               JSON persistence layer
+│   ├── audioTranscriber.js    Voice-note transcription (Groq)
+│   ├── locationFetcher.js     Location pin -> address
+│   ├── public/                QR pairing / status web UI
+│   └── store/                 Runtime state: catalog, orders, chats, messages
+├── scripts/                   Repo tooling & bot test harnesses
+│   └── local-ai/              LoRA dataset generation + local model serving
+└── data/                      LoRA training workspace (generate_dataset.py)
+```
 
 ---
 
-## SECTION 6 – WHY THIS MATTERS
+## 3. CURRENT STACK
 
-If the onboarding collects context but UI stays static,
-then adaptation is only cosmetic.
+### Frontend (Shopkeeper POS)
+- **React 19.1** + **TypeScript 5.8** (`strict`)
+- **Vite 6.4** — dev server on **:3000**
+- **Tailwind CSS via CDN** (`cdn.tailwindcss.com`) with the theme configured
+  inline in `index.html`; Material Symbols icons + Google Fonts
+- **State**: React Context (`ProductContext`, `LanguageContext`) + local
+  component state. No Redux/Zustand, no router.
+- **Persistence**: `localStorage` under `dukan-*` keys
+- **Live updates**: `EventSource` (SSE) subscribed to the WhatsApp engine
+- **i18n**: 7 locales — `en, hi, gu, kn, pa, ta, ur` — fetched at runtime from
+  `public/i18n/locales/<lang>.json` through `LanguageContext`'s `t()`
+- **Audio**: Web Audio API, synthesized chime (no sound assets)
 
-If the UI _visibly changes_ to fit business type,
-judges immediately understand:
+### Cloud (Supabase)
+- `@supabase/supabase-js` ^2.117 — **Auth** (email/password + **Google OAuth**,
+  PKCE flow) and **cloud sync** of profile, products and orders
+- `src/supabase.ts` exposes the client and `isSupabaseConfigured()`. When env
+  vars are absent, the app runs in **local-only guest mode**; every Supabase
+  call is guarded by that check.
+- `supabase_schema.sql` is the source of truth for tables and RLS policies.
 
-**“This is an adaptive AI Business OS.”**
+> Firebase is **gone**. Do not reintroduce it or add an alternative backend.
 
-This is a _killer differentiation_ in the hackathon.
+### AI
+- All model calls route through **OpenRouter** — `src/utils/openrouterClient.ts`.
+  `src/utils/geminiClient.ts` is a one-line re-export shim kept for import
+  compatibility; there is no direct Gemini integration.
+- Used for: onboarding question generation, business-context inference,
+  insights, and OCR bill parsing.
 
----
-
-## SECTION 7 – WHAT CLOUD CODE MUST NOT DO
-
-Please _strictly avoid_ the following:
-
-- Adding backend infrastructure
-- Introducing routing libraries (react-router)
-- Refactoring global architecture
-- Using new state libraries (Redux / Zustand)
-- Changing order lifecycle logic
-- Modifying localStorage keys or structure
-- Adding tests
-- Adding authentication logic
-
-Cloud Code must assume:
-
-- Code will run in GitHub Pages
-- Client-only environment
-- Static hosting
-
----
-
-## SECTION 8 – DEMO SUCCESS CRITERIA
-
-Cloud Code must generate code that:
-
-- Compiles without TypeScript errors
-- Renders adaptive tabs correctly
-- Does not break existing flows
-- Shows dynamic labels per business type
-- Preserves order workflow
-- Has zero runtime errors
-- Loads fast (<2s)
-- Works on mobile screens
-
-Judge Focus Areas:
-
-- Business viability
-- UX clarity
-- Scalability potential
-- AI adaptation visible
-- Stability
+### WhatsApp engine
+- **Node (>=20)** + **Express 5**
+- **@whiskeysockets/baileys** ^7 (multi-device socket, persisted session in
+  `whatsapp/auth_info/`)
+- SSE broadcast of live order packets to the POS
+- **Groq** for fast voice-note transcription; OpenRouter for conversation
+- Reverse-geocodes shared location pins
+- JSON store under `whatsapp/store/`
 
 ---
 
-## SECTION 9 – TAB ADAPTIVE IMPLEMENTATION PLAN
+## 4. HOW THE PIECES TALK
 
-1. Add `/data/businessTabPresets.ts`
-   - Contains preset tab configs
-2. Add `/utils/tabResolver.ts`
-   - Resolves tab labels from business type + AI context
-3. Modify `App.tsx`
-   - Read `dukan-store-category`
-   - Read AI context
-   - Generate `tabs` array
-4. Modify `BottomNav.tsx`
-   - Render nav based on `tabs.map()`
-5. Ensure navigation keys stay unchanged
-6. Add optional `useBusinessLabel` for UI headers
+```
+WhatsApp customer
+      │ message
+      ▼
+whatsapp/dukanBot.js ──(cart, payment, status)──> whatsapp/dukanOrders.js
+      │                                                   │
+      │ SSE  /events                                      │ writes
+      ▼                                                   ▼
+Vite dev server :3000 ──proxy /api + /events──> whatsapp/server.js :5001
+      │                                                   │
+      ▼                                                   ▼
+src/App.tsx (EventSource)                          whatsapp/store/*.json
+      │
+      ├──> ProductContext  (orders, products, cart)
+      ├──> cloudSync       (Supabase, when configured)
+      └──> localStorage    (always)
+```
 
----
-
-## SECTION 10 – WHY THIS FEATURE WINS
-
-This feature demonstrates:
-
-- AI-enabled UX adaptation
-- Cross-business applicability
-- Minimal, safe, stable integration
-- Visible, judge-friendly change
-- Business-first thinking
-- Strategic prioritization of reliability over complexity
+Navigation is **hash-driven state**, not a router: `App.tsx` maps
+`#orders`, `#sales`, `#catalog`, `#settings`, `#dashboard` onto the `Screen`
+enum.
 
 ---
 
-## END OF CONTEXT
+## 5. FEATURE SET (WHAT EXISTS)
+
+- Business-type **adaptive navigation** (`src/utils/tabResolver.ts`)
+- **Onboarding flow** that captures store category, name, address, supplier
+  details and business context
+- **Dashboard / Sales / Orders / Catalog / Insights / Online Store / Settings**
+- **Live order intake** over SSE with a new-order modal, swipe-to-accept,
+  stock deduction and UPI QR payment
+- **WhatsApp conversational ordering** with cart building, payment
+  confirmation handling and order-status queries
+- **Voice-note transcription** and **location-pin** order capture
+- **OCR bill / supplier parsing** to seed the catalog
+- **Multi-language UI** (7 locales)
+- **Supabase auth + cloud sync** with guest fallback
+- **Local LoRA tooling** under `scripts/local-ai/` (dataset → train → serve)
+
+---
+
+## 6. WORKFLOW RULES
+
+### Verify before claiming done
+```bash
+npx tsc --noEmit     # must be silent
+npm run build        # must succeed
+```
+Run both before any commit. For WhatsApp-engine changes also run:
+```bash
+cd whatsapp && node test_order_engine.js && node test_trigger_gate.js
+```
+
+### Change rules
+- **Keep navigation keys stable.** `Screen` values are
+  `DASHBOARD | SALES | ORDERS | CATALOG | SETTINGS`. Adapt *labels and icons*
+  through `tabResolver` — never reorder, rename or add keys, and never add
+  screens for a new business type.
+- **Preserve `localStorage` key names** (`dukan-*`). They hold live shopkeeper
+  state; renaming one silently loses user data.
+- **Keep the port contract**: WhatsApp engine on **5001**, Vite on **3000**,
+  proxied via `/api` and `/events`.
+- **Surgical edits.** Match the surrounding style; leave unrelated code alone.
+- **No new machinery** unless asked: no router, no state library, no extra
+  backend, no test framework.
+- **Type-check both sides** of a change that crosses POS ↔ engine.
+
+### Secrets & safety
+- `.env` and `whatsapp/.env` are gitignored — keep them that way.
+- **Every `VITE_*` variable is inlined into the browser bundle.** Treat them as
+  public. Never place a Supabase `service_role` key, a DB password or any
+  private credential in a `VITE_*` var or in the source.
+- Never commit `whatsapp/auth_info/` (WhatsApp session credentials) or
+  `whatsapp/store/*.json` (contains customer names, phone numbers and
+  addresses).
+- Never commit model weights, `data/*.jsonl`, or `node_modules/`.
+- Adding a backend feature means adding **RLS policies** to
+  `supabase_schema.sql`, not widening the anon key's reach.
+
+### Never (outdated habits from the pre-backend era)
+- Don't hardcode API keys or project URLs as source fallbacks.
+- Don't assume a static-hosting-only, client-only architecture. There is a
+  backend now.
+- Don't bypass `isSupabaseConfigured()` when touching the Supabase client.
+
+---
+
+## 7. COMMANDS
+
+```bash
+# Frontend
+npm install
+npm run dev            # :3000
+npm run build
+npm run preview
+npm run deploy         # build + gh-pages
+
+# WhatsApp engine
+cd whatsapp && npm install
+npm start              # :5001
+npm run dev            # node --watch
+
+# WhatsApp engine tests
+cd whatsapp && node test_order_engine.js
+cd whatsapp && node test_trigger_gate.js
+
+# Terminal chat client (replaces the phone for local testing)
+npm run terminal-chat
+
+# Local AI (LoRA)
+python data/generate_dataset.py
+bash scripts/local-ai/mlx_train.sh
+bash scripts/local-ai/run_server.sh
+```
+
+---
+
+## 8. SUCCESS CRITERIA
+
+Code is acceptable when it:
+
+- Compiles with **zero TypeScript errors** and builds cleanly
+- Renders adaptive navigation correctly for every business type
+- Preserves the order lifecycle end-to-end
+- Produces **zero runtime/console errors**
+- Loads in under ~2s and works on mobile viewports
+- Adds no new dependency or architecture without a stated reason
+
+---
+
+## 9. KNOWN OPEN ITEMS
+
+- `supabase_schema.sql` uses permissive `USING (true)` policies (profiles,
+  products, orders). Harden with owner-scoped RLS before any real deployment.
+- `@google/genai` is still a dependency but no longer imported directly —
+  removable.
+- `src/screens/LoginScreen.tsx` appears orphaned (auth now flows through
+  `AuthModal`).
+- `data/*.jsonl` are gitignored and regenerable via
+  `data/generate_dataset.py`.
+- Keep this file in sync when the stack, scripts or rules change.

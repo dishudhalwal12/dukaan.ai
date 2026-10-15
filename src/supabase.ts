@@ -1,18 +1,21 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Retrieve environment variables with project fallbacks
-const DEFAULT_SUPABASE_URL = 'https://glkzpygjodhnmtlxejzg.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsa3pweWdqb2Robm10bHhlanpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5ODk0MTEsImV4cCI6MjEwNzU2NTQxMX0.GqqPCk9O-LP48Cpzd9Ee8HlXAS6zxHPL6bFlF8lh73U';
+// Values come from .env (see .env.example). Placeholders keep createClient()
+// constructible when Supabase is not configured; every caller guards against
+// that case with isSupabaseConfigured(), so the app falls back to local-only
+// guest mode instead of touching the network.
+const PLACEHOLDER_SUPABASE_URL = 'https://placeholder-project.supabase.co';
+const PLACEHOLDER_SUPABASE_ANON_KEY = 'placeholder-anon-key';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || PLACEHOLDER_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || PLACEHOLDER_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = (): boolean => {
   return (
     Boolean(supabaseUrl) &&
     Boolean(supabaseAnonKey) &&
-    supabaseUrl !== 'https://placeholder-project.supabase.co' &&
-    supabaseAnonKey !== 'placeholder-anon-key'
+    supabaseUrl !== PLACEHOLDER_SUPABASE_URL &&
+    supabaseAnonKey !== PLACEHOLDER_SUPABASE_ANON_KEY
   );
 };
 

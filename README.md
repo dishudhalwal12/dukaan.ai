@@ -86,7 +86,8 @@ By connecting **WhatsApp conversational ordering** with a **live, real-time shop
 - **Styling**: Tailwind CSS
 - **Live Events**: Server-Sent Events (`EventSource`) for zero-latency order delivery
 - **Audio Alerts**: Web Audio API (synthesized dual-tone chime, zero external sound assets)
-- **Data & Storage**: React Context + HTML5 LocalStorage persistence
+- **Auth**: Supabase Auth (email + Google OAuth), guest mode when unconfigured
+- **Data & Storage**: React Context + HTML5 LocalStorage, with optional Supabase cloud sync
 
 ### Backend & Messaging (WhatsApp Engine)
 - **Runtime**: Node.js (LTS >= 20) + Express 5
@@ -169,11 +170,18 @@ npm run dev
 
 | Variable | Location | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `OPENROUTER_API_KEY` | `.env`, `whatsapp/.env` | *(optional)* | API key for conversational AI assistance |
+| `VITE_SUPABASE_URL` | `.env` | *(optional)* | Supabase project URL. Enables cloud sync and Google OAuth. Blank = local-only guest mode. |
+| `VITE_SUPABASE_ANON_KEY` | `.env` | *(optional)* | Supabase anon (publishable) key. Only safe to ship because Row Level Security is enabled. |
+| `VITE_OPENROUTER_API_KEY` | `.env` | *(optional)* | OpenRouter key read by the frontend for conversational AI. |
+| `OPENROUTER_API_KEY` | `.env`, `whatsapp/.env` | *(optional)* | API key for conversational AI assistance (backend) |
 | `OPENROUTER_MODEL` | `.env`, `whatsapp/.env` | `liquid/lfm-2.5-2.6b:free` | Model identifier used for conversation |
+| `GROQ_API_KEY` | `whatsapp/.env` | *(optional)* | Groq key used for fast voice-message transcription |
 | `PORT` | `whatsapp/.env` | `5001` | WhatsApp backend server port |
 | `AUTH_DIR` | `whatsapp/.env` | `./auth_info` | Directory where WhatsApp session credentials persist |
 | `N8N_WEBHOOK_URL` | `whatsapp/.env` | *(optional)* | Webhook endpoint for workflow automations |
+
+> [!WARNING]
+> Every `VITE_*` variable is inlined into the browser bundle and is therefore **public**. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
 ---
 
@@ -181,25 +189,49 @@ npm run dev
 
 ```
 dukaan.ai/
-├── public/                  # Static assets & vector logo
-│   ├── logo.svg             # Project storefront brand mark
-│   └── i18n/                # Regional language translation bundles
-├── src/                     # Shopkeeper POS (React + TypeScript)
-│   ├── App.tsx              # Main POS view & real-time SSE listener
-│   ├── components/          # Order modal, product card, audio chime
-│   ├── contexts/            # Product & language context providers
-│   ├── data/                # Kirana grocery catalog presets
-│   ├── screens/             # Catalog, Orders, Sales, Settings views
-│   ├── services/            # WhatsApp & cloud sync client services
-│   └── utils/               # Audio alerts, OpenRouter client, parsers
-├── whatsapp/                # WhatsApp Baileys Backend Engine
-│   ├── server.js            # Express server & SSE event broadcaster
-│   ├── dukanBot.js          # WhatsApp conversation handler & cart parser
-│   ├── dukanCatalog.js      # Store catalog synchronization
-│   ├── dukanOrders.js       # Live order ledger & status management
-│   ├── audioTranscriber.js  # Voice message audio transcription
-│   └── locationFetcher.js   # Location pin coordinate resolver
-├── index.html               # Main application entry point
-├── package.json             # Root POS dependencies and scripts
-└── vite.config.ts           # Vite proxy & build configuration
+├── index.html                   # Vite entry document
+├── vite.config.ts               # Dev server (3000) + /api & /events proxy -> 5001
+├── tsconfig.json                # TypeScript config (scopes src/ + vite.config.ts)
+├── package.json                 # Frontend dependencies & scripts
+├── supabase_schema.sql          # Tables + Row Level Security policies
+├── .env.example                 # Frontend environment template
+├── public/                      # Static assets served as-is
+│   ├── logo.svg
+│   ├── favicon.ico
+│   ├── index.css
+│   └── i18n/locales/            # Translation bundles (en, hi, gu, kn, pa, ta, ur)
+├── src/                         # Shopkeeper POS (React 19 + TypeScript)
+│   ├── index.tsx                # ReactDOM entry
+│   ├── App.tsx                  # Root view, routing & live SSE order listener
+│   ├── types.ts                 # Shared domain types
+│   ├── supabase.ts              # Supabase client + isSupabaseConfigured()
+│   ├── vite-env.d.ts            # Vite client types
+│   ├── components/              # AuthModal, NewOrderModal, ProductModal, Toast, ...
+│   ├── contexts/                # LanguageContext, ProductContext
+│   ├── data/                    # Kirana presets (businessPresets, presetProducts, ...)
+│   ├── hooks/                   # useBusinessLabel
+│   ├── screens/                 # Dashboard, Catalog, Orders, Sales, Insights,
+│   │                            # Onboarding, Settings + settings/ sub-screens
+│   ├── services/                # auth, cloudSync, ai, whatsappService, uploadService
+│   └── utils/                   # openrouterClient, audioAlert, parsers, sanitize,
+│                                # phone, image, tabResolver, geminiClient
+├── whatsapp/                    # WhatsApp Baileys engine (Node + Express, :5001)
+│   ├── server.js                # Express server & SSE event broadcaster
+│   ├── dukanBot.js              # Conversation handler & cart parser
+│   ├── dukanCatalog.js          # Store catalog synchronization
+│   ├── dukanOrders.js           # Live order ledger & status management
+│   ├── dukanShops.js            # Shop registry
+│   ├── store.js                 # JSON state persistence layer
+│   ├── audioTranscriber.js      # Voice message transcription
+│   ├── locationFetcher.js       # Location pin coordinate resolver
+│   ├── public/                  # QR pairing / status web UI
+│   ├── store/                   # Runtime state (catalog, orders, chats, messages)
+│   └── test_*.js                # Engine + trigger-gate tests
+├── scripts/                     # Repo-side tooling & tests
+│   ├── local-ai/                # LoRA dataset generation & local model serving
+│   ├── seed_300_catalog.js
+│   ├── terminal_chat.js
+│   └── test_*.js
+└── data/                        # LoRA training workspace
+    └── generate_dataset.py      # Generates train/valid/test .jsonl (gitignored)
 ```
