@@ -33,7 +33,7 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
 
   // ─── Neutral fallback for "Other" — mirrors OnboardingFlow's constant ──────
   // This is the last line of defense: if ProductContext somehow runs before
@@ -156,7 +156,11 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
         // Auto-sync live store catalog to Baileys WhatsApp bot
         if (products.length > 0) {
-            whatsappService.syncCatalog(products).catch(err => {
+            const formattedForBot = products.map(p => ({
+                ...p,
+                name: t(p.name) || p.name
+            }));
+            whatsappService.syncCatalog(formattedForBot).catch(err => {
                 // Deferred or offline during initial frontend boot
                 console.debug('[ProductContext] WhatsApp catalog auto-sync deferred:', err?.message || err);
             });

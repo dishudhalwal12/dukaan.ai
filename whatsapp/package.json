@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "terminal": "node ../scripts/terminal_chat.js"
   },
   "keywords": [],
   "author": "",

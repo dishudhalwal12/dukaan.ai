@@ -51,6 +51,38 @@ function saveCatalog() {
   }
 }
 
+const KNOWN_NAME_MAP = {
+  'product_maggi': 'Maggi 2-Minute Noodles',
+  'product_amul_milk': 'Amul Taaza Milk',
+  'product_parle_g': 'Parle-G Biscuits',
+  'product_tata_salt': 'Tata Salt',
+};
+
+function getAliasesForName(name) {
+  const lower = name.toLowerCase();
+  const aliases = [lower];
+  const clean = lower.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  aliases.push(clean);
+  clean.split(' ').filter(w => w.length > 2).forEach(w => aliases.push(w));
+
+  if (lower.includes('parle')) {
+    aliases.push('parle-g', 'parleg', 'parle g', 'biscuit', 'biscuits', 'chai biscuit');
+  }
+  if (lower.includes('maggi') || lower.includes('maggie')) {
+    aliases.push('maggi', 'maggie', 'noodles', '2-minute');
+  }
+  if (lower.includes('milk') || lower.includes('amul') || lower.includes('doodh')) {
+    aliases.push('milk', 'amul', 'doodh', 'taaza');
+  }
+  if (lower.includes('salt') || lower.includes('namak') || lower.includes('tata')) {
+    aliases.push('salt', 'namak', 'tata');
+  }
+  if (lower.includes('good day') || lower.includes('goodday')) {
+    aliases.push('good day', 'goodday', 'biscuit', 'cookies', 'butter cookies');
+  }
+  return Array.from(new Set(aliases));
+}
+
 export const dukanCatalog = {
   getAll() {
     return catalog;
@@ -66,26 +98,101 @@ export const dukanCatalog = {
 
   search(query) {
     if (!query) return [];
-    const q = query.toLowerCase().trim();
+    const rawQ = query.toLowerCase().trim();
+    const cleanQ = rawQ.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const allTokens = cleanQ.split(' ').filter(w => w.length > 1);
 
-    return catalog.filter(p => {
-      if (!p.inStock) return false;
-      if (p.name.toLowerCase().includes(q)) return true;
-      if (p.category.toLowerCase().includes(q)) return true;
-      if (p.keywords && p.keywords.some(k => q.includes(k) || k.includes(q))) return true;
-      return false;
+    const STOP_WORDS = new Set([
+      'pack', 'packet', 'packets', 'pkt', 'pkts', 'bottle', 'bottles', 'tube', 'tubes',
+      'kg', 'gm', 'g', 'l', 'ml', 'litre', 'liter',
+      'chahiye', 'bhai', 'bhaiya', 'bhej', 'do', 'hai', 'kya', 'ka', 'ke', 'ki', 'ko', 'me', 'mein',
+      'rate', 'bhav', 'price', 'kitne', 'kitna', 'aur', 'and', 'with', 'se', 'ek', 'do', 'teen',
+      'char', 'paanch', 'only', 'sirf', 'bas', 'mang', 'rahe', 'ho', 'abhi', 'fir', 'karo', 'kar', 'yahan',
+      'pehle', 'batao', 'batana', 'pucha', 'tha', 'wala', 'wali', 'wale', 'milega', 'milegi', 'hain',
+      'all', 'long', 'this', 'that', 'those', 'these', 'there', 'where', 'what', 'which', 'how', 'when', 'why', 'who',
+      'saves', 'save', 'saved', 'data', 'get', 'got', 'gonna', 'gotta', 'tell', 'answer', 'question',
+      'type', 'names', 'name', 'list', 'bro', 'sir', 'first', 'learn', 'history', 'because', 'irritate',
+      'some', 'items', 'item', 'need', 'want', 'looking', 'remove', 'stock', 'store'
+    ]);
+
+    let searchTokens = allTokens.filter(t => !STOP_WORDS.has(t) && t.length > 2);
+    if (searchTokens.length === 0) return [];
+    if (allTokens.length >= 3 && searchTokens.length === 1 && searchTokens[0].length <= 4) {
+      // Avoid matching a whole conversational sentence on a single short incidental word
+      const singleTok = searchTokens[0];
+      const hasExactProduct = catalog.some(p => p.keywords?.includes(singleTok) || p.name.toLowerCase().split(' ').includes(singleTok));
+      if (!hasExactProduct) return [];
+    }
+
+    const scored = [];
+
+    for (const p of catalog) {
+      if (!p.inStock) continue;
+      const pNameLower = p.name.toLowerCase();
+      const pClean = pNameLower.replace(/[^a-z0-9\s]/g, ' ').trim();
+      const pKeywords = (p.keywords || []).map(k => k.toLowerCase());
+      let score = 0;
+
+      // Full phrase match
+      if (pNameLower.includes(cleanQ) || pKeywords.includes(cleanQ)) {
+        score += 100;
+      }
+
+      // Check each search token
+      let matchedTokenCount = 0;
+      const nameWords = pClean.split(' ');
+      for (const tok of searchTokens) {
+        const inNameWord = nameWords.includes(tok);
+        const inKwExact = pKeywords.includes(tok) || pKeywords.some(k => k.split(/[\s-]+/).includes(tok));
+        const inNameSub = pClean.includes(tok);
+        const inKwSub = pKeywords.some(k => k.includes(tok));
+
+        if (inNameWord || inKwExact) {
+          matchedTokenCount++;
+          if (inNameWord) score += 60;
+          if (inKwExact) score += 40;
+          if (pClean.startsWith(tok)) score += 20;
+        } else if (tok.length >= 4 && (inNameSub || inKwSub)) {
+          matchedTokenCount++;
+          if (inNameSub) score += 10;
+          if (inKwSub) score += 10;
+        }
+      }
+
+      // Multi-token query bonus: extra weight if ALL search tokens matched
+      if (searchTokens.length > 1 && matchedTokenCount === searchTokens.length) {
+        score += 50;
+      }
+
+      if (score > 0 && matchedTokenCount > 0) {
+        scored.push({ product: p, score, matchedTokenCount });
+      }
+    }
+
+    scored.sort((a, b) => {
+      if (b.matchedTokenCount !== a.matchedTokenCount) {
+        return b.matchedTokenCount - a.matchedTokenCount;
+      }
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return a.product.price - b.product.price;
     });
+
+    return scored.map(s => s.product);
   },
 
   addProduct(item) {
+    const rawName = String(item.name || '').trim();
+    const resolvedName = KNOWN_NAME_MAP[rawName] || rawName;
     const newProduct = {
       id: 'p' + Date.now(),
-      name: item.name,
+      name: resolvedName,
       category: item.category || 'General',
       price: Number(item.price) || 0,
       unit: item.unit || 'unit',
       inStock: item.inStock !== false,
-      keywords: (item.keywords || []).concat(item.name.toLowerCase().split(' '))
+      keywords: getAliasesForName(resolvedName).concat(item.keywords || [])
     };
     catalog.push(newProduct);
     saveCatalog();
@@ -108,9 +215,18 @@ export const dukanCatalog = {
     return true;
   },
 
+  reload() {
+    try {
+      if (fs.existsSync(CATALOG_FILE)) {
+        catalog = JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf8'));
+      }
+    } catch (e) {}
+    return catalog;
+  },
+
   syncFromStore(products) {
-    if (!Array.isArray(products)) return catalog;
-    catalog = products.map(p => {
+    if (!Array.isArray(products) || products.length === 0) return catalog;
+    for (const p of products) {
       let priceNum = 0;
       if (typeof p.price === 'number') {
         priceNum = p.price;
@@ -118,18 +234,30 @@ export const dukanCatalog = {
         priceNum = parseFloat(p.price.replace(/[^\d.]/g, '')) || 0;
       }
 
-      const name = String(p.name || '').trim();
-      const words = name.toLowerCase().split(/\s+/).filter(Boolean);
-      return {
-        id: String(p.id || 'p' + Date.now()),
-        name: name,
-        category: p.category || 'General',
-        price: priceNum,
-        unit: p.stockUnit || p.unit || 'unit',
-        inStock: typeof p.stock === 'number' ? p.stock > 0 : (p.inStock !== false),
-        keywords: Array.from(new Set([name.toLowerCase(), ...(p.keywords || []), ...words]))
-      };
-    });
+      const rawName = String(p.name || '').trim();
+      const resolvedName = KNOWN_NAME_MAP[rawName] || rawName;
+      const aliases = getAliasesForName(resolvedName);
+      if (rawName !== resolvedName) {
+        aliases.push(rawName.toLowerCase());
+      }
+
+      const existingIdx = catalog.findIndex(item => item.id === p.id || item.name.toLowerCase() === resolvedName.toLowerCase());
+      if (existingIdx !== -1) {
+        if (priceNum > 0) catalog[existingIdx].price = priceNum;
+        if (typeof p.stock === 'number') catalog[existingIdx].inStock = p.stock > 0;
+        else if (p.inStock !== undefined) catalog[existingIdx].inStock = Boolean(p.inStock);
+      } else {
+        catalog.push({
+          id: String(p.id || 'p' + Date.now()),
+          name: resolvedName,
+          category: p.category || 'General',
+          price: priceNum,
+          unit: p.stockUnit || p.unit || 'unit',
+          inStock: typeof p.stock === 'number' ? p.stock > 0 : (p.inStock !== false),
+          keywords: Array.from(new Set([...aliases, ...(p.keywords || [])]))
+        });
+      }
+    }
     saveCatalog();
     return catalog;
   }

@@ -138,8 +138,8 @@ function buildMessages(options: GenerateContentOptions): OpenRouterMessage[] {
 }
 
 /**
- * Calls OpenRouter chat completions API using openrouter/free.
- * Automatically tries primary and fallback keys on auth/quota errors.
+ * Calls AI completions API with OpenRouter free model as PRIMARY,
+ * falling back to Local Edge SLM if OpenRouter is unreachable or keys fail.
  */
 export async function callOpenRouter(options: GenerateContentOptions): Promise<{ text: string }> {
   const messages = buildMessages(options);
@@ -148,56 +148,92 @@ export async function callOpenRouter(options: GenerateContentOptions): Promise<{
   const targetModel = options.model || DEFAULT_MODEL;
   const modelsList = Array.from(new Set([targetModel, ...FREE_MODELS_POOL])).slice(0, 3);
 
-  for (let i = 0; i < keys.length; i++) {
-    const apiKey = keys[i];
-    const controller = new AbortController();
-    const timeoutMs = options.timeoutMs || 25000;
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  // 1. PRIMARY: Call OpenRouter Free Model Pool
+  if (keys.length > 0) {
+    for (let i = 0; i < keys.length; i++) {
+      const apiKey = keys[i];
+      const controller = new AbortController();
+      const timeoutMs = options.timeoutMs || 25000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-          'X-Title': 'Dukaan.AI 2.0'
-        },
-        body: JSON.stringify({
-          model: targetModel,
-          models: modelsList,
-          messages
-        }),
-        signal: controller.signal
-      });
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
+            'X-Title': 'Dukaan.AI 2.0'
+          },
+          body: JSON.stringify({
+            model: targetModel,
+            models: modelsList,
+            messages
+          }),
+          signal: controller.signal
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 401 || response.status === 403 || errText.includes('expired') || errText.includes('invalid')) {
-          console.warn(`OpenRouter key #${i + 1} rejected (${response.status}: ${errText.slice(0, 100)}), trying fallback...`);
-          lastError = new Error(`OpenRouter key error (${response.status}): ${errText}`);
-          continue; // try next key
+        if (!response.ok) {
+          const errText = await response.text();
+          if (response.status === 401 || response.status === 403 || errText.includes('expired') || errText.includes('invalid')) {
+            console.warn(`OpenRouter key #${i + 1} rejected (${response.status}: ${errText.slice(0, 100)}), trying next key...`);
+            lastError = new Error(`OpenRouter key error (${response.status}): ${errText}`);
+            continue;
+          }
+          throw new Error(`OpenRouter API error (${response.status}): ${errText}`);
         }
-        throw new Error(`OpenRouter API error (${response.status}): ${errText}`);
-      }
 
-      const data = await response.json();
-      const rawContent = data.choices?.[0]?.message?.content || '';
-      const cleaned = cleanModelOutput(rawContent);
+        const data = await response.json();
+        const rawContent = data.choices?.[0]?.message?.content || '';
+        const cleaned = cleanModelOutput(rawContent);
 
-      return { text: cleaned };
-    } catch (err) {
-      lastError = err;
-      if (i < keys.length - 1 && (String(err).includes('401') || String(err).includes('expired') || String(err).includes('key'))) {
-        continue;
+        return { text: cleaned };
+      } catch (err) {
+        lastError = err;
+        if (i < keys.length - 1 && (String(err).includes('401') || String(err).includes('expired') || String(err).includes('key'))) {
+          continue;
+        }
+        console.warn(`[OpenRouter Primary Failed]: ${err.message || err}. Falling back to Local SLM...`);
+        break; // break to local SLM fallback
+      } finally {
+        clearTimeout(timeoutId);
       }
-      throw err;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
-  throw lastError || new Error('All OpenRouter API keys failed');
+  // 2. FALLBACK: Attempt Local Edge SLM
+  try {
+    const localUrl = (typeof process !== 'undefined' && process.env?.LLM_BASE_URL) || 
+                      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_LLM_BASE_URL) || 
+                      'http://127.0.0.1:8080/v1/chat/completions';
+    const localModel = (typeof process !== 'undefined' && process.env?.LLM_MODEL_NAME) || 
+                       'models/dukaan-qwen-1.5b-fused-4bit';
+
+    const localCtrl = new AbortController();
+    const localTimer = setTimeout(() => localCtrl.abort(), 10000);
+    const localRes = await fetch(localUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: localModel,
+        messages
+      }),
+      signal: localCtrl.signal
+    });
+    clearTimeout(localTimer);
+
+    if (localRes.ok) {
+      const data = await localRes.json();
+      const rawContent = data.choices?.[0]?.message?.content || '';
+      if (rawContent) {
+        return { text: cleanModelOutput(rawContent) };
+      }
+    }
+  } catch (localErr: any) {
+    console.warn(`[Local SLM Fallback Failed]: ${localErr?.message || localErr}`);
+  }
+
+  throw lastError || new Error('All OpenRouter keys and Local SLM fallback failed');
 }
 
 /**

@@ -3,24 +3,155 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
+import { matchNearestShop } from './dukanShops.js';
+import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 
-// In-memory conversation history per customer for OpenRouter LLM: jid -> messages[]
+// In-memory conversation history: jid -> messages[]
 const conversationHistories = new Map();
 
-// In-memory rule sessions for fallback state machine: jid -> session
-const ruleSessions = new Map();
+// In-memory last offered products per customer: jid -> product[]
+export const lastOfferedItems = new Map();
 
-// In-memory pending order cache: jid -> { items, totalAmount, deliveryAddress, customerName, timestamp }
-export const pendingOrders = new Map();
+// Active customer carts: jid -> { items: [], totalAmount: 0, customerName: '', deliveryAddress: '', location: null, updatedAt: number, status: 'staged' }
+export const customerCarts = new Map();
+// Alias for backward compatibility
+export const pendingOrders = customerCarts;
 
-// Regex matching common affirmative replies (handles typos like "yeas", Hinglish "haan", etc.)
-export const AFFIRMATIVE_REGEX = /^(yes|yeas|yep|yeah|yup|y|ok|okay|confirm|confirmed|sure|proceed|done|order|order now|haan|ha|sahi hai|bhejo|pack karo)[\s.!,]*$/i;
+// ─── Trigger Gate & Session Window ────────────────────────────────────────────
+// The bot shares the shopkeeper's personal WhatsApp number, so it must never
+// answer a contact who just says "hi". A chat is only engaged after the customer
+// sends the exact "/hey" trigger, and then stays warm for a sliding idle window.
+export const BOT_TRIGGER_REGEX = /^\s*\/hey\b/i;
+export const SESSION_IDLE_TTL_MS = 12 * 60 * 1000; // 12 minutes
+
+export const WELCOME_REPLY = `Welcome to Dukaan.
+
+Send me your current location first — that is how I connect you to the store nearest to you.
+
+Tap + (or the paperclip) next to the message box → Location → "Send your current location".`;
+
+export const LOCATION_HOWTO_REPLY = `I still need that location pin to route your order to the nearest store.
+
+How to send it:
+1. Tap + (or the paperclip) next to the message box
+2. Tap Location
+3. Tap "Send your current location"
+
+That one pin is all I need.`;
+
+// jid -> last activity timestamp (ms)
+const activeSessions = new Map();
+
+// Onboarding handshake: "/hey" opens the chat, but ordering only starts once the
+// customer shares a location pin (that pin decides WHICH store serves them).
+const awaitingLocations = new Set();  // jids that sent /hey and still need a pin
+const pendingRequests = new Map();    // jid -> text typed alongside /hey
+export const activeShops = new Map(); // jid -> shop matched from their location
+
+export function isBotTrigger(text) {
+  return BOT_TRIGGER_REGEX.test(String(text || ''));
+}
+
+export function stripBotTrigger(text) {
+  return String(text || '').replace(BOT_TRIGGER_REGEX, '').trim();
+}
+
+export function activateSession(jid, now = Date.now()) {
+  if (jid) activeSessions.set(jid, now);
+}
+
+export function isSessionActive(jid, now = Date.now()) {
+  if (!jid) return false;
+  const lastActive = activeSessions.get(jid);
+  if (!lastActive) return false;
+  if (now - lastActive > SESSION_IDLE_TTL_MS) {
+    activeSessions.delete(jid);
+    return false;
+  }
+  return true;
+}
+
+export function endSession(jid) {
+  if (jid) activeSessions.delete(jid);
+}
 
 /**
- * Resolves real phone number from WhatsApp JID (maps privacy LIDs like 136786168832016@lid -> 917300372323)
+ * A cart the customer is still actively working on (within the idle window).
+ * Keeps a mid-order customer from being silently dropped once the chat session
+ * itself has lapsed, so "confirm" still lands.
+ */
+export function hasActiveCart(jid, now = Date.now()) {
+  if (!jid) return false;
+  const cart = customerCarts.get(jid);
+  if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) return false;
+  return now - (cart.updatedAt || 0) <= SESSION_IDLE_TTL_MS;
+}
+
+/**
+ * True when this message should reach the ordering bot: either it carries the
+ * "/hey" trigger, the chat already has a live session within the idle window,
+ * or the customer has a fresh cart waiting to be confirmed.
+ */
+export function shouldEngage(jid, text, now = Date.now()) {
+  return isBotTrigger(text) || isSessionActive(jid, now) || hasActiveCart(jid, now);
+}
+
+// ─── Location handshake ───────────────────────────────────────────────────────
+
+export function isAwaitingLocation(jid) {
+  return awaitingLocations.has(jid);
+}
+
+/** "/hey" received: clear the old order context and wait for a location pin. */
+export function beginLocationHandshake(jid, pendingText = '') {
+  if (!jid) return;
+  customerCarts.delete(jid);
+  conversationHistories.delete(jid);
+  awaitingLocations.add(jid);
+  if (pendingText) pendingRequests.set(jid, pendingText);
+  else pendingRequests.delete(jid);
+}
+
+/**
+ * Location pin received: stop waiting, remember which shop serves this customer
+ * and hand back anything they typed alongside "/hey" so it is not lost.
+ */
+export function completeLocationHandshake(jid, shop) {
+  awaitingLocations.delete(jid);
+  if (shop) activeShops.set(jid, shop);
+  const pending = pendingRequests.get(jid) || '';
+  pendingRequests.delete(jid);
+  return pending;
+}
+
+export function clearLocationHandshake(jid) {
+  awaitingLocations.delete(jid);
+  pendingRequests.delete(jid);
+}
+
+/**
+ * Completely erases all in-memory chatbot context on server restart.
+ */
+export function resetAllContext() {
+  customerCarts.clear();
+  conversationHistories.clear();
+  lastOfferedItems.clear();
+  activeSessions.clear();
+  awaitingLocations.clear();
+  pendingRequests.clear();
+  activeShops.clear();
+  console.log('[Dukan Bot] Chatbot context completely erased on startup/restart.');
+}
+
+// Affirmative regex for explicit order confirmation
+export const AFFIRMATIVE_REGEX = /^(yes|yeas|yep|yeah|yup|y|haan|ha|confirm|confirmed|proceed|order|order now|bhejo|haan bhej do|sahi hai bhej do|pack kar do|pack karo)[\s.!,]*$/i;
+
+/**
+ * Resolves real phone number from WhatsApp JID
  */
 export function resolvePhoneNumber(jid, authDir) {
   if (!jid) return '';
@@ -57,26 +188,82 @@ export function resolvePhoneNumber(jid, authDir) {
 }
 
 /**
- * Extracts order items, total amount, and delivery address from natural language order summary text.
+ * Deduplicates an array of products by ID
+ */
+export function deduplicateProducts(products) {
+  const seen = new Set();
+  const deduped = [];
+  for (const p of products) {
+    if (!p || !p.id) continue;
+    if (!seen.has(p.id)) {
+      seen.add(p.id);
+      deduped.push(p);
+    }
+  }
+  return deduped;
+}
+
+/**
+ * Deterministic Order Resolver & Pricing Engine.
+ * Matches requested item names against dukanCatalog, retrieves authoritative prices,
+ * computes item totals, and calculates the true order total.
+ */
+export function resolveAndPriceItems(rawItems) {
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    return { items: [], totalAmount: 0 };
+  }
+
+  const verifiedItems = [];
+
+  for (const raw of rawItems) {
+    if (!raw) continue;
+    let query = String(raw.name || raw.query || raw.item || '').trim();
+    query = query.replace(/\([^\)]+\)/g, '').replace(/product_/g, '').trim();
+    const qty = Math.max(1, parseInt(raw.quantity || raw.qty, 10) || 1);
+
+    const matches = dukanCatalog.search(query);
+    if (matches.length > 0) {
+      const matched = matches[0];
+      const unitPrice = Number(matched.price) || 0;
+      verifiedItems.push({
+        id: matched.id,
+        name: matched.name,
+        category: matched.category,
+        price: unitPrice,
+        unit: matched.unit || 'unit',
+        quantity: qty,
+        total: unitPrice * qty
+      });
+    } else {
+      const fallbackPrice = typeof raw.price === 'number'
+        ? raw.price
+        : (parseFloat(String(raw.price || 0).replace(/[^\d.]/g, '')) || 0);
+      verifiedItems.push({
+        name: raw.name || query || 'Item',
+        price: fallbackPrice,
+        quantity: qty,
+        total: fallbackPrice * qty,
+        unit: 'unit'
+      });
+    }
+  }
+
+  const totalAmount = verifiedItems.reduce((sum, it) => sum + (it.total || 0), 0);
+  return { items: verifiedItems, totalAmount };
+}
+
+/**
+ * Extracts order details from summary text (for compatibility / testing)
  */
 export function extractOrderFromSummaryText(text, defaultAddress = '') {
   if (!text) return null;
 
-  // 1. Total Amount
-  let totalAmount = 0;
-  const totalMatch = text.match(/(?:Total(?:\s*Amount)?|Order\s*Total|Grand\s*Total)[:\s*]+(?:₹|Rs\.?)?\s*(\d+(?:\.\d+)?)/i);
-  if (totalMatch) {
-    totalAmount = parseFloat(totalMatch[1]);
-  }
-
-  // 2. Delivery Address
   let deliveryAddress = defaultAddress;
   const addrMatch = text.match(/(?:Delivery\s*Address|Address|Delivering\s*to)[:\s*]+([^\n\r*]+)/i);
   if (addrMatch && addrMatch[1].trim()) {
     deliveryAddress = addrMatch[1].trim().replace(/^[-•*]\s*/, '');
   }
 
-  // 3. Items Extraction
   const items = [];
 
   // Pattern A: Multi-line Block format: "Item: <name> ... Quantity: <qty> ... Price: ₹<price>"
@@ -123,656 +310,800 @@ export function extractOrderFromSummaryText(text, defaultAddress = '') {
     }
   }
 
-  if (items.length === 0 && !totalAmount) {
+  if (items.length === 0) {
     return null;
   }
 
-  // Calculate missing totals
-  for (const item of items) {
-    if (!item.total && item.price && item.quantity) {
-      item.total = item.price * item.quantity;
-    }
-  }
-
-  const calculatedTotal = items.reduce((sum, it) => sum + (it.total || 0), 0);
-  if (!totalAmount && calculatedTotal > 0) {
-    totalAmount = calculatedTotal;
-  }
-
-  if (items.length === 1 && items[0].total === 0 && totalAmount > 0) {
-    items[0].total = totalAmount;
-    items[0].price = totalAmount / (items[0].quantity || 1);
-  }
-
+  const priced = resolveAndPriceItems(items);
   return {
-    items,
-    totalAmount,
+    items: priced.items,
+    totalAmount: priced.totalAmount,
     deliveryAddress
   };
 }
 
-function getConversationHistory(jid) {
-  if (!conversationHistories.has(jid)) {
-    conversationHistories.set(jid, []);
-  }
-  return conversationHistories.get(jid);
-}
-
-function getRuleSession(jid, pushName = '') {
-  if (!ruleSessions.has(jid)) {
-    ruleSessions.set(jid, {
-      jid,
-      stage: 'IDLE',
-      cart: [],
-      customerName: pushName || '',
-      deliveryAddress: '',
-      pendingChoices: null,
-      lastActive: Date.now()
-    });
-  }
-  const s = ruleSessions.get(jid);
-  if (pushName && !s.customerName) s.customerName = pushName;
-  s.lastActive = Date.now();
-  return s;
-}
-
-function formatCurrency(num) {
-  return '₹' + Number(num).toFixed(0);
-}
-
-function calculateCartTotal(cart) {
-  return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-}
-
 /**
- * System prompt for OpenRouter AI: Pure English, short, sweet, zero AI-slop.
+ * Parses and executes model output formatted with JSON or Action tags (for compatibility / testing)
  */
-function buildSystemPrompt(catalog, customerName, customerPhone) {
-  const stockList = catalog.map(p =>
-    `- ${p.name} (${p.category}, ${p.unit}): ₹${p.price} [${p.inStock ? 'In Stock' : 'Out of Stock'}]`
-  ).join('\n');
-
-  return `You are the friendly online shop assistant for "Dukan", a neighborhood grocery and convenience store.
-You take orders over WhatsApp.
-
-CUSTOMER DETAILS:
-- Name: ${customerName || 'Customer'}
-- Phone: ${customerPhone || 'Not specified'}
-
-CURRENT STORE INVENTORY:
-${stockList}
-
-COMMUNICATION STYLE & TONE GUIDELINES:
-1. PURE ENGLISH ONLY. Speak naturally, warmly, and politely. No slang or Hindi words.
-2. SHORT AND SWEET. Real people text in 1 to 3 short sentences. Avoid robotic headers, multiple bullet emojis, divider lines (like ━━━━━), or corporate fluff.
-3. MINIMAL EMOJIS. Use zero or at most one natural emoji per message (like a simple wave or checkmark). Never use AI-slop emoji spam.
-4. CATALOG ONLY: Only offer in-stock items. If an item is unavailable, politely say so in one sentence and offer an in-stock alternative.
-5. UPSELLING: If relevant, suggest a quick add-on naturally (e.g. cold drink with Maggi, or milk with tea).
-
-HOW TO HANDLE ORDERS:
-- Step 1: Confirm the items and quantities.
-- Step 2: When the customer is done or asks to checkout:
-  - Ask for their Full Name and Delivery Address (tell them they can also just share their WhatsApp location pin).
-  - If they share a location pin, thank them and ask for their flat/house number if not already provided.
-- Step 3: Present a clean, simple Order Summary:
-  - Items, quantities, and prices
-  - Total in ₹ (Cash / UPI on delivery)
-  - Delivery address
-  - Ask: "Reply YES to confirm your order."
-- Step 4: WHEN CUSTOMER REPLIES "YES" / "CONFIRM" / "OK" / "YEAS" / "HAAN":
-  - First, send confirmation text with the summary:
-    "Order confirmed! 🎉
-    *Order Summary*
-    - Item: <Product Name>
-    Quantity: <Quantity>
-    Price: ₹<Price> per pack
-    Total: ₹<TotalAmount>
-    - Delivery Address: <Address>
-    - Payment: Cash on Delivery
-    Sent to the shopkeeper for confirmation."
-  - Second, append this JSON block at the very end:
-
-\`\`\`json
-{
-  "action": "CREATE_ORDER",
-  "customerName": "<Customer Name>",
-  "deliveryAddress": "<Customer Delivery Address>",
-  "items": [
-    { "name": "<Product Name>", "price": <PriceNumber>, "quantity": <QtyNumber>, "total": <Price * Qty> }
-  ],
-  "totalAmount": <TotalNumber>,
-  "notes": "Cash on Delivery"
-}
-\`\`\`
-
-Along with the JSON, send a short confirmation: "Order received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted."`;
-}
-
-/**
- * Call OpenRouter API
- */
-async function callOpenRouter(userText, customerName, customerPhone, jid) {
-  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
-  if (!apiKey) return null;
-
-  const model = (process.env.OPENROUTER_MODEL || 'openrouter/free').trim();
-  const catalog = dukanCatalog.getAll();
-  const systemPrompt = buildSystemPrompt(catalog, customerName, customerPhone);
-
-  const history = getConversationHistory(jid);
-  history.push({ role: 'user', content: userText });
-
-  if (history.length > 14) {
-    history.splice(0, history.length - 14);
-  }
-
-  const payload = {
-    model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...history
-    ],
-    temperature: 0.6,
-    max_tokens: 500
-  };
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'http://localhost:3000',
-      'X-Title': 'Dukan Assistant',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`OpenRouter HTTP ${response.status}: ${errorText}`);
-  }
-
-  const data = await response.json();
-  const assistantReply = data.choices?.[0]?.message?.content || '';
-
-  if (assistantReply) {
-    history.push({ role: 'assistant', content: assistantReply });
-  }
-
-  return assistantReply;
-}
-
-/**
- * Multi-layer OpenRouter response parser:
- * Layer 1: JSON block (fenced or unfenced)
- * Layer 2: Natural language summary extraction from AI response
- * Layer 3: Cached pending order fallback on affirmative user reply
- * Layer 4: Order summary detection to cache pending order for confirmation
- */
-export function parseOpenRouterReply(replyText, jid, customerPhone, defaultName, userText = '') {
-  if (!replyText) return { reply: '', newOrder: null };
-
-  const resolvedPhone = customerPhone || resolvePhoneNumber(jid);
+export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName, userText = '', locationData = null) {
+  let cleanReply = replyText || '';
   let newOrder = null;
-  let cleanReply = replyText;
 
-  // Layer 1: JSON Block (fenced or unfenced)
-  const jsonMatch = replyText.match(/```json\s*(\{[\s\S]*?"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})\s*```/i) ||
-                    replyText.match(/(\{[\s\S]*?"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})/i);
-
-  if (jsonMatch && jsonMatch[1]) {
+  // JSON Action Block (CREATE_ORDER)
+  const jsonMatch = replyText.match(/```(?:json)?\s*([\s\S]*?)\s*```/) || replyText.match(/(\{\s*"action"\s*:\s*"CREATE_ORDER"[\s\S]*?\})/);
+  if (jsonMatch) {
     try {
-      const orderData = JSON.parse(jsonMatch[1]);
-      if (orderData && Array.isArray(orderData.items) && orderData.items.length > 0) {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      if (parsed.action === 'CREATE_ORDER' && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        const resolved = resolveAndPriceItems(parsed.items);
         newOrder = dukanOrders.createOrder({
           customerJid: jid,
           customerPhone: resolvedPhone,
-          customerName: orderData.customerName || defaultName || 'Customer',
-          deliveryAddress: orderData.deliveryAddress || 'Address not specified',
-          items: orderData.items || [],
-          totalAmount: Number(orderData.totalAmount) || 0,
-          notes: orderData.notes || 'Cash on Delivery'
-        });
-
-        cleanReply = replyText.replace(jsonMatch[0], '').trim();
-        pendingOrders.delete(jid);
-        console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 1 JSON for ${resolvedPhone} (₹${newOrder.totalAmount})`);
-      }
-    } catch (e) {
-      console.error('[Dukan AI] Failed to parse Layer 1 AI order JSON:', e.message);
-    }
-  }
-
-  // Layer 1B: Tool call / Python function call detection (e.g. [order_order(...)] or <|tool_call_start|>[...]<|tool_call_end|>)
-  if (!newOrder) {
-    const toolCallMatch = replyText.match(/(?:order_order|CREATE_ORDER)\s*\(([\s\S]*)\)\s*(?:\]|\<|$)/i);
-    if (toolCallMatch && toolCallMatch[1]) {
-      try {
-        const content = toolCallMatch[1];
-        let customerName = defaultName || 'Customer';
-        const nameMatch = content.match(/customer_name\s*=\s*['"]([^'"]+)['"]/i);
-        if (nameMatch) customerName = nameMatch[1];
-
-        let deliveryAddress = 'Address not specified';
-        const addrMatch = content.match(/delivery_address\s*=\s*['"]([^'"]+)['"]/i);
-        if (addrMatch) deliveryAddress = addrMatch[1];
-
-        let totalAmount = 0;
-        const totalMatch = content.match(/total_amount\s*=\s*(\d+(?:\.\d+)?)/i);
-        if (totalMatch) totalAmount = parseFloat(totalMatch[1]);
-
-        let items = [];
-        const itemsMatch = content.match(/items\s*=\s*(\[\s*\{[\s\S]*?\}\s*\])/i);
-        if (itemsMatch) {
-          try {
-            items = JSON.parse(itemsMatch[1].replace(/'/g, '"'));
-          } catch (e) {}
-        }
-
-        if (items.length > 0 || totalAmount > 0) {
-          newOrder = dukanOrders.createOrder({
-            customerJid: jid,
-            customerPhone: resolvedPhone,
-            customerName,
-            deliveryAddress,
-            items,
-            totalAmount: totalAmount || items.reduce((s, it) => s + (it.total || 0), 0),
-            notes: 'Cash on Delivery'
-          });
-          pendingOrders.delete(jid);
-          console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 1B Tool Call for ${resolvedPhone} (₹${newOrder.totalAmount})`);
-        }
-      } catch (e) {
-        console.error('[Dukan AI] Failed to parse Layer 1B Tool Call:', e.message);
-      }
-    }
-  }
-
-  // Layer 2: Natural Language Summary Detection in AI Reply
-  if (!newOrder) {
-    const isOrderConfirmed = /(?:order\s*(?:confirmed|received|placed|sent|created)|sent to the shopkeeper|notified the shopkeeper)/i.test(replyText);
-    const hasOrderSummary = /(?:order\s*summary|item[:\s*]|total[:\s*])/i.test(replyText);
-
-    if (isOrderConfirmed || hasOrderSummary) {
-      const cached = pendingOrders.get(jid);
-      const summaryData = extractOrderFromSummaryText(replyText, cached?.deliveryAddress || '');
-
-      if (summaryData && summaryData.items && summaryData.items.length > 0 && isOrderConfirmed) {
-        newOrder = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: resolvedPhone,
-          customerName: defaultName || 'Customer',
-          deliveryAddress: summaryData.deliveryAddress || cached?.deliveryAddress || 'Address not specified',
-          items: summaryData.items,
-          totalAmount: summaryData.totalAmount,
+          customerName: parsed.customerName || defaultName || 'Customer',
+          deliveryAddress: (locationData ? locationData.fullDescription : '') || parsed.deliveryAddress || 'Address not specified',
+          location: locationData || null,
+          items: resolved.items,
+          totalAmount: resolved.totalAmount,
           notes: 'Cash on Delivery'
         });
-
-        pendingOrders.delete(jid);
-        console.log(`[Dukan AI] Order #${newOrder.id} parsed via Layer 2 Natural Summary for ${resolvedPhone} (₹${newOrder.totalAmount})`);
+        customerCarts.delete(jid);
       }
-    }
+    } catch (e) {}
   }
 
-  // Layer 3: Cached Pending Order Fallback (when customer sends affirmative confirmation or AI confirms)
+  // Summary text fallback
   if (!newOrder) {
-    const isAffirmative = Boolean(userText && AFFIRMATIVE_REGEX.test(userText.trim()));
-    const isAIConfirming = /(?:order\s*(?:confirmed|received|placed|sent)|sent to the shopkeeper)/i.test(replyText);
-
-    if (isAffirmative || isAIConfirming) {
-      const cached = pendingOrders.get(jid);
-      if (cached && cached.items && cached.items.length > 0 && (Date.now() - cached.timestamp < 30 * 60 * 1000)) {
-        newOrder = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: resolvedPhone,
-          customerName: cached.customerName || defaultName || 'Customer',
-          deliveryAddress: cached.deliveryAddress || 'Address not specified',
-          items: cached.items,
-          totalAmount: cached.totalAmount,
-          notes: 'Cash on Delivery'
-        });
-
-        pendingOrders.delete(jid);
-        console.log(`[Dukan AI] Order #${newOrder.id} finalized via Layer 3 Pending Session for ${resolvedPhone} (₹${newOrder.totalAmount})`);
-      }
+    const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '');
+    if (extracted && extracted.items.length > 0 && /confirm/i.test(userText)) {
+      newOrder = dukanOrders.createOrder({
+        customerJid: jid,
+        customerPhone: resolvedPhone,
+        customerName: defaultName || 'Customer',
+        deliveryAddress: extracted.deliveryAddress || 'Address not specified',
+        location: locationData || null,
+        items: extracted.items,
+        totalAmount: extracted.totalAmount,
+        notes: 'Cash on Delivery'
+      });
+      customerCarts.delete(jid);
     }
   }
 
-  // Layer 4: Cache Pending Order when AI outputs an Order Summary asking for confirmation
-  if (!newOrder) {
-    const isAskingConfirmation = /(?:reply\s*yes|confirm your order|to confirm|order summary)/i.test(replyText);
-    if (isAskingConfirmation) {
-      const extracted = extractOrderFromSummaryText(replyText);
-      if (extracted && extracted.items && extracted.items.length > 0) {
-        pendingOrders.set(jid, {
-          items: extracted.items,
-          totalAmount: extracted.totalAmount,
-          deliveryAddress: extracted.deliveryAddress,
-          customerName: defaultName,
-          timestamp: Date.now()
-        });
-        console.log(`[Dukan AI] Cached pending order for ${jid} (${extracted.items.length} items, ₹${extracted.totalAmount})`);
-      }
+  const actions = parseActionTags(replyText);
+  if (actions.length > 0 && !newOrder) {
+    const actResult = executeModelActions(actions, jid, defaultName, resolvedPhone, locationData);
+    if (actResult.orderCreated) {
+      newOrder = actResult.orderCreated;
     }
   }
 
-  // Sanitize reply: strip any tool call tokens or python-style function call tokens
-  cleanReply = cleanReply
-    .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
-    .replace(/<\|[\s\S]*?\|>/g, '')
-    .replace(/\[\s*(?:order_order|CREATE_ORDER)[\s\S]*?\]/gi, '')
-    .replace(/(?:order_order|CREATE_ORDER)\s*\([\s\S]*?\)/gi, '')
-    .trim();
-
-  // If an order was created, guarantee a clean, warm confirmation message for the customer
+  cleanReply = cleanUserFacingReply(cleanReply);
   if (newOrder) {
-    if (!cleanReply || cleanReply.length < 5 || /tool_call|CREATE_ORDER|order_order/i.test(cleanReply)) {
-      cleanReply = `Order received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.`;
-    }
+    cleanReply = formatOrderConfirmation(newOrder);
   }
 
   return { reply: cleanReply, newOrder };
 }
 
-export const dukanBot = {
-  /**
-   * Main entry point
-   * @param {Object} msg - The message record
-   * @param {Object} sock - WASocket instance
-   * @param {Object} locationData - Resolved location data (if shared)
-   */
-  async handleMessage(msg, sock, locationData = null) {
-    const jid = msg.remoteJid;
-    const text = (msg.text || '').trim();
-    const pushName = msg.pushName || '';
-    const phone = msg.from || resolvePhoneNumber(jid);
+/**
+ * Constructs the dynamic, intelligent system prompt with inventory and cart context
+ */
+function buildDynamicSystemPrompt(customerName, cart, matchedProducts = [], lastOffered = [], userText = '') {
 
-    if (!text && !locationData) return null;
+  let cartSummary = 'Empty';
+  if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
+    const lines = cart.items.map(it => `• ${it.quantity}x ${it.name} (${it.unit}) @ ₹${it.price} = ₹${it.total}`).join('\n');
+    cartSummary = `${lines}\n*Total:* ₹${cart.totalAmount}\n*Delivery Address:* ${cart.deliveryAddress || 'Not set yet'}`;
+  }
 
-    // Check OpenRouter
-    const openRouterApiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  let inventoryContext = '';
+  const isMiniList = /\b(mini[- ]list|from this list only|from this mini[- ]list)\b/i.test(userText);
+  if (!isMiniList && matchedProducts.length > 0) {
+    inventoryContext = `\nRELEVANT IN-STOCK STORE ITEMS:\n` + matchedProducts.map((p, idx) => `${idx + 1}. ${p.name} (${p.unit}) – ₹${p.price}`).join('\n');
+  } else if (!isMiniList && lastOffered && lastOffered.length > 0) {
+    inventoryContext = `\nRECENTLY OFFERED ITEMS:\n` + lastOffered.map((p, idx) => `${idx + 1}. ${p.name} (${p.unit}) – ₹${p.price}`).join('\n');
+  }
 
-    if (openRouterApiKey) {
-      try {
-        let promptText = text;
-        if (locationData) {
-          promptText = `[Customer shared delivery location pin: ${locationData.fullDescription} (Google Maps: ${locationData.mapsUrl})]`;
+  return `You are "Dukaan", the WhatsApp ordering assistant for a neighbourhood kirana store in Jaipur, India. Customer: ${customerName || 'Customer'}.
+
+REPLY STYLE (this goes to a phone screen):
+- English only, even if they write Hindi or Hinglish.
+- WhatsApp chat voice: warm, human, direct. Not a brochure, not robotic.
+- Keep it under ~80 words. Never repeat their message back or re-ask what they just answered.
+- At most ONE emoji per reply, and only when it adds meaning (📍 location, ✅ done). No emoji strings.
+- Short lines; "•" bullets for lists; *bold* product names only.
+
+HARD RULES:
+- The CART block below is the single source of truth. NEVER print a cart, item list, subtotal or total yourself — the system appends that. Never say the cart is empty and never estimate money.
+- Use only prices from CART or IN STOCK. Never invent a product or a price. If the variant is unclear, ask ONE short question.
+- Item not in the catalog: say it is not available in one line, and offer a listed alternative only if one exists.
+- We sell packaged groceries, staples, dairy, snacks, beverages, spices, personal care and household cleaning. No cooked food, no fresh fruit or vegetables, no alcohol or tobacco. For a cooked dish, suggest the packaged ingredients we do stock.
+- Their name comes from their WhatsApp profile; if asked, say exactly that and that we only use this chat to arrange delivery.
+
+INDIAN PHRASING: "14 rs wali maggie" = the ₹14 pack, qty 1 (NOT 14 packs). "2 kar do" = set quantity to 2. "aur ek doodh" = add one more milk. "ye hata do" = remove it. A bare number like "4" = the 4th item you last showed.
+
+CART:
+${cartSummary}
+${inventoryContext}
+
+CART ACTIONS — this is the ONLY way the cart actually changes. The tags are machine-read and never shown to the customer, so they cost you nothing:
+End EVERY reply that changes the cart with the matching tag. If you say you added or changed something and omit the tag, the change does NOT happen and the customer is misled. That is the worst possible reply.
+- New item: [ACTION: ADD_TO_CART name="Exact catalog name" qty=N]
+- Quantity of an item ALREADY in CART: [ACTION: UPDATE_QTY name="Exact name" qty=<FINAL count>]
+- Remove: [ACTION: REMOVE_ITEM name="Name"]
+- Clear everything: [ACTION: CLEAR_CART]
+- Save their address: [ACTION: SET_ADDRESS address="Full address text"]
+- Place the order — only after they explicitly confirm: [ACTION: CONFIRM_ORDER]
+- Cancel the order: [ACTION: CANCEL_ORDER]
+
+Never re-add an item already listed in CART — that is what UPDATE_QTY is for. When the customer states a quantity ("2 maggi", "make it 3") for an item that is ALREADY in CART, that number is the FINAL quantity: use [ACTION: UPDATE_QTY ... qty=2], never add on top. Add no tag for questions, prices or browsing. Never write a tag for something you are not actually doing.
+
+Example — customer: "2 amul milk" → reply "Adding 2 *Amul Taaza Toned Milk (500ml)*." then on a new line put: [ACTION: ADD_TO_CART name="Amul Taaza Toned Milk (500ml)" qty=2]`;
+}
+
+/**
+ * Parses action tags from model reply
+ */
+function parseActionTags(text) {
+  const actions = [];
+  if (!text) return actions;
+
+  function parseArgs(argsStr) {
+    const args = {};
+    const argRegex = /([a-zA-Z_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\d+)|([^\s,]+))/g;
+    let argMatch;
+    while ((argMatch = argRegex.exec(argsStr)) !== null) {
+      const key = argMatch[1];
+      const val = argMatch[2] ?? argMatch[3] ?? argMatch[4] ?? argMatch[5];
+      args[key] = /^\d+$/.test(val) ? parseInt(val, 10) : val;
+    }
+    return args;
+  }
+
+  // Format 1: [ACTION: TYPE key="val" key=val]
+  const regex1 = /\[ACTION:\s*([A-Z_]+)(?:\s+([^\]]+))?\]/gi;
+  let match;
+  while ((match = regex1.exec(text)) !== null) {
+    actions.push({ type: match[1].toUpperCase(), args: parseArgs(match[2] || '') });
+  }
+
+  // Format 2: [action(action='TYPE', key='val', key=val)]
+  const regex2 = /\[action\s*\(\s*(?:action\s*=\s*)?['"]([A-Z_]+)['"](?:\s*,\s*([^)]+))?\s*\)\]/gi;
+  while ((match = regex2.exec(text)) !== null) {
+    actions.push({ type: match[1].toUpperCase(), args: parseArgs(match[2] || '') });
+  }
+
+  // Format 3: [ACTION_NAME(key='val', key=val)] or <|tool_call_start|>[ACTION_NAME(...)]<|tool_call_end|>
+  const regex3 = /\[(ADD_TO_CART|UPDATE_QTY|REMOVE_ITEM|CLEAR_CART|SET_ADDRESS|CONFIRM_ORDER|CANCEL_ORDER)\s*\(([\s\S]*?)\)\]/gi;
+  while ((match = regex3.exec(text)) !== null) {
+    actions.push({ type: match[1].toUpperCase(), args: parseArgs(match[2] || '') });
+  }
+
+  return actions;
+}
+
+/**
+ * Removes any cart/total block the MODEL wrote into its own reply.
+ *
+ * The engines append a single authoritative cart footer built from the real cart
+ * state. If the model also prints its own cart (from the stale pre-action state
+ * it was given), the customer sees two contradicting carts in one message —
+ * e.g. "cart is empty" followed by "2x ₹28", or "2x ₹28" followed by "4x ₹56".
+ * Cutting the model's block makes that contradiction structurally impossible.
+ */
+export function stripModelCartBlock(reply) {
+  if (!reply) return '';
+  const cut = reply.search(
+    /^[ \t*_•-]*(?:current cart|cart summary|cart total|your cart|cart|subtotal|total)\s*[:\-–]/im
+  );
+  return (cut >= 0 ? reply.slice(0, cut) : reply)
+    .split('\n')
+    // Drop receipt-style lines the model wrote itself (the engine appends the real ones).
+    .filter(line => !/^\s*[•*-]\s*\d+\s*x\s+.+?\s*@\s*₹/.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Reply shown right after the customer shares their location pin. */
+export function buildLocationAck(shop, location) {
+  const area = String((location && (location.name || location.address)) || 'your area').slice(0, 60);
+  const name = (shop && shop.shopName) || 'your nearest store';
+  const dist = shop && Number.isFinite(shop.distanceKm) ? ` (${shop.distanceKm.toFixed(1)} km away)` : '';
+  return `Got it — ${area}.
+
+You are connected to ${name}${dist}. Tell me what you need and I will get it packed.`;
+}
+
+/** Single source of truth for the order-placed message (all engines use this). */
+export function formatOrderConfirmation(order) {
+  if (!order) return '';
+  const items = (order.items || [])
+    .map(it => `• ${it.quantity}x ${it.name} @ ₹${it.price} = ₹${it.total}`)
+    .join('\n');
+  return `Order placed — #${order.id}\n\n${items}\n\nTotal: ₹${order.totalAmount} (cash or UPI on delivery)\nAddress: ${order.deliveryAddress}\n\nThe shopkeeper is checking it now. I will message you the moment it is accepted.`;
+}
+
+/**
+ * Cleans tool tags and action tags from user-facing reply
+ */
+function cleanUserFacingReply(raw) {
+  if (!raw) return '';
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|tool_call_start\|>[\s\S]*?<\|tool_call_end\|>/gi, '')
+    .replace(/<\|[\s\S]*?\|>/g, '')
+    .replace(/\[ACTION:[\s\S]*?\]/gi, '')
+    .replace(/\[action\([\s\S]*?\)\]/gi, '')
+    .replace(/\[(?:ADD_TO_CART|UPDATE_QTY|REMOVE_ITEM|CLEAR_CART|SET_ADDRESS|CONFIRM_ORDER|CANCEL_ORDER)\s*\([\s\S]*?\)\]/gi, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .trim();
+}
+
+/**
+ * Executes parsed model action tags deterministically
+ */
+function executeModelActions(actions, jid, pushName, phone, locationData) {
+  let cart = customerCarts.get(jid) || {
+    items: [],
+    totalAmount: 0,
+    customerName: pushName || 'Customer',
+    deliveryAddress: locationData ? locationData.fullDescription : '',
+    location: locationData || null,
+    updatedAt: Date.now(),
+    status: 'staged'
+  };
+
+  let cartUpdated = false;
+  let orderCreated = null;
+  let orderCancelled = false;
+
+  for (const act of actions) {
+    if (act.type === 'ADD_TO_CART' && act.args.name) {
+      const matches = dukanCatalog.search(String(act.args.name));
+      const p = matches.length > 0 ? matches[0] : null;
+      const qty = Math.max(1, parseInt(act.args.qty, 10) || 1);
+      if (p) {
+        const existing = cart.items.find(it => it.id === p.id);
+        if (existing) {
+          existing.quantity += qty;
+          existing.total = existing.price * existing.quantity;
+        } else {
+          cart.items.push({
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            price: p.price,
+            unit: p.unit,
+            quantity: qty,
+            total: p.price * qty
+          });
         }
-
-        console.log(`[Dukan AI] Processing via OpenRouter (${process.env.OPENROUTER_MODEL || 'openrouter/free'})...`);
-        const aiResponse = await callOpenRouter(promptText, pushName, phone, jid);
-
-        if (aiResponse) {
-          const parsed = parseOpenRouterReply(aiResponse, jid, phone, pushName, text);
-          return parsed;
-        }
-      } catch (err) {
-        console.error('[Dukan AI] OpenRouter error, using clean fallback:', err.message);
+        cartUpdated = true;
+      } else {
+        const name = String(act.args.name);
+        cart.items.push({
+          id: 'custom-' + Date.now(),
+          name,
+          category: 'Grocery',
+          price: parseInt(act.args.price, 10) || 30,
+          unit: 'unit',
+          quantity: qty,
+          total: (parseInt(act.args.price, 10) || 30) * qty
+        });
+        cartUpdated = true;
       }
+    } else if (act.type === 'UPDATE_QTY' && act.args.name) {
+      const q = String(act.args.name).toLowerCase();
+      const existing = cart.items.find(it => it.name.toLowerCase().includes(q) || q.includes(it.name.toLowerCase()));
+      const qty = parseInt(act.args.qty, 10) || 0;
+      if (existing) {
+        if (qty <= 0) {
+          cart.items = cart.items.filter(it => it.id !== existing.id);
+        } else {
+          existing.quantity = qty;
+          existing.total = existing.price * qty;
+        }
+        cartUpdated = true;
+      }
+    } else if (act.type === 'REMOVE_ITEM' && act.args.name) {
+      const q = String(act.args.name).toLowerCase();
+      cart.items = cart.items.filter(it => !it.name.toLowerCase().includes(q) && !q.includes(it.name.toLowerCase()));
+      cartUpdated = true;
+    } else if (act.type === 'CLEAR_CART') {
+      cart.items = [];
+      cart.totalAmount = 0;
+      cartUpdated = true;
+    } else if (act.type === 'SET_ADDRESS' && act.args.address) {
+      cart.deliveryAddress = String(act.args.address).trim();
+      cartUpdated = true;
+    } else if (act.type === 'CONFIRM_ORDER') {
+      if (cart.items.length > 0) {
+        orderCreated = dukanOrders.createOrder({
+          customerJid: jid,
+          customerPhone: phone,
+          customerName: cart.customerName || pushName || 'Customer',
+          deliveryAddress: cart.deliveryAddress || (locationData ? locationData.fullDescription : 'Address not specified'),
+          location: locationData || cart.location || null,
+          items: cart.items,
+          totalAmount: cart.totalAmount,
+          notes: 'Cash on Delivery'
+        });
+        customerCarts.delete(jid);
+        return { cartUpdated: false, orderCreated, cart: null };
+      }
+    } else if (act.type === 'CANCEL_ORDER') {
+      customerCarts.delete(jid);
+      dukanOrders.cancelOrderByCustomer(phone || jid);
+      orderCancelled = true;
+      return { cartUpdated: false, orderCreated: null, orderCancelled: true, cart: null };
+    }
+  }
+
+  if (cartUpdated) {
+    cart.totalAmount = cart.items.reduce((s, it) => s + (it.total || (it.price * it.quantity)), 0);
+    cart.updatedAt = Date.now();
+    customerCarts.set(jid, cart);
+  }
+
+  return { cartUpdated, orderCreated, orderCancelled, cart };
+}
+
+/**
+ * Pulls the quantity the customer actually said for a product, e.g.
+ * "add 2 maggi ₹14 pack" -> 2, "maggi 2 kar do" -> 2, "maggi ₹14" -> 0 (unstated).
+ * Only numbers adjacent to the product, or a bare small number, are considered —
+ * a price like ₹14 must never be read as a quantity.
+ */
+export function extractStatedQuantity(text, product) {
+  const keys = [product.name, ...(product.keywords || [])]
+    .map(k => String(k).trim().split(/\s+/)[0])
+    .filter(Boolean);
+  for (const key of keys) {
+    const esc = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const before = new RegExp(`\\b(\\d{1,2})\\s*(?:x\\s*)?${esc}\\b`, 'i').exec(text);
+    if (before) return parseInt(before[1], 10);
+    const after = new RegExp(`\\b${esc}\\b\\s*(?:x\\s*)?(\\d{1,2})\\b`, 'i').exec(text);
+    if (after) return parseInt(after[1], 10);
+  }
+  const bare = /(?<!₹\s?)\b(\d{1,2})\b(?!\s*%)/.exec(text);
+  return bare ? parseInt(bare[1], 10) : 0;
+}
+
+/** Cheap check that a line is a delivery address rather than a chat message. */
+export function looksLikeAddress(text) {
+  return /\b(house|flat|plot|street|st\.?|road|rd|lane|gali|nagar|colony|sector|block|marg|apartment|tower|mohalla|village)\b/i.test(text)
+    || /\b\d{6}\b/.test(text)
+    || /\d+\s*,\s*\w+/.test(text);
+}
+
+/**
+ * Did the customer actually name this product? The brand token (first word of
+ * the catalog name) must appear as a whole word. Without this gate, the catalog
+ * search matches on generic words inside product names — "just 2 maggi total"
+ * once matched "Lifebuoy *Total* 10 Soap".
+ */
+export function mentionsProduct(text, product) {
+  const first = String(product.name || '').trim().split(/\s+/)[0] || '';
+  const tokens = [first, first.split('-')[0]]
+    .map(t => t.replace(/[^a-z0-9]/gi, ''))
+    .filter(t => t.length >= 3);
+  const hay = String(text).toLowerCase();
+  return tokens.some(t => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(hay));
+}
+
+/**
+ * Safety net under the AI layer.
+ *
+ * A text-only model occasionally DESCRIBES a cart or address change without
+ * emitting the matching action tag. The customer is then told something
+ * happened that did not — for an ordering bot that means a wrong cart, or an
+ * order shipped to "Address not specified" (both seen in real testing).
+ *
+ * So when a turn claims a change but carries no tag, we re-read the customer's
+ * own words and apply it deterministically. A quantity stated for an item that
+ * is ALREADY in the cart is treated as the FINAL quantity, never an addition —
+ * that is what customers mean, and it is what stops "2 became 4".
+ */
+export function reconcileMissedActions(userText, narrative, actions, jid, pushName, phone, locationData) {
+  const hasCartAction = actions.some(a =>
+    ['ADD_TO_CART', 'UPDATE_QTY', 'REMOVE_ITEM', 'CLEAR_CART'].includes(a.type)
+  );
+  const hasAddressAction = actions.some(a => a.type === 'SET_ADDRESS');
+
+  const asksPermission = /\?|shall i|would you like|do you want|should i/i.test(narrative);
+  const inferred = [];
+
+  if (!hasCartAction && !asksPermission && /\b(add|added|adding|update|updated|updating)\b/i.test(narrative)) {
+    const cart = customerCarts.get(jid);
+    // One pick per product the customer actually named: results are ranked, so
+    // variants of the same product ("Maggi 70g", "Maggi 4-pack") share keywords
+    // and collapse into a single, best-ranked match.
+    const picked = [];
+    for (const product of dukanCatalog.search(userText)) {
+      if (!mentionsProduct(userText, product)) continue;
+      const keys = [...(product.keywords || []), product.name].map(k => String(k).toLowerCase());
+      const alreadyCovered = picked.some(p =>
+        [...(p.keywords || []), p.name].map(k => String(k).toLowerCase()).some(k => keys.includes(k))
+      );
+      if (alreadyCovered) continue;
+      picked.push(product);
+      if (picked.length >= 3) break;
     }
 
-    // Fallback: Clean, short, pure English state machine
-    return this.handleRuleBased(msg, locationData);
+    for (const product of picked) {
+      const inCart = Boolean(cart && cart.items.some(it => it.id === product.id));
+      inferred.push({
+        type: inCart ? 'UPDATE_QTY' : 'ADD_TO_CART',
+        args: { name: product.name, qty: extractStatedQuantity(userText, product) || 1 },
+      });
+    }
+  }
+
+  if (!hasAddressAction && looksLikeAddress(userText) && /\b(address|saving|saved|noted|deliver)\b/i.test(narrative)) {
+    inferred.push({ type: 'SET_ADDRESS', args: { address: String(userText).trim() } });
+  }
+
+  if (inferred.length === 0) return null;
+  console.log(`[Dukan Bot] Reconciled ${inferred.map(a => a.type).join(', ')} (model omitted the tag)`);
+  return executeModelActions(inferred, jid, pushName, phone, locationData);
+}
+
+/** The single cart block appended to a reply after the cart changes. */
+function formatCartFooter(cart) {
+  const items = cart.items.map(it => `• ${it.quantity}x ${it.name} @ ₹${it.price} = ₹${it.total}`).join('\n');
+  const addr = cart.deliveryAddress
+    ? `Address: ${cart.deliveryAddress}`
+    : `Send your address (or a location pin) to finish.`;
+  return `\n\n${items}\nTotal: ₹${cart.totalAmount}\n${addr}\n\nReply CONFIRM to place the order.`;
+}
+
+/**
+ * Stores a short, narrative-only transcript.
+ *
+ * Cart footers are stripped before storing (they are regenerated on the way
+ * out). Letting them into the transcript made the model echo last turn's stale
+ * cart, which is what produced "2x ₹28 in the words, 4x ₹56 in the footer".
+ * The length caps also keep the input tokens per turn small.
+ */
+function rememberTurn(jid, userText, reply) {
+  const history = conversationHistories.get(jid) || [];
+  history.push({ role: 'user', content: String(userText || '').slice(0, 200) });
+  history.push({ role: 'assistant', content: String(stripModelCartBlock(reply) || '').slice(0, 400) });
+  conversationHistories.set(jid, history.slice(-6));
+}
+
+/**
+ * Calls AI completions: Groq (Qwen 3.8 27B) as PRIMARY, OpenRouter as SECONDARY, Local SLM as FALLBACK.
+ */
+async function callAiEngine(userText, customerName, customerPhone, jid, locationData = null) {
+  const groqKey = (process.env.GROQ_API_KEY || '').trim();
+  const groqModel = (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b').trim();
+  const openRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const openRouterModel = (process.env.OPENROUTER_MODEL || 'liquid/lfm-2.5-2.6b:free').trim();
+
+  const cart = customerCarts.get(jid) || null;
+  const history = conversationHistories.get(jid) || [];
+  
+  const isMiniListPrompt = /\b(mini[- ]list|from this list only|from this mini[- ]list)\b/i.test(userText);
+  const matchedProducts = !isMiniListPrompt ? dukanCatalog.search(userText).slice(0, 6) : [];
+  const lastOffered = (lastOfferedItems.get(jid) || []).slice(0, 4);
+
+  const systemPrompt = buildDynamicSystemPrompt(customerName, cart, matchedProducts, lastOffered, userText);
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history.slice(-6),
+    { role: 'user', content: userText }
+  ];
+
+  let rawReply = null;
+
+  // PRIMARY: Groq (Qwen 3.8 27B)
+  if (groqKey && groqKey !== 'placeholder') {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: groqModel,
+          messages,
+          temperature: 0.6,
+          max_completion_tokens: 800,
+          top_p: 0.95,
+          reasoning_effort: 'default'
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content && content.trim()) {
+          console.log(`[AI Engine] Reply generated via Groq (${groqModel})`);
+          rawReply = content.trim();
+        }
+      } else {
+        console.warn(`[AI Engine] Groq HTTP ${res.status}: ${await res.text()}`);
+      }
+    } catch (e) {
+      console.warn(`[AI Engine] Groq error (${e.message})`);
+    }
+  }
+
+  // SECONDARY: OpenRouter Free Models
+  if (!rawReply && openRouterKey && openRouterKey !== 'placeholder') {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 25000);
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'http://localhost:5001',
+          'X-Title': 'Dukaan WhatsApp Bot'
+        },
+        body: JSON.stringify({
+          model: openRouterModel,
+          models: Array.from(new Set([openRouterModel, 'nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3.5-lightning:free'])).slice(0, 3),
+          messages,
+          temperature: 0.5,
+          max_tokens: 600
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content && content.trim()) {
+          console.log(`[AI Engine] Reply generated via OpenRouter (${openRouterModel})`);
+          rawReply = content.trim();
+        }
+      } else {
+        console.warn(`[AI Engine] OpenRouter HTTP ${res.status}: ${await res.text()}`);
+      }
+    } catch (e) {
+      console.warn(`[AI Engine] OpenRouter error (${e.message})`);
+    }
+  }
+
+  // FALLBACK: Local SLM (Port 8080)
+  if (!rawReply) {
+    try {
+      const localBaseUrl = process.env.LLM_BASE_URL || 'http://127.0.0.1:8080/v1/chat/completions';
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(localBaseUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages,
+          max_tokens: 500,
+          temperature: 0.5
+        }),
+        signal: ctrl.signal
+      });
+      clearTimeout(timer);
+
+      if (res.ok) {
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content;
+        if (content && content.trim()) {
+          console.log(`[AI Engine] Reply generated via Local SLM fallback`);
+          rawReply = content.trim();
+        }
+      }
+    } catch (e) {
+      console.warn(`[AI Engine] Local SLM fallback error (${e.message})`);
+    }
+  }
+
+  if (!rawReply) return null;
+
+  const rawClean = rawReply.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // Parse & execute action tags. The cart is mutated here from the REAL state.
+  const actions = parseActionTags(rawClean);
+  const modelResult = executeModelActions(actions, jid, customerName, customerPhone, locationData);
+  let { cartUpdated, orderCreated, cart: currentCart } = modelResult;
+
+  // The model's own words, with any cart block it wrote itself removed.
+  let narrative = stripModelCartBlock(cleanUserFacingReply(rawClean));
+
+  // Safety net: the model described a change but forgot the tag (common). Apply it.
+  if (!orderCreated) {
+    const reconciled = reconcileMissedActions(userText, narrative, actions, jid, customerName, customerPhone, locationData);
+    if (reconciled) {
+      cartUpdated = cartUpdated || reconciled.cartUpdated;
+      orderCreated = reconciled.orderCreated || orderCreated;
+      currentCart = reconciled.cart || currentCart;
+    }
+  }
+
+  // Order placed via CONFIRM_ORDER: one canonical confirmation, nothing else.
+  if (orderCreated) {
+    const reply = formatOrderConfirmation(orderCreated);
+    rememberTurn(jid, userText, reply);
+    return { reply, newOrder: orderCreated };
+  }
+
+  const setAddrAct = actions.find(a => a.type === 'SET_ADDRESS');
+  if (setAddrAct && !narrative) {
+    narrative = `Address saved: ${currentCart?.deliveryAddress || setAddrAct.args.address}`;
+  }
+  if (!narrative) {
+    narrative = cartUpdated ? 'Added to your cart.' : 'Got it — what else do you need?';
+  }
+
+  // Append the ONE authoritative cart block, built from the real cart state.
+  let reply = narrative;
+  if (cartUpdated && currentCart && currentCart.items.length > 0) {
+    reply += formatCartFooter(currentCart);
+  }
+
+  rememberTurn(jid, userText, reply);
+  return { reply, newOrder: null };
+}
+
+export const dukanBot = {
+  /**
+   * Trigger gate used by the WhatsApp server: only engage when the message
+   * carries "/hey" or the chat has a live (12-min idle) session.
+   */
+  shouldEngage(jid, text, now = Date.now()) {
+    return shouldEngage(jid, text, now);
   },
 
   /**
-   * Pure English, short & sweet rule-based engine
+   * Closes the ordering chat immediately. The server calls this when the
+   * shopkeeper app finishes an order (doorstep / delivered / rejected) or the
+   * customer cancels, so the bot stops answering that thread instead of waiting
+   * out the 12-minute idle window.
    */
-  handleRuleBased(msg, locationData = null) {
+  endSession(jid) {
+    endSession(jid);
+  },
+
+  /** True while the chat is waiting for the customer's location pin. */
+  isAwaitingLocation(jid) {
+    return isAwaitingLocation(jid);
+  },
+
+  /**
+   * Main entry point.
+   *
+   * FLOW (kept in this order on purpose):
+   *   1. "/hey"       -> beginLocationHandshake, reply WELCOME_REPLY (no AI call)
+   *   2. awaiting pin -> pin: match nearest shop, reply ack, chat is now live
+   *                      text: LOCATION_HOWTO_REPLY (no AI call)
+   *   3. live chat    -> deterministic confirm/cancel, else callAiEngine()
+   *
+   * Powered dynamically by Groq (primary) with OpenRouter free models and a
+   * local SLM as automatic fallbacks.
+   */
+  async handleMessage(msg, sock, locationData = null) {
     const jid = msg.remoteJid;
-    const text = (msg.text || '').trim();
+    let text = (msg.text || '').trim();
     const pushName = msg.pushName || '';
     const phone = msg.from || resolvePhoneNumber(jid);
 
-    const session = getRuleSession(jid, pushName);
-    const lower = text.toLowerCase();
+    // Keep the engaged chat warm (sliding idle window)
+    activateSession(jid, Date.now());
 
-    // 0. Affirmative confirmation check against pending orders or active cart
-    if (AFFIRMATIVE_REGEX.test(lower)) {
-      if (pendingOrders.has(jid)) {
-        const cached = pendingOrders.get(jid);
-        pendingOrders.delete(jid);
+    // "/hey" trigger. Ordering needs a location pin first (the pin decides which
+    // store serves them), so the trigger only opens the handshake — no AI call.
+    // Anything typed with it ("/hey 2 maggi") is held and replayed once the pin
+    // arrives, so it is never silently dropped.
+    if (isBotTrigger(text)) {
+      beginLocationHandshake(jid, stripBotTrigger(text));
+      return { reply: WELCOME_REPLY, newOrder: null };
+    }
+
+    // Handshake: waiting for the location pin.
+    if (isAwaitingLocation(jid)) {
+      if (locationData) {
+        const shop = matchNearestShop(locationData);
+        const pending = completeLocationHandshake(jid, shop);
+        console.log(
+          `[Dukan Bot] ${jid} -> shop "${shop?.shopName}"` +
+            (shop?.distanceKm != null ? ` (${shop.distanceKm.toFixed(1)} km away)` : ' (no shop registry yet, local fallback)')
+        );
+        const ack = buildLocationAck(shop, locationData);
+        if (pending) {
+          // Replay what they typed with /hey now that the store is known.
+          const aiResult = await callAiEngine(pending, pushName, phone, jid, locationData);
+          if (aiResult?.reply) {
+            return { reply: `${ack}\n\n${aiResult.reply}`, newOrder: aiResult.newOrder };
+          }
+        }
+        return { reply: ack, newOrder: null };
+      }
+
+      // They texted instead of sharing a pin: walk them through it. No AI call,
+      // so this is free and can repeat patiently.
+      return { reply: LOCATION_HOWTO_REPLY, newOrder: null };
+    }
+
+    // Location pin received without explicit message text
+    if (!text && locationData) {
+      text = `My delivery location is: ${locationData.fullDescription}`;
+    }
+
+    if (!text && !locationData) return null;
+
+    // Security & Credential Leak Guards
+    if (/\b(VITE_|SUPABASE|ANON_KEY|API_KEY|SECRET_KEY|DATABASE_URL|GITHUB_TOKEN|system prompt|ignore previous|prompt leak|SELECT\s+.*FROM|DROP\s+TABLE|INSERT\s+INTO)\b/i.test(text)) {
+      return {
+        reply: `This is a WhatsApp grocery ordering bot for Dukaan. For security, please do not share credentials or technical secrets in chat. Let me know what groceries you need!`,
+        newOrder: null
+      };
+    }
+
+    // Punctuation / Dot-only Pings
+    if (/^[.\s\-?_!,]+$/.test(text.trim())) {
+      return {
+        reply: `What would you like to order?`,
+        newOrder: null
+      };
+    }
+
+    // Explicit confirmation fallback: if customer sends a short explicit confirm ("confirm", "ha bhej do") and cart already has items
+    const isExplicitConfirm = (
+      /^(?:confirm|yes|ha|haan|proceed|order|pack kar do|bhej do|haan bhej do)[\s.!,]*$/i.test(text.trim())
+    );
+    if (isExplicitConfirm) {
+      const cart = customerCarts.get(jid);
+      if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
         const order = dukanOrders.createOrder({
           customerJid: jid,
           customerPhone: phone,
-          customerName: cached.customerName || pushName || 'Customer',
-          deliveryAddress: cached.deliveryAddress || 'Address not specified',
-          items: cached.items || [],
-          totalAmount: cached.totalAmount || 0,
+          customerName: cart.customerName || pushName || 'Customer',
+          deliveryAddress: cart.deliveryAddress || (locationData ? locationData.fullDescription : 'Address not specified'),
+          location: locationData || cart.location || null,
+          items: cart.items,
+          totalAmount: cart.totalAmount,
           notes: 'Cash on Delivery'
         });
-
-        return {
-          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ₹${order.totalAmount} (Cash/UPI on delivery)`,
-          newOrder: order
-        };
-      }
-
-      if (session.stage === 'CONFIRMING_ORDER') {
-        if (session.cart.length === 0) {
-          session.stage = 'IDLE';
-          return { reply: `Your cart is empty. What would you like to order?` };
-        }
-
-        const totalAmount = calculateCartTotal(session.cart);
-        const order = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: phone,
-          customerName: session.customerName,
-          deliveryAddress: session.deliveryAddress,
-          items: [...session.cart],
-          totalAmount,
-          notes: ''
-        });
-
-        session.cart = [];
-        session.stage = 'IDLE';
-
-        return {
-          reply: `Order #${order.id} received! ⏳ Sent to the shopkeeper for confirmation. You will receive an instant notification once accepted.\n\nItems: ${order.items.length}\nTotal: ${formatCurrency(totalAmount)} (Cash/UPI on delivery)`,
-          newOrder: order
-        };
-      }
-
-      if (session.cart.length === 0) {
-        return {
-          reply: `You don't have an active order right now. What would you like to order today? (e.g., "2 Maggi and 1 Parle-G")`
-        };
+        customerCarts.delete(jid);
+        conversationHistories.delete(jid);
+        return { reply: formatOrderConfirmation(order), newOrder: order };
       }
     }
 
-    // 1. Location Pin Received
-    if (locationData) {
-      session.deliveryAddress = `${locationData.fullDescription} (${locationData.mapsUrl})`;
-
-      if (session.cart.length > 0) {
-        if (!session.customerName) {
-          session.stage = 'ASKING_NAME';
-          return {
-            reply: `Got your delivery location pin! Please share your full name to proceed with the order.`
-          };
-        } else {
-          session.stage = 'CONFIRMING_ORDER';
-          return {
-            reply: `Got your location! Please confirm your flat or house number:\n\n${generateConfirmationMessage(session)}`
-          };
-        }
-      } else {
-        return {
-          reply: `Got your location pin! What would you like to order today? (e.g., "2 Maggi and 1 Coke")`
-        };
-      }
-    }
-
-    // 2. Cancel
-    if (lower === 'cancel' || lower === 'reset' || lower === 'stop') {
-      session.cart = [];
-      session.stage = 'IDLE';
-      session.pendingChoices = null;
+    // Explicit cancellation: if customer sends a short explicit cancellation ("cancel", "cancel order", "rehne do")
+    const isExplicitCancel = /^(?:cancel|cancel order|order cancel|rehne do|mat bhejo)[\s.!,]*$/i.test(text.trim());
+    if (isExplicitCancel) {
+      customerCarts.delete(jid);
+      conversationHistories.delete(jid);
+      dukanOrders.cancelOrderByCustomer(phone || jid);
       return {
-        reply: `Your order has been cancelled. Let us know whenever you need anything!`
+        reply: `Cancelled. Nothing will be dispatched and no payment is due.`,
+        newOrder: null
       };
     }
 
-    // 3. Menu / Greeting
-    if (lower === 'menu' || lower === 'items' || lower === 'catalog' || lower === 'help' || (session.stage === 'IDLE' && (lower === 'hi' || lower === 'hello' || lower === 'hey'))) {
-      const inStock = dukanCatalog.getInStock();
-      const itemsList = inStock.slice(0, 6).map(it => `• ${it.name} – ${formatCurrency(it.price)}`).join('\n');
-
-      return {
-        reply: `Hi! Welcome to Dukan. Here are some of our popular items:\n\n${itemsList}\n\nWhat can I get for you today?`
-      };
-    }
-
-    // 4. Confirming Order stage non-affirmative
-    if (session.stage === 'CONFIRMING_ORDER') {
-      return {
-        reply: `Please reply YES to place the order, or CANCEL to cancel.`
-      };
-    }
-
-    // 5. Asking Name stage
-    if (session.stage === 'ASKING_NAME') {
-      const name = text.replace(/^(my name is|name:?)\s*/i, '').trim();
-      if (name.length >= 2) {
-        session.customerName = name;
-        if (!session.deliveryAddress) {
-          session.stage = 'ASKING_ADDRESS';
-          return {
-            reply: `Thanks, ${name}! What is your delivery address (or you can share your location pin)?`
-          };
-        } else {
-          session.stage = 'CONFIRMING_ORDER';
-          return { reply: generateConfirmationMessage(session) };
-        }
-      } else {
-        return { reply: `Please provide your name (e.g. "Rahul Sharma").` };
+    // DYNAMIC AI BRAIN: Let the AI model think, reason, and answer dynamically!
+    try {
+      const aiResult = await callAiEngine(text, pushName, phone, jid, locationData);
+      if (aiResult) {
+        return aiResult;
       }
+    } catch (e) {
+      console.warn(`[AI Engine] Execution error (${e.message})`);
     }
 
-    // 6. Asking Address stage
-    if (session.stage === 'ASKING_ADDRESS') {
-      const address = text.replace(/^(address:?)\s*/i, '').trim();
-      if (address.length >= 5) {
-        session.deliveryAddress = address;
-        session.stage = 'CONFIRMING_ORDER';
-        return { reply: generateConfirmationMessage(session) };
-      } else {
-        return { reply: `Please provide your delivery address (flat number, street, landmark) or drop a WhatsApp location pin.` };
-      }
-    }
-
-    // 7. Resolving variant choice (1, 2, 3)
-    if (session.pendingChoices && session.pendingChoices.length > 0) {
-      const choiceIdx = parseInt(text.trim()) - 1;
-      if (!isNaN(choiceIdx) && choiceIdx >= 0 && choiceIdx < session.pendingChoices.length) {
-        const chosen = session.pendingChoices[choiceIdx];
-        const qty = session.pendingQuantity || 1;
-        session.cart.push({
-          id: chosen.id,
-          name: chosen.name,
-          price: chosen.price,
-          quantity: qty,
-          total: chosen.price * qty
-        });
-        session.pendingChoices = null;
-        session.pendingQuantity = null;
-
-        return {
-          reply: `Added ${qty}x ${chosen.name} (${formatCurrency(chosen.price * qty)}). Anything else, or ready to checkout?`
-        };
-      }
-    }
-
-    // 8. Checkout command
-    if (lower === 'done' || lower === 'checkout' || lower === 'order' || lower === 'ready' || lower === 'thats it') {
-      if (session.cart.length === 0) {
-        return { reply: `Your cart is empty. What would you like to order?` };
-      }
-      return proceedToCheckout(session);
-    }
-
-    // 9. Catalog Product Matching
-    const qty = extractQuantity(text);
-    const searchResults = dukanCatalog.search(lower);
-
-    if (searchResults.length === 1) {
-      const product = searchResults[0];
-      session.cart.push({
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        quantity: qty,
-        total: product.price * qty
-      });
-      session.stage = 'COLLECTING_ITEMS';
-
-      return {
-        reply: `Added ${qty}x ${product.name} (${formatCurrency(product.price * qty)}). Cart total: ${formatCurrency(calculateCartTotal(session.cart))}.\n\nAnything else, or reply DONE to checkout.`
-      };
-    } else if (searchResults.length > 1) {
-      session.pendingChoices = searchResults;
-      session.pendingQuantity = qty;
-
-      let optionsText = `We have a few options available:\n`;
-      searchResults.forEach((item, index) => {
-        optionsText += `${index + 1}. ${item.name} – ${formatCurrency(item.price)}\n`;
-      });
-      optionsText += `\nReply with 1, 2, or 3 to select.`;
-      return { reply: optionsText };
-    }
-
-    if (session.cart.length > 0 && (lower === 'no' || lower === 'nothing' || lower === 'nope')) {
-      return proceedToCheckout(session);
-    }
-
-    // Fallback: Product not found
     return {
-      reply: `Sorry, we don't have "${text}" in stock right now. We have Maggi, milk, bread, eggs, cold drinks, and chips. Reply MENU to see available items.`
+      reply: `I can help you check grocery prices, explore categories, or take an order. What items would you like today?`,
+      newOrder: null
     };
   }
 };
-
-function extractQuantity(text) {
-  const wordMap = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
-  const digitMatch = text.match(/\b(\d+)\s*(x|packet|packets|pkt|pkts|bottle|bottles|pack|packs|piece|pieces)?\b/i);
-  if (digitMatch && Number(digitMatch[1]) > 0 && Number(digitMatch[1]) < 100) {
-    return Number(digitMatch[1]);
-  }
-  for (const [word, qty] of Object.entries(wordMap)) {
-    const wordRegex = new RegExp(`\\b${word}\\b`, 'i');
-    if (wordRegex.test(text)) {
-      return qty;
-    }
-  }
-  return 1;
-}
-
-function proceedToCheckout(session) {
-  if (!session.customerName) {
-    session.stage = 'ASKING_NAME';
-    return {
-      reply: `Cart total: ${formatCurrency(calculateCartTotal(session.cart))}. Please share your full name for delivery.`
-    };
-  } else if (!session.deliveryAddress) {
-    session.stage = 'ASKING_ADDRESS';
-    return {
-      reply: `Please share your delivery address (or send your location pin).`
-    };
-  } else {
-    session.stage = 'CONFIRMING_ORDER';
-    return { reply: generateConfirmationMessage(session) };
-  }
-}
-
-function generateConfirmationMessage(session) {
-  const total = calculateCartTotal(session.cart);
-  const itemsList = session.cart.map(i => `• ${i.quantity}x ${i.name} – ${formatCurrency(i.total)}`).join('\n');
-
-  return `Here is your order summary:\n` +
-         `${itemsList}\n` +
-         `Total: ${formatCurrency(total)} (Cash / UPI on delivery)\n` +
-         `Name: ${session.customerName}\n` +
-         `Address: ${session.deliveryAddress}\n\n` +
-         `Reply YES to confirm.`;
-}

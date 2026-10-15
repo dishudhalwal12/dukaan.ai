@@ -127,6 +127,36 @@ export const whatsappService = {
   },
 
   /**
+   * Notifies customer that delivery partner is at doorstep / order is ready at pickup
+   */
+  async readyOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
+    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/ready`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  },
+
+  /**
+   * Marks order delivered/completed and notifies customer
+   */
+  async deliverOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
+    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/delivered`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    return await res.json();
+  },
+
+  /**
    * Synchronizes Dukaan POS products into the Baileys catalog
    */
   async syncCatalog(products: Product[]): Promise<{ success: boolean; count?: number }> {

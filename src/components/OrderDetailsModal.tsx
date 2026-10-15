@@ -177,6 +177,18 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
       return `https://wa.me/${number}`;
   };
 
+  const getMapsUrl = () => {
+    if (order.customer?.mapsUrl) return order.customer.mapsUrl;
+    if (typeof order.customer?.latitude === 'number' && typeof order.customer?.longitude === 'number') {
+      return `https://www.google.com/maps/search/?api=1&query=${order.customer.latitude},${order.customer.longitude}`;
+    }
+    const addr = order.customer?.address;
+    if (!addr || addr === '—') return null;
+    const urlInText = addr.match(/https?:\/\/[^\s)]+/);
+    if (urlInText) return urlInText[0];
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`;
+  };
+
   const ActionButtons: React.FC = () => {
     switch (order.status) {
       case OrderStatus.NEW:
@@ -201,24 +213,35 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
       case OrderStatus.PREPARING:
         return (
           <button 
-            onClick={() => setShowQrModal(true)}
-            className="w-full bg-[#E6E6FA] text-black font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">
+            onClick={() => {
+              onUpdateStatus(order.id, OrderStatus.READY_FOR_PICKUP);
+              setShowQrModal(true);
+            }}
+            className="w-full bg-[#E6E6FA] text-black font-bold py-3 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined text-xl">qr_code_scanner</span>
             At pickup
           </button>
         );
       case OrderStatus.READY_FOR_PICKUP:
         return (
-            <div className="text-center p-3 bg-[#2D2D2D] rounded-lg">
-                <p className="font-semibold text-purple-300">Waiting for delivery partner.</p>
-                <button onClick={() => onUpdateStatus(order.id, OrderStatus.COMPLETED)} className="text-xs text-neutral-400 hover:underline mt-1">
-                    Mark as Completed
-                </button>
+          <div className="space-y-2">
+            <button 
+              onClick={() => setShowQrModal(true)}
+              className="w-full bg-[#E6E6FA] text-black font-bold py-3 rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2">
+              <span className="material-symbols-outlined text-xl">qr_code_scanner</span>
+              Show Payment QR
+            </button>
+            <div className="text-center p-2 bg-[#2D2D2D] rounded-lg">
+              <p className="text-xs font-semibold text-purple-300">Customer notified: Delivery partner at doorstep</p>
             </div>
-        )
+          </div>
+        );
       default:
         return null;
     }
   };
+
+  const mapsUrl = getMapsUrl();
 
   return (
     <>
@@ -259,11 +282,33 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
                     <div className="bg-[#2D2D2D] p-3 rounded-lg">
                         <p className="text-sm text-neutral-400">Customer</p>
                         <p className="font-bold text-white mt-1">{order.customer?.name ?? 'Walk-in Customer'}</p>
-                        <p className="text-sm text-neutral-300">{order.customer?.address ?? '—'}</p>
-                        <a href={getWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-2 bg-[#25D366] text-white text-sm font-bold py-1.5 px-3 rounded-full hover:bg-opacity-90">
-                            <WhatsAppIcon className="w-4 h-4" />
-                            Chat on WhatsApp
-                        </a>
+                        
+                        {mapsUrl ? (
+                          <a 
+                            href={mapsUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="mt-2 flex items-center justify-between p-2 rounded-lg bg-[#202020] border border-neutral-700 hover:border-neutral-500 transition-colors group"
+                            title="Click to navigate on Google Maps"
+                          >
+                            <div className="flex items-start gap-2 flex-1 pr-2">
+                              <span className="material-symbols-outlined text-red-400 text-lg mt-0.5 group-hover:scale-110 transition-transform">pin_drop</span>
+                              <span className="text-xs text-neutral-200 line-clamp-2 leading-relaxed">{order.customer?.address ?? '—'}</span>
+                            </div>
+                            <span className="text-[11px] font-bold bg-blue-500/20 text-blue-300 px-2 py-1 rounded-full whitespace-nowrap flex items-center gap-1">
+                              Maps <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                            </span>
+                          </a>
+                        ) : (
+                          <p className="text-sm text-neutral-300 mt-1">{order.customer?.address ?? '—'}</p>
+                        )}
+
+                        <div className="mt-3">
+                          <a href={getWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-[#25D366] text-white text-sm font-bold py-1.5 px-3 rounded-full hover:bg-opacity-90">
+                              <WhatsAppIcon className="w-4 h-4" />
+                              Chat on WhatsApp
+                          </a>
+                        </div>
                     </div>
 
                     {/* Items List */}

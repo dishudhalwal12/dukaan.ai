@@ -10,7 +10,7 @@ import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
-import { dukanBot, resolvePhoneNumber } from './dukanBot.js';
+import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -26,10 +26,10 @@ import {
   isJidNewsletter,
 } from '@whiskeysockets/baileys';
 
-dotenv.config({ override: true });
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -40,6 +40,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Erase all previous chatbot memory & carts on server start/restart
+resetAllContext();
 
 // State variables
 let sock = null;
@@ -78,8 +81,30 @@ function formatJid(number) {
   return `${clean}@s.whatsapp.net`;
 }
 
+// Recursively unwrap ephemeral, view-once, and edited message wrappers
+export function unwrapMessage(msg) {
+  let m = msg;
+  while (m) {
+    if (m.ephemeralMessage?.message) {
+      m = m.ephemeralMessage.message;
+    } else if (m.viewOnceMessage?.message) {
+      m = m.viewOnceMessage.message;
+    } else if (m.viewOnceMessageV2?.message) {
+      m = m.viewOnceMessageV2.message;
+    } else if (m.documentWithCaptionMessage?.message) {
+      m = m.documentWithCaptionMessage.message;
+    } else if (m.editedMessage?.message?.protocolMessage?.editedMessage) {
+      m = m.editedMessage.message.protocolMessage.editedMessage;
+    } else {
+      break;
+    }
+  }
+  return m;
+}
+
 // Extract message text from Baileys message object
-function extractMessageText(message) {
+export function extractMessageText(rawMessage) {
+  const message = unwrapMessage(rawMessage);
   if (!message) return '';
   if (message.conversation) return message.conversation;
   if (message.extendedTextMessage?.text) return message.extendedTextMessage.text;
@@ -90,6 +115,12 @@ function extractMessageText(message) {
   if (message.buttonsResponseMessage?.selectedButtonId) return message.buttonsResponseMessage.selectedButtonId;
   if (message.listResponseMessage?.singleSelectReply?.selectedRowId) {
     return message.listResponseMessage.singleSelectReply.selectedRowId;
+  }
+  if (message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+    try {
+      const parsed = JSON.parse(message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+      return parsed.id || parsed.title || '';
+    } catch (e) {}
   }
   return '';
 }
@@ -261,15 +292,16 @@ async function initWhatsApp() {
           const remoteJid = msg.key.remoteJid;
           if (!remoteJid || isJidBroadcast(remoteJid) || isJidNewsletter(remoteJid)) continue;
 
-          let text = extractMessageText(msg.message);
+          const unwrappedMsg = unwrapMessage(msg.message);
+          let text = extractMessageText(unwrappedMsg);
           let locationData = null;
           let isVoiceNote = false;
 
           // 1. Process Voice Note / Audio Message
-          if (msg.message?.audioMessage) {
+          if (unwrappedMsg?.audioMessage) {
             isVoiceNote = true;
             try {
-              const transcribed = await transcribeAudioMessage(msg.message.audioMessage);
+              const transcribed = await transcribeAudioMessage(unwrappedMsg.audioMessage);
               if (transcribed) {
                 text = transcribed;
                 console.log(`[Voice Note -> Text]: "${transcribed}"`);
@@ -280,9 +312,9 @@ async function initWhatsApp() {
           }
 
           // 2. Process WhatsApp Location Pin
-          if (msg.message?.locationMessage || msg.message?.liveLocationMessage) {
+          if (unwrappedMsg?.locationMessage || unwrappedMsg?.liveLocationMessage) {
             try {
-              const loc = await resolveLocation(msg.message.locationMessage || msg.message.liveLocationMessage);
+              const loc = await resolveLocation(unwrappedMsg.locationMessage || unwrappedMsg.liveLocationMessage);
               if (loc) {
                 locationData = loc;
                 text = loc.displayText;
@@ -329,39 +361,45 @@ async function initWhatsApp() {
 
             // Dukan AI Bot order automation (for individual customer chats)
             if (!isGroup) {
-              try {
-                const botResult = await dukanBot.handleMessage(messageRecord, sock, locationData);
-                if (botResult?.reply) {
-                  const replyResult = await sock.sendMessage(remoteJid, { text: botResult.reply });
-                  const botReplyRecord = {
-                    id: replyResult?.key?.id || ('bot-' + Date.now()),
-                    remoteJid,
-                    from: customerPhone || remoteJid.replace(/@.*$/, ''),
-                    fromMe: true,
-                    pushName: 'Dukan Assistant',
-                    text: botResult.reply,
-                    timestamp: Date.now(),
-                    isGroup: false,
-                    status: 'SENT',
-                  };
-                  store.addMessage(botReplyRecord);
-                  broadcastSSE({ type: 'new_message', message: botReplyRecord });
-                }
+              if (!dukanBot.shouldEngage(remoteJid, text)) {
+                // Not engaged: the bot only answers after the customer sends "/hey".
+                // Personal contacts messaging the shopkeeper's number are left untouched.
+                console.log(`[Dukan Bot] Ignored (no "/hey" trigger): ${remoteJid}`);
+              } else {
+                try {
+                  const botResult = await dukanBot.handleMessage(messageRecord, sock, locationData);
+                  if (botResult?.reply) {
+                    const replyResult = await sock.sendMessage(remoteJid, { text: botResult.reply });
+                    const botReplyRecord = {
+                      id: replyResult?.key?.id || ('bot-' + Date.now()),
+                      remoteJid,
+                      from: customerPhone || remoteJid.replace(/@.*$/, ''),
+                      fromMe: true,
+                      pushName: 'Dukan Assistant',
+                      text: botResult.reply,
+                      timestamp: Date.now(),
+                      isGroup: false,
+                      status: 'SENT',
+                    };
+                    store.addMessage(botReplyRecord);
+                    broadcastSSE({ type: 'new_message', message: botReplyRecord });
+                  }
 
-                if (botResult?.newOrder) {
-                  console.log(`\n🛎️ [Dukan] NEW ORDER CREATED & BROADCAST!`);
-                  console.log(`   Order ID: #${botResult.newOrder.id}`);
-                  console.log(`   Customer: ${botResult.newOrder.customerName} (${botResult.newOrder.customerPhone})`);
-                  console.log(`   Address:  ${botResult.newOrder.deliveryAddress}`);
-                  console.log(`   Items:    ${(botResult.newOrder.items || []).map(it => `${it.quantity}x ${it.name} (₹${it.price || 0})`).join(', ')}`);
-                  console.log(`   Total:    ₹${botResult.newOrder.totalAmount}\n`);
-                  broadcastSSE({
-                    type: 'dukan_new_order',
-                    order: botResult.newOrder,
-                  });
+                  if (botResult?.newOrder) {
+                    console.log(`\n🛎️ [Dukan] NEW ORDER CREATED & BROADCAST!`);
+                    console.log(`   Order ID: #${botResult.newOrder.id}`);
+                    console.log(`   Customer: ${botResult.newOrder.customerName} (${botResult.newOrder.customerPhone})`);
+                    console.log(`   Address:  ${botResult.newOrder.deliveryAddress}`);
+                    console.log(`   Items:    ${(botResult.newOrder.items || []).map(it => `${it.quantity}x ${it.name} (₹${it.price || 0})`).join(', ')}`);
+                    console.log(`   Total:    ₹${botResult.newOrder.totalAmount}\n`);
+                    broadcastSSE({
+                      type: 'dukan_new_order',
+                      order: botResult.newOrder,
+                    });
+                  }
+                } catch (botErr) {
+                  console.error('[Dukan Bot Error]:', botErr);
                 }
-              } catch (botErr) {
-                console.error('[Dukan Bot Error]:', botErr);
               }
             }
           }
@@ -635,21 +673,25 @@ app.post('/api/logout', async (req, res) => {
 
 // Get AI Config
 app.get('/api/dukan/ai-config', (req, res) => {
+  const hasGroq = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
   res.json({
-    hasApiKey: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
-    model: process.env.OPENROUTER_MODEL || 'openrouter/free',
-    provider: 'OpenRouter'
+    hasApiKey: hasGroq || Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
+    model: hasGroq ? (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b') : (process.env.OPENROUTER_MODEL || 'openrouter/free'),
+    provider: hasGroq ? 'Groq' : 'OpenRouter'
   });
 });
 
-// Update AI Config (Save OpenRouter Key & Model)
+// Update AI Config (Save Groq or OpenRouter Key & Model)
 app.post('/api/dukan/ai-config', (req, res) => {
-  const { apiKey, model } = req.body;
-  if (apiKey !== undefined) {
-    process.env.OPENROUTER_API_KEY = apiKey.trim();
-  }
-  if (model) {
-    process.env.OPENROUTER_MODEL = model.trim();
+  const { apiKey, model, provider } = req.body;
+  const isGroq = provider === 'Groq' || (apiKey && apiKey.trim().startsWith('gsk_'));
+
+  if (isGroq) {
+    if (apiKey !== undefined) process.env.GROQ_API_KEY = apiKey.trim();
+    if (model) process.env.GROQ_MODEL = model.trim();
+  } else {
+    if (apiKey !== undefined) process.env.OPENROUTER_API_KEY = apiKey.trim();
+    if (model) process.env.OPENROUTER_MODEL = model.trim();
   }
 
   // Persist to .env
@@ -657,16 +699,28 @@ app.post('/api/dukan/ai-config', (req, res) => {
     const envPath = path.resolve(process.cwd(), '.env');
     let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
 
-    if (envContent.includes('OPENROUTER_API_KEY=')) {
-      envContent = envContent.replace(/OPENROUTER_API_KEY=.*/g, `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}`);
+    if (isGroq) {
+      if (envContent.includes('GROQ_API_KEY=')) {
+        envContent = envContent.replace(/GROQ_API_KEY=.*/g, `GROQ_API_KEY=${process.env.GROQ_API_KEY || ''}`);
+      } else {
+        envContent += `\nGROQ_API_KEY=${process.env.GROQ_API_KEY || ''}\n`;
+      }
+      if (envContent.includes('GROQ_MODEL=')) {
+        envContent = envContent.replace(/GROQ_MODEL=.*/g, `GROQ_MODEL=${process.env.GROQ_MODEL || 'qwen/qwen3.8-27b'}`);
+      } else {
+        envContent += `\nGROQ_MODEL=${process.env.GROQ_MODEL || 'qwen/qwen3.8-27b'}\n`;
+      }
     } else {
-      envContent += `\nOPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}\n`;
-    }
-
-    if (envContent.includes('OPENROUTER_MODEL=')) {
-      envContent = envContent.replace(/OPENROUTER_MODEL=.*/g, `OPENROUTER_MODEL=${process.env.OPENROUTER_MODEL || 'openrouter/free'}`);
-    } else {
-      envContent += `\nOPENROUTER_MODEL=${process.env.OPENROUTER_MODEL || 'openrouter/free'}\n`;
+      if (envContent.includes('OPENROUTER_API_KEY=')) {
+        envContent = envContent.replace(/OPENROUTER_API_KEY=.*/g, `OPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}`);
+      } else {
+        envContent += `\nOPENROUTER_API_KEY=${process.env.OPENROUTER_API_KEY || ''}\n`;
+      }
+      if (envContent.includes('OPENROUTER_MODEL=')) {
+        envContent = envContent.replace(/OPENROUTER_MODEL=.*/g, `OPENROUTER_MODEL=${process.env.OPENROUTER_MODEL || 'openrouter/free'}`);
+      } else {
+        envContent += `\nOPENROUTER_MODEL=${process.env.OPENROUTER_MODEL || 'openrouter/free'}\n`;
+      }
     }
 
     fs.writeFileSync(envPath, envContent);
@@ -674,20 +728,69 @@ app.post('/api/dukan/ai-config', (req, res) => {
     console.error('Failed to update .env:', err.message);
   }
 
+  const hasGroq = Boolean(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
   res.json({
     success: true,
-    hasApiKey: Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
-    model: process.env.OPENROUTER_MODEL || 'openrouter/free'
+    hasApiKey: hasGroq || Boolean(process.env.OPENROUTER_API_KEY && process.env.OPENROUTER_API_KEY.trim()),
+    model: hasGroq ? (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b') : (process.env.OPENROUTER_MODEL || 'openrouter/free'),
+    provider: hasGroq ? 'Groq' : 'OpenRouter'
   });
 });
 
-// Test OpenRouter AI Connection
+// Test AI Connection (Groq or OpenRouter)
 app.post('/api/dukan/ai-test', async (req, res) => {
-  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
-  const model = (process.env.OPENROUTER_MODEL || 'openrouter/free').trim();
+  const groqKey = (process.env.GROQ_API_KEY || '').trim();
+  const groqModel = (process.env.GROQ_MODEL || 'qwen/qwen3.8-27b').trim();
+  const openRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const openRouterModel = (process.env.OPENROUTER_MODEL || 'openrouter/free').trim();
 
-  if (!apiKey) {
-    return res.status(400).json({ success: false, error: 'No OpenRouter API key configured yet.' });
+  if (groqKey) {
+    try {
+      const startTime = Date.now();
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: groqModel,
+          messages: [
+            { role: 'system', content: 'You are Bhaiya from Dukan shop. Reply in 1 warm sentence in Hinglish.' },
+            { role: 'user', content: 'Bhaiya, Maggi hai kya?' }
+          ],
+          temperature: 0.6,
+          max_completion_tokens: 100,
+          top_p: 0.95
+        })
+      });
+
+      const data = await response.json();
+      const durationMs = Date.now() - startTime;
+
+      if (!response.ok) {
+        return res.status(response.status).json({
+          success: false,
+          error: data.error?.message || `HTTP ${response.status}`,
+          durationMs
+        });
+      }
+
+      const reply = data.choices?.[0]?.message?.content || 'No text returned';
+      return res.json({
+        success: true,
+        model: groqModel,
+        provider: 'Groq',
+        reply,
+        durationMs
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  if (!openRouterKey) {
+    return res.status(400).json({ success: false, error: 'No Groq or OpenRouter API key configured yet.' });
   }
 
   try {
@@ -695,13 +798,13 @@ app.post('/api/dukan/ai-test', async (req, res) => {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${openRouterKey}`,
         'HTTP-Referer': 'http://localhost:3000',
         'X-Title': 'Dukan AI Assistant',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model,
+        model: openRouterModel,
         messages: [
           { role: 'system', content: 'You are Bhaiya from Dukan shop. Reply in 1 warm sentence in Hinglish.' },
           { role: 'user', content: 'Bhaiya, Maggi hai kya?' }
@@ -724,7 +827,8 @@ app.post('/api/dukan/ai-test', async (req, res) => {
     const reply = data.choices?.[0]?.message?.content || 'No text returned';
     res.json({
       success: true,
-      model,
+      model: openRouterModel,
+      provider: 'OpenRouter',
       reply,
       durationMs
     });
@@ -808,7 +912,7 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
 
   // Notify customer on WhatsApp
   if (sock && order.customerJid) {
-    const notifyText = `✅ *Order Accepted by Dukan! (Order #${order.id})*\n\nThe shopkeeper has accepted your order and is packing it now!\n🛵 Estimated delivery: 15-20 minutes.\n💰 Total to pay: ₹${order.totalAmount} (Cash / UPI on delivery).\n\nThank you for ordering with Dukan!`;
+    const notifyText = `Order #${order.id} accepted\n\nThe shopkeeper is packing it now — usually 15-20 minutes.\nAmount: ₹${order.totalAmount} (cash or UPI on delivery).`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
@@ -822,17 +926,24 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
   res.json({ success: true, order });
 });
 
-// Out for Delivery
+// Out for Delivery / At Doorstep
 app.post('/api/dukan/orders/:id/ready', async (req, res) => {
   const order = dukanOrders.updateStatus(req.params.id, 'OUT_FOR_DELIVERY');
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} is out for delivery to ${order.deliveryAddress}. Please keep ₹${order.totalAmount} ready.`;
+    const notifyText = `Order #${order.id} is at your door\n\nPlease collect it. Amount: ₹${order.totalAmount} (cash or UPI).`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
-    } catch (e) {}
+      console.log(`[Dukan] Sent doorstep notification for Order #${order.id} to ${order.customerJid}`);
+    } catch (e) {
+      console.error('Failed to notify customer of delivery partner at doorstep:', e.message);
+    }
+
+    // Order conversation is over, so close the bot chat now instead of leaving it
+    // open for the full 12-minute idle window. Another order needs a fresh "/hey".
+    dukanBot.endSession(order.customerJid);
   }
 
   broadcastSSE({ type: 'dukan_order_updated', order });
@@ -845,11 +956,16 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} has been delivered. Thank you for shopping with Dukan!`;
+    const notifyText = `Order #${order.id} delivered\n\nAmount paid: ₹${order.totalAmount}. Thanks for ordering with Dukaan.`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
-    } catch (e) {}
+      console.log(`[Dukan] Sent delivered notification for Order #${order.id} to ${order.customerJid}`);
+    } catch (e) {
+      console.error('Failed to notify customer of delivery completion:', e.message);
+    }
+
+    dukanBot.endSession(order.customerJid);
   }
 
   broadcastSSE({ type: 'dukan_order_updated', order });
@@ -863,13 +979,15 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `❌ *Order Update (Order #${order.id})*\n\nSorry, the shopkeeper could not accept your order right now (${reason || 'Item temporarily unavailable'}).\n\nPlease message us again later.`;
+    const notifyText = `Order #${order.id} could not be accepted (${reason || 'item temporarily unavailable'}).\n\nNothing was charged. Message us again if you want to retry.`;
 
     try {
       await sock.sendMessage(order.customerJid, { text: notifyText });
     } catch (e) {
       console.error('Failed to notify customer of rejection:', e.message);
     }
+
+    dukanBot.endSession(order.customerJid);
   }
 
   broadcastSSE({ type: 'dukan_order_updated', order });

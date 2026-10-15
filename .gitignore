@@ -29,3 +29,16 @@ dist-ssr
 .worktrees/
 worktrees
 worktrees/
+
+# Local ML artifacts (large; not for version control)
+models/
+adapters/
+data/*.jsonl
+
+# Local AI script cache
+scripts/local-ai/__pycache__/
+*.pid
+
+# Local tooling scratch
+.superpowers/
+.codegraph/

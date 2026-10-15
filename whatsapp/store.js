@@ -73,10 +73,7 @@ export const store = {
       messages[jid][existingIndex] = { ...messages[jid][existingIndex], ...msg };
     } else {
       messages[jid].push(msg);
-      // Keep last 100 messages per chat to prevent unbounded memory
-      if (messages[jid].length > 100) {
-        messages[jid] = messages[jid].slice(-100);
-      }
+      // Preserve all precious customer message history (no truncation)
     }
 
     // Update or insert chat entry

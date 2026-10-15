@@ -20,7 +20,7 @@ export const initialProducts: Product[] = [
   {
     id: 'prod3',
     name: 'product_parle_g',
-    price: '₹80',
+    price: '₹10',
     stock: 100,
     stockUnit: 'packs',
     imageUrl: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANdGcT3Y8naCsO5Xg3A9D-M6h_3_4c-w-QjX_p4zQ&s'

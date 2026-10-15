@@ -24,8 +24,22 @@ import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 
+const getInitialScreen = (): Screen => {
+  if (typeof window !== 'undefined') {
+    const hash = window.location.hash.toLowerCase().replace('#', '');
+    const tab = new URLSearchParams(window.location.search).get('tab')?.toLowerCase();
+    const target = hash || tab;
+    if (target === 'orders') return Screen.ORDERS;
+    if (target === 'sales') return Screen.SALES;
+    if (target === 'catalog') return Screen.CATALOG;
+    if (target === 'settings') return Screen.SETTINGS;
+    if (target === 'dashboard') return Screen.DASHBOARD;
+  }
+  return Screen.DASHBOARD;
+};
+
 const AppContent: React.FC = () => {
-  const [activeScreen, setActiveScreen] = useState<Screen>(Screen.DASHBOARD);
+  const [activeScreen, setActiveScreen] = useState<Screen>(getInitialScreen);
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
         const storedOrders = localStorage.getItem('dukaan-sales-data') || localStorage.getItem('dukan-orders');
@@ -98,9 +112,23 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.toLowerCase().replace('#', '');
+      if (hash === 'orders') setActiveScreen(Screen.ORDERS);
+      else if (hash === 'sales') setActiveScreen(Screen.SALES);
+      else if (hash === 'catalog') setActiveScreen(Screen.CATALOG);
+      else if (hash === 'settings') setActiveScreen(Screen.SETTINGS);
+      else if (hash === 'dashboard') setActiveScreen(Screen.DASHBOARD);
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  useEffect(() => {
     try {
+        const isOrdersRoute = typeof window !== 'undefined' && (window.location.hash.toLowerCase().includes('orders') || window.location.search.toLowerCase().includes('orders'));
         const onboardingComplete = localStorage.getItem('dukan-onboarding-complete');
-        if (onboardingComplete !== 'true') {
+        if (onboardingComplete !== 'true' && !isOrdersRoute) {
             setShowOnboarding(true);
         } else {
             setInteractionDone(true); // Returning users: start webhook polling immediately on mount
@@ -118,7 +146,6 @@ const AppContent: React.FC = () => {
     } catch (error) {
         console.error("Failed to check onboarding status from localStorage", error);
         setError("Failed to load onboarding status.");
-        // Fallback to showing onboarding if localStorage is inaccessible
         setShowOnboarding(true);
     }
   }, []);
@@ -164,6 +191,16 @@ const AppContent: React.FC = () => {
         // Trigger real WhatsApp confirmation message via Baileys backend
         whatsappService.acceptOrder(orderId).catch(err => {
             console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
+        });
+    } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
+        // Trigger doorstep / at pickup notification to customer via WhatsApp
+        whatsappService.readyOrder(orderId).catch(err => {
+            console.error('[WhatsAppService] Failed to notify customer of doorstep arrival:', err);
+        });
+    } else if (orderToUpdate && status === OrderStatus.COMPLETED) {
+        // Trigger delivery completion message and persist COMPLETED in backend store
+        whatsappService.deliverOrder(orderId).catch(err => {
+            console.error('[WhatsAppService] Failed to notify customer of order delivery:', err);
         });
     } else if (orderToUpdate && status === OrderStatus.REJECTED) {
         // Trigger real WhatsApp rejection message via Baileys backend
@@ -227,6 +264,12 @@ const AppContent: React.FC = () => {
     else if (raw.status === 'CANCELLED') mappedStatus = OrderStatus.CANCELLED;
 
     const customerPhone = String(raw.customer?.whatsappNumber || raw.customerPhone || raw.phone || '');
+    const customerAddress = String(raw.customer?.address || raw.deliveryAddress || '—');
+    const rawLoc = raw.location || raw.customer?.location || null;
+    const urlMatch = customerAddress.match(/https?:\/\/[^\s)]+/);
+    const mapsUrl = rawLoc?.mapsUrl || raw.mapsUrl || (urlMatch ? urlMatch[0] : undefined);
+    const latitude = typeof rawLoc?.latitude === 'number' ? rawLoc.latitude : undefined;
+    const longitude = typeof rawLoc?.longitude === 'number' ? rawLoc.longitude : undefined;
 
     return {
       id: String(raw.id || ''),
@@ -237,8 +280,11 @@ const AppContent: React.FC = () => {
       items,
       customer: {
         name: String(raw.customer?.name || raw.customerName || 'WhatsApp Customer'),
-        address: String(raw.customer?.address || raw.deliveryAddress || '—'),
+        address: customerAddress,
         whatsappNumber: customerPhone,
+        mapsUrl,
+        latitude,
+        longitude,
       },
       customerJid: raw.customerJid || (customerPhone ? `${customerPhone}@s.whatsapp.net` : undefined),
     };
@@ -250,15 +296,36 @@ const AppContent: React.FC = () => {
       if (res?.orders && res.orders.length > 0) {
         const backendOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
         setOrders(prev => {
-          const prevIds = new Set(prev.map(p => p.id));
-          const toAdd = backendOrders.filter(b => !prevIds.has(b.id));
-          if (toAdd.length === 0) {
-            return prev.map(p => {
-              const matched = backendOrders.find(b => b.id === p.id);
-              return matched ? { ...p, status: matched.status } : p;
-            });
+          const prevMap = new Map(prev.map(p => [p.id, p]));
+          const merged: Order[] = [];
+
+          for (const b of backendOrders) {
+            const existing = prevMap.get(b.id);
+            if (existing) {
+              // Update with authoritative backend data, guarding against status regression
+              const effectiveStatus = (existing.status === OrderStatus.COMPLETED && b.status !== OrderStatus.COMPLETED)
+                ? OrderStatus.COMPLETED
+                : b.status;
+
+              merged.push({
+                ...existing,
+                ...b,
+                status: effectiveStatus,
+                total: b.total > 0 ? b.total : existing.total,
+                items: b.items && b.items.length > 0 ? b.items : existing.items,
+              });
+              prevMap.delete(b.id);
+            } else {
+              merged.push(b);
+            }
           }
-          return [...toAdd, ...prev];
+
+          // Retain any purely local orders not in backend
+          for (const remaining of prevMap.values()) {
+            merged.push(remaining);
+          }
+
+          return merged;
         });
       }
     }).catch(err => {
@@ -301,7 +368,19 @@ const AppContent: React.FC = () => {
       } else if (event.type === 'dukan_order_updated' && event.order) {
         const updated = normalizeIncomingOrder(event.order);
         if (updated.id) {
-          setOrders(prev => prev.map(o => (o.id === updated.id ? { ...o, status: updated.status } : o)));
+          setOrders(prev => prev.map(o => {
+            if (o.id !== updated.id) return o;
+            const effectiveStatus = (o.status === OrderStatus.COMPLETED && updated.status !== OrderStatus.COMPLETED)
+              ? OrderStatus.COMPLETED
+              : updated.status;
+            return {
+              ...o,
+              ...updated,
+              status: effectiveStatus,
+              total: updated.total > 0 ? updated.total : o.total,
+              items: updated.items && updated.items.length > 0 ? updated.items : o.items,
+            };
+          }));
         }
       }
     });
@@ -325,15 +404,24 @@ const AppContent: React.FC = () => {
         }
 
         setOrders(prev => {
-          const prevIds = new Set(prev.map(p => p.id));
-          const toAdd = freshOrders.filter(b => !prevIds.has(b.id));
-          if (toAdd.length === 0) {
-            return prev.map(p => {
-              const matched = freshOrders.find(b => b.id === p.id);
-              return matched ? { ...p, status: matched.status } : p;
-            });
-          }
-          return [...toAdd, ...prev];
+          const freshMap = new Map(freshOrders.map(f => [f.id, f]));
+          return prev.map(p => {
+            const matched = freshMap.get(p.id);
+            if (!matched) return p;
+
+            // Prevent status regression from COMPLETED back to PREPARING
+            const effectiveStatus = (p.status === OrderStatus.COMPLETED && matched.status !== OrderStatus.COMPLETED)
+              ? OrderStatus.COMPLETED
+              : matched.status;
+
+            return {
+              ...p,
+              ...matched,
+              status: effectiveStatus,
+              total: matched.total > 0 ? matched.total : p.total,
+              items: matched.items && matched.items.length > 0 ? matched.items : p.items,
+            };
+          });
         });
       }).catch(() => {});
     }, 2500);

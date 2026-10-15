@@ -53,6 +53,9 @@ export interface Customer {
   name: string;
   whatsappNumber: string;
   address: string;
+  mapsUrl?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface Order {

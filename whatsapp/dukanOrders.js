@@ -29,7 +29,18 @@ function saveOrders() {
   }
 }
 
-let orderCounter = 1000 + orders.length;
+function getNextOrderId() {
+  let maxNum = 1000;
+  for (const o of orders) {
+    if (o.id && o.id.startsWith('DKN-')) {
+      const num = parseInt(o.id.replace('DKN-', ''), 10);
+      if (!isNaN(num) && num > maxNum) {
+        maxNum = num;
+      }
+    }
+  }
+  return `DKN-${maxNum + 1}`;
+}
 
 export const dukanOrders = {
   getAll() {
@@ -44,16 +55,16 @@ export const dukanOrders = {
     return orders.filter(o => o.status === 'PENDING');
   },
 
-  createOrder({ customerJid, customerPhone, customerName, deliveryAddress, items, totalAmount, notes }) {
-    orderCounter++;
-    const orderId = `DKN-${orderCounter}`;
+  createOrder({ customerJid, customerPhone, customerName, deliveryAddress, items, totalAmount, notes, location }) {
+    const orderId = getNextOrderId();
 
     const newOrder = {
       id: orderId,
       customerJid,
-      customerPhone: customerPhone || customerJid.replace(/@.*$/, ''),
+      customerPhone: customerPhone || (customerJid ? customerJid.replace(/@.*$/, '') : ''),
       customerName: customerName || 'Customer',
       deliveryAddress: deliveryAddress || 'Address not provided',
+      location: location || null,
       items: items || [],
       totalAmount: Number(totalAmount) || 0,
       status: 'PENDING', // PENDING | ACCEPTED | PREPARING | OUT_FOR_DELIVERY | DELIVERED | REJECTED
@@ -78,6 +89,29 @@ export const dukanOrders = {
 
     saveOrders();
     return order;
+  },
+
+  getLatestByCustomer(customerPhoneOrJid) {
+    const clean = (customerPhoneOrJid || '').replace(/@.*$/, '').replace(/:\d+/, '');
+    return orders.find(o => 
+      (o.customerJid && o.customerJid.includes(clean)) ||
+      (o.customerPhone && o.customerPhone.includes(clean))
+    );
+  },
+
+  cancelOrderByCustomer(customerPhoneOrJid) {
+    const clean = (customerPhoneOrJid || '').replace(/@.*$/, '').replace(/:\d+/, '');
+    const active = orders.find(o => 
+      ((o.customerJid && o.customerJid.includes(clean)) ||
+       (o.customerPhone && o.customerPhone.includes(clean))) &&
+      !['CANCELLED', 'DELIVERED', 'REJECTED'].includes(o.status)
+    );
+    if (!active) return null;
+    active.status = 'CANCELLED';
+    active.updatedAt = new Date().toISOString();
+    active.rejectReason = 'Cancelled by customer';
+    saveOrders();
+    return active;
   },
 
   clear() {
