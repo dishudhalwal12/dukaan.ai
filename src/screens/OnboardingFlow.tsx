@@ -4,6 +4,8 @@ import { withGeminiFailover } from '../utils/geminiClient.ts';
 import { saveBusinessProfileToCloud } from '../services/cloudSync.ts';
 import { businessPresets } from '../data/businessPresets.ts';
 import { sanitizeForPrompt } from '../utils/sanitize.ts';
+import LocationModal from '../components/LocationModal.tsx';
+import { saveStoreLocation } from '../utils/location.ts';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -47,11 +49,21 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
   const [storeName, setStoreName] = useState('');
   const [storeAddress, setStoreAddress] = useState('');
   const [storeCategory, setStoreCategory] = useState('');
+  const [showLocationModal, setShowLocationModal] = useState(false);
   const { t } = useLanguage();
+
+  // The store's position is asked for once the shop's identity is known, and
+  // "Setup later" is offered because a shopkeeper who is not in the shop right
+  // now must still be able to finish. The catalog re-asks before the first
+  // product, where it cannot be deferred.
+  const finish = () => {
+    setShowLocationModal(false);
+    onNext({ storeName, storeAddress, storeCategory });
+  };
 
   const handleContinue = () => {
     if (storeName.trim() && storeAddress.trim() && storeCategory.trim()) {
-      onNext({ storeName, storeAddress, storeCategory });
+      setShowLocationModal(true);
     }
   };
   
@@ -117,6 +129,15 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
       >
         Continue
       </button>
+      <LocationModal
+        isOpen={showLocationModal}
+        mode="onboarding"
+        onCaptured={(location) => {
+          saveStoreLocation(location);
+          finish();
+        }}
+        onSetupLater={finish}
+      />
     </div>
   );
 };

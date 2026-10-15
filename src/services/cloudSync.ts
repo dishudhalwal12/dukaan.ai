@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
+import { getStoredStoreLocation } from '../utils/location.ts';
 
 /**
  * Helper to resolve the active user ID from explicit argument, Supabase session,
@@ -57,6 +58,11 @@ export const saveBusinessProfileToCloud = async (
     // would be adopted by whichever account signs in next.
     if (!userId) return;
 
+    // The store's position is its own fact, not part of the profile blob: it is
+    // what a new device restores to answer "where is this shop?" without asking
+    // the shopkeeper to stand in it again.
+    const storeLocation = getStoredStoreLocation();
+
     const { error } = await supabase
       .from('business_profiles')
       .upsert({
@@ -65,6 +71,13 @@ export const saveBusinessProfileToCloud = async (
         category: profileData?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
         profile_data: profileData,
         onboarding: onboarding ?? {},
+        ...(storeLocation ? {
+          store_lat: storeLocation.lat,
+          store_lng: storeLocation.lng,
+          store_location_accuracy_m: storeLocation.accuracy_m,
+          store_location_source: storeLocation.source,
+          store_location_captured_at: storeLocation.captured_at,
+        } : {}),
         updated_at: new Date().toISOString()
       }, { onConflict: 'user_id' });
 
@@ -90,7 +103,7 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
     if (userId) {
       const { data, error } = await supabase
         .from('business_profiles')
-        .select('profile_data, store_name, category, onboarding')
+        .select('profile_data, store_name, category, onboarding, store_lat, store_lng, store_location_accuracy_m, store_location_source, store_location_captured_at')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -101,6 +114,17 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
           ...data.profile_data,
           category: data.category,
           onboarding: data.onboarding,
+          // Absent when the shop has not set a position yet; the catalog gate
+          // then asks for one on this device.
+          storeLocation: typeof data.store_lat === 'number' && typeof data.store_lng === 'number'
+            ? {
+                lat: data.store_lat,
+                lng: data.store_lng,
+                accuracy_m: data.store_location_accuracy_m ?? null,
+                source: data.store_location_source ?? 'gps',
+                captured_at: data.store_location_captured_at ?? new Date().toISOString(),
+              }
+            : null,
         };
       }
     }

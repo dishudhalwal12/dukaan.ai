@@ -19,6 +19,7 @@ import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import { listenToAuthState, signOutUser, User } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
+import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
@@ -178,6 +179,11 @@ const AppContent: React.FC = () => {
           // just typed locally is fresher, so only fill the gap.
           if (cloudData.profile.ownerName && !localStorage.getItem('dukan-profile-name')) {
             localStorage.setItem('dukan-profile-name', cloudData.profile.ownerName);
+          }
+          // Same for the store's position: restore it so a new device does not
+          // have to ask the shopkeeper to stand in the shop again.
+          if (cloudData.profile.storeLocation && !hasStoreLocation()) {
+            saveStoreLocation(cloudData.profile.storeLocation);
           }
           const cat = localStorage.getItem('dukan-store-category');
           const aiCtx = localStorage.getItem('dukan-business-intelligence-context');

@@ -9,6 +9,8 @@ import UpstockMessageModal from '../components/UpstockMessageModal.tsx';
 import UnityModal from '../components/UnityModal.tsx';
 import { initialUnityDeals } from '../data/unityDeals.ts';
 import { useBusinessLabel } from '../hooks/useBusinessLabel.ts';
+import LocationModal from '../components/LocationModal.tsx';
+import { hasStoreLocation, saveStoreLocation } from '../utils/location.ts';
 
 const CatalogHeader: React.FC = () => {
     const label = useBusinessLabel('CATALOG');
@@ -113,6 +115,7 @@ interface CatalogScreenProps {
 
 const CatalogScreen: React.FC<CatalogScreenProps> = ({ onModalStateChange }) => {
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+    const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
     const [isUnityModalOpen, setIsUnityModalOpen] = useState(false);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -134,12 +137,19 @@ const CatalogScreen: React.FC<CatalogScreenProps> = ({ onModalStateChange }) => 
         return products.filter(p => t(p.name).toLowerCase().includes(searchQuery.toLowerCase()));
     }, [products, searchQuery, t]);
     
-    const modalsOpen = isProductModalOpen || isStoreNameModalOpen || isSupplierModalOpen || isUpstockMessageModalOpen || isUnityModalOpen;
+    const modalsOpen = isProductModalOpen || isStoreNameModalOpen || isSupplierModalOpen || isUpstockMessageModalOpen || isUnityModalOpen || isLocationModalOpen;
     useEffect(() => {
         onModalStateChange(modalsOpen);
     }, [modalsOpen, onModalStateChange]);
 
     const handleAddProduct = () => {
+        // The catalog cannot be filled from an unknown store location: a product
+        // row is the first thing that needs the shop to exist somewhere. Editing
+        // an existing product is NOT gated — the damage would already be done.
+        if (!hasStoreLocation()) {
+            setIsLocationModalOpen(true);
+            return;
+        }
         setProductToEdit(null);
         setIsProductModalOpen(true);
     };
@@ -274,6 +284,17 @@ const CatalogScreen: React.FC<CatalogScreenProps> = ({ onModalStateChange }) => 
                 onClose={() => setIsProductModalOpen(false)} 
                 productToEdit={productToEdit}
                 onUpstockClick={handleUpstockClick}
+            />
+            <LocationModal
+                isOpen={isLocationModalOpen}
+                mode="required"
+                onCaptured={(location) => {
+                    saveStoreLocation(location);
+                    setIsLocationModalOpen(false);
+                    setProductToEdit(null);
+                    setIsProductModalOpen(true);
+                }}
+                onClose={() => setIsLocationModalOpen(false)}
             />
             <StoreNameModal
                 isOpen={isStoreNameModalOpen}
