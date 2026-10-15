@@ -1,10 +1,13 @@
 import { User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
+import { markFreshSignIn } from '../utils/authOutcome.ts';
 
 export type { User };
 
 export interface AuthResult {
   user: User | null;
+  /** Null when the project requires email confirmation \u2014 the account exists but is not signed in. */
+  session?: unknown | null;
   error?: string | null;
 }
 
@@ -82,7 +85,11 @@ export const signUpWithEmail = async (
       localStorage.removeItem('dukan-guest-mode');
     }
 
-    return { user: data.user, error: null };
+    // A session means the signup signed the user in; without one the project
+    // requires email confirmation first.
+    if (data.session) markFreshSignIn();
+
+    return { user: data.user, error: null, session: data.session };
   } catch (error: any) {
     console.warn('Supabase Auth Exception (SignUp):', error);
     return { user: null, error: error?.message || 'An unexpected error occurred during sign up.' };
@@ -122,7 +129,9 @@ export const signInWithEmail = async (
       localStorage.removeItem('dukan-guest-mode');
     }
 
-    return { user: data.user, error: null };
+    if (data.session) markFreshSignIn();
+
+    return { user: data.user, error: null, session: data.session };
   } catch (error: any) {
     console.warn('Supabase Auth Exception (SignIn):', error);
     return { user: null, error: error?.message || 'An unexpected error occurred during sign in.' };

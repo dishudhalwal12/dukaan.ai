@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
+import { classifyAuthOutcome } from '../utils/authOutcome.ts';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -15,6 +16,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -41,7 +43,17 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       ? await signUpWithEmail(email, password)
       : await signInWithEmail(email, password);
 
-    if (result.user) {
+    const outcome = classifyAuthOutcome(result);
+
+    if (outcome === 'confirm-email') {
+      // The account exists, but Supabase requires email confirmation, so there
+      // is no session yet. Ask for the confirmation instead of continuing.
+      setAwaitingConfirmation(true);
+      setLoading(false);
+      return;
+    }
+
+    if (outcome === 'signed-in' && result.user) {
       // 1. Immediately cache user ID and email
       localStorage.setItem('dukan-auth-user', JSON.stringify({
         id: result.user.id,
@@ -87,6 +99,24 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             </p>
           </div>
 
+          {awaitingConfirmation ? (
+            <div className="text-center py-4">
+              <span className="material-symbols-outlined text-4xl text-[#E6E6FA] mb-3 block">mark_email_unread</span>
+              <p className="text-white font-semibold mb-1.5">Check your email</p>
+              <p className="text-neutral-400 text-xs leading-relaxed">
+                We sent a confirmation link to <span className="text-white">{email}</span>.
+                Confirm it, then sign in.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setAwaitingConfirmation(false); setError(null); }}
+                className="mt-6 w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-sm"
+              >
+                Back to Sign In
+              </button>
+            </div>
+          ) : (
+            <>
           {/* Google Auth Button */}
           <button
             type="button"
@@ -161,6 +191,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               </button>
             </div>
           </form>
+            </>
+          )}
 
           {/* Guest Mode Option */}
           <div className="mt-5 pt-3 border-t border-neutral-800">

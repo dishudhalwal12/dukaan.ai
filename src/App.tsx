@@ -21,6 +21,7 @@ import { syncOrdersToCloud, syncOnLogin } from './services/cloudSync.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
+import { markFreshSignIn } from './utils/authOutcome.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 
 const getInitialScreen = (): Screen => {
@@ -205,6 +206,12 @@ const AppContent: React.FC = () => {
 
         const isAuthenticated = Boolean(currentUserRef.current || localStorage.getItem('dukan-auth-user'));
         const isGuest = Boolean(localStorage.getItem('dukan-guest-mode'));
+
+        // Returning from Google OAuth is an interactive sign-in, so the
+        // welcome-back popup may fire once auth resolves.
+        if (hasOAuthParams || isOAuthInProgress) {
+            markFreshSignIn();
+        }
 
         if (isOrdersRoute || hasOAuthParams || isOAuthInProgress) {
             setInteractionDone(true);
