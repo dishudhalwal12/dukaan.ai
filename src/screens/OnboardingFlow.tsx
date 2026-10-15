@@ -174,7 +174,7 @@ const BusinessContextStep: React.FC<{
     return () => { mounted = false; };
   }, [details]);
 
-  const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'category_other';
+  const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
 
   const q1Options = (() => {
     switch (details.storeCategory) {
