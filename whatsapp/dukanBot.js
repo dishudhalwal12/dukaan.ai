@@ -58,7 +58,7 @@ Please try again in a minute — send /hey and share your location again.`;
 // Shown when the shop has not listed any items yet.
 export const NO_ITEMS_REPLY = `That store hasn't listed any items yet, so there's nothing to order from it right now.
 
-Please try again later.`;
+Send /hey with your location if you'd like me to look for another store nearby.`;
 
 // Shown when a customer tries to confirm an order with no store connected.
 export const NOT_CONNECTED_REPLY = `I can't place that order yet — I don't have a store connected to your location.
@@ -70,11 +70,15 @@ export function noShopReply(match) {
   if (match?.reason === 'out-of-range' && Number.isFinite(match.nearestKm)) {
     return `Sorry — no store in our network delivers to your area yet. The nearest one is about ${match.nearestKm.toFixed(1)} km away.
 
-Nothing has been ordered. You can try a location closer to the store.`;
+Nothing has been ordered. You can try a location closer to the store.
+
+Send /hey with a different location to try again.`;
   }
   return `Sorry — there's no Dukaan store serving your area right now, so I can't take an order.
 
-Nothing has been ordered.`;
+Nothing has been ordered.
+
+Send /hey with your location to try again later.`;
 }
 
 // jid -> last activity timestamp (ms)
@@ -139,6 +143,19 @@ export function isSessionActive(jid, now = Date.now()) {
 
 export function endSession(jid) {
   if (jid) activeSessions.delete(jid);
+}
+
+/**
+ * End a conversation for good: a refusal (no shop / unreachable registry / empty
+ * catalog) or a placed order means there is nothing left to say, and a chat that
+ * stays engaged keeps running the model on every message the customer sends and
+ * bills for it. The customer starts again with "/hey".
+ */
+function closeConversation(jid) {
+  if (!jid) return;
+  endSession(jid);
+  clearLocationHandshake(jid);
+  conversationHistories.delete(jid);
 }
 
 /**
@@ -302,7 +319,11 @@ function createOwnedOrder(jid, fields) {
     console.warn(`[Dukan Bot] Refusing to create an order for ${jid}: no shop is connected.`);
     return null;
   }
-  return dukanOrders.createOrder({ ...fields, userId });
+  const order = dukanOrders.createOrder({ ...fields, userId });
+  // Every order-creation path funnels through here, so this is the one place that
+  // has to end the conversation once an order exists.
+  if (order) closeConversation(jid);
+  return order;
 }
 
 /** True when a shop (with a catalog) is connected for this customer. */
@@ -1260,6 +1281,7 @@ export const dukanBot = {
         // A live registry we cannot reach must fail closed: never guess a shop.
         if (cloudReady && shops === null) {
           clearLocationHandshake(jid);
+          closeConversation(jid);
           console.warn(`[Dukan Bot] ${jid} -> registry unreachable; refusing to order`);
           return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
         }
@@ -1272,6 +1294,7 @@ export const dukanBot = {
         if (!match.matched) {
           clearLocationHandshake(jid);
           activeShops.delete(jid);
+          closeConversation(jid);
           console.log(`[Dukan Bot] ${jid} -> no shop (${match.reason})`);
           return { reply: noShopReply(match), newOrder: null };
         }
@@ -1285,11 +1308,13 @@ export const dukanBot = {
           catalog = await loadShopCatalog(shop.userId);
         } catch (e) {
           clearLocationHandshake(jid);
+          closeConversation(jid);
           console.warn(`[Dukan Bot] ${jid} -> catalog unavailable: ${e.message}`);
           return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
         }
         if (!Array.isArray(catalog) || catalog.length === 0) {
           clearLocationHandshake(jid);
+          closeConversation(jid);
           console.log(`[Dukan Bot] ${jid} -> shop "${shop.shopName}" has no catalog`);
           return { reply: NO_ITEMS_REPLY, newOrder: null };
         }

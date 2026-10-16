@@ -15,6 +15,7 @@ const {
   customerCarts,
   customerLocations,
   resetAllContext,
+  shouldEngage,
   SERVICE_UNAVAILABLE_REPLY,
   NO_ITEMS_REPLY,
 } = await import('./dukanBot.js');
@@ -71,6 +72,9 @@ dukanOrders.clear();
 let reply = await connect('dev-no-owner@s.whatsapp.net');
 assert.ok(!activeShops.has('dev-no-owner@s.whatsapp.net'), 'no owner source → no shop is connected');
 assert.ok(/no Dukaan store/i.test(reply.reply), 'the customer is told no store serves them');
+// A refusal is terminal: the bot stops answering, so the chat cannot keep spending tokens.
+assert.strictEqual(shouldEngage('dev-no-owner@s.whatsapp.net', 'hello'), false, 'a refusal ends the chat');
+assert.ok(/\/hey/.test(reply.reply), 'the refusal tells the customer how to start again');
 ok('dev mode without an owner refuses to connect a shop');
 
 // ── 2. registry unreachable: fail closed, no order ────────────────────────────
@@ -81,6 +85,7 @@ reply = await connect('cloud-down@s.whatsapp.net');
 assert.strictEqual(reply.reply, SERVICE_UNAVAILABLE_REPLY, 'an unreachable registry answers with the unavailable notice');
 assert.ok(!activeShops.has('cloud-down@s.whatsapp.net'), 'no shop is connected on a registry outage');
 assert.strictEqual(dukanOrders.getByOwner('any').length, 0);
+assert.strictEqual(shouldEngage('cloud-down@s.whatsapp.net', 'hello'), false, 'a registry outage ends the chat');
 ok('an unreachable registry fails closed and places no order');
 
 // ── 3. every shop out of range: refuse with the distance ──────────────────────
@@ -90,6 +95,8 @@ reply = await connect('too-far@s.whatsapp.net');
 assert.ok(/km away/i.test(reply.reply), 'the customer is told how far the nearest store is');
 assert.ok(/Nothing has been ordered/i.test(reply.reply));
 assert.ok(!activeShops.has('too-far@s.whatsapp.net'), 'an out-of-range location connects no shop');
+assert.strictEqual(shouldEngage('too-far@s.whatsapp.net', 'hello'), false, 'an out-of-range refusal ends the chat');
+assert.ok(/\/hey/.test(reply.reply), 'the refusal tells the customer how to start again');
 ok('a location beyond the radius is refused, order not placed');
 
 // ── 4. an ownerless shop row is skipped ───────────────────────────────────────
@@ -123,6 +130,8 @@ const confirmed = await dukanBot.handleMessage(msg('nearby@s.whatsapp.net', 'con
 assert.ok(confirmed.newOrder, 'the order is placed');
 assert.strictEqual(confirmed.newOrder.userId, 'near', 'owned by the matched shop');
 assert.strictEqual(confirmed.newOrder.deliveryAddress, J.fullDescription, 'carries the pin address');
+// The order is placed: this conversation is over until the customer starts a new one.
+assert.strictEqual(shouldEngage('nearby@s.whatsapp.net', 'hello'), false, 'a placed order ends the chat');
 ok('a confirmed order is owned by the matched shop and carries the pin');
 
 // ── 6. a shop with an empty catalog cannot take an order ──────────────────────
@@ -131,6 +140,8 @@ stubCloud({ profiles: [{ user_id: 'empty', store_name: 'Empty Shop', ...near(0.2
 reply = await connect('empty-shop@s.whatsapp.net');
 assert.strictEqual(reply.reply, NO_ITEMS_REPLY, 'an empty catalog is refused, not filled from the global one');
 assert.ok(!activeShops.has('empty-shop@s.whatsapp.net'), 'no shop is connected when it has nothing to sell');
+assert.strictEqual(shouldEngage('empty-shop@s.whatsapp.net', 'hello'), false, 'an empty catalog ends the chat');
+assert.ok(/\/hey/.test(reply.reply), 'the refusal tells the customer how to start again');
 ok('a shop with an empty catalog refuses the order');
 
 // ── 7. registry mode ignores DUKAN_DEFAULT_OWNER_ID entirely ──────────────────
