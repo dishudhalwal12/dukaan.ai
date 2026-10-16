@@ -270,18 +270,26 @@ const AppContent: React.FC = () => {
         ? rawTotal
         : items.reduce((sum, item) => sum + item.quantity * parseFloat(item.price.replace('₹', '') || '0'), 0);
 
+      const customerName = String((raw.customer as Record<string, unknown>)?.name ?? raw.customer_name ?? raw.customerName ?? 'Walk-in Customer');
+      const deliveryAddress = String((raw.customer as Record<string, unknown>)?.address ?? raw.delivery_address ?? raw.address ?? '—');
+      const customerPhone = String((raw.customer as Record<string, unknown>)?.whatsappNumber ?? raw.customer_phone ?? raw.phone ?? '');
+
       return {
         id: String(raw.id ?? ''),
         status: (raw.status as OrderStatus) ?? OrderStatus.NEW,
-        paymentMethod: (raw.paymentMethod as 'COD' | 'UPI') ?? 'COD',
+        paymentMethod: (raw.paymentMethod ?? raw.payment_method ?? 'COD') as 'COD' | 'UPI',
         total: computedTotal,
-        timestamp: String(raw.timestamp ?? new Date().toISOString()),
+        timestamp: String(raw.timestamp ?? raw.created_at ?? new Date().toISOString()),
+        notes: raw.notes ? String(raw.notes) : undefined,
         items,
         customer: {
-          name: String((raw.customer as Record<string, unknown>)?.name ?? raw.customerName ?? 'Walk-in Customer'),
-          address: String((raw.customer as Record<string, unknown>)?.address ?? raw.address ?? '—'),
-          whatsappNumber: String((raw.customer as Record<string, unknown>)?.whatsappNumber ?? raw.phone ?? ''),
+          name: customerName,
+          address: deliveryAddress,
+          whatsappNumber: customerPhone,
         },
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        delivery_address: deliveryAddress,
       };
     };
 

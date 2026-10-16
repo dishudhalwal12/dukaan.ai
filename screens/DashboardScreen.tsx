@@ -70,9 +70,12 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
         const today = { sales: 0, orders: 0 };
         const thisMonth = { sales: 0, orders: 0 };
 
-        // We consider an order a "sale" once it has been accepted (i.e., not NEW or REJECTED)
+        // We consider an order a "sale" once it has been accepted (i.e., not NEW, PENDING, REJECTED or CANCELLED)
         const relevantOrders = orders.filter(o => 
-            o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED
+            o.status !== OrderStatus.NEW && 
+            o.status !== OrderStatus.PENDING && 
+            o.status !== OrderStatus.REJECTED && 
+            o.status !== OrderStatus.CANCELLED
         );
 
         relevantOrders.forEach(order => {

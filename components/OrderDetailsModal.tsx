@@ -45,7 +45,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && order.status === OrderStatus.NEW) {
+    if (isOpen && (order.status === OrderStatus.NEW || order.status === OrderStatus.PENDING)) {
       setTimeLeft(600); // Reset timer to 60 seconds
 
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
@@ -131,7 +131,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
   }, [order.id, handleSwipeMove]);
 
   const handleSwipeStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    if (order.status !== OrderStatus.NEW || isSwipingRef.current) return;
+    if ((order.status !== OrderStatus.NEW && order.status !== OrderStatus.PENDING) || isSwipingRef.current) return;
     
     if (handleRef.current) {
         handleRef.current.style.transition = 'none';
@@ -180,6 +180,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
   const ActionButtons: React.FC = () => {
     switch (order.status) {
       case OrderStatus.NEW:
+      case OrderStatus.PENDING:
         return (
             <div 
               ref={sliderRef} 
@@ -199,6 +200,7 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
             </div>
         );
       case OrderStatus.PREPARING:
+      case OrderStatus.ACCEPTED:
         return (
           <button 
             onClick={() => setShowQrModal(true)}
@@ -207,9 +209,10 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
           </button>
         );
       case OrderStatus.READY_FOR_PICKUP:
+      case OrderStatus.OUT_FOR_DELIVERY:
         return (
             <div className="text-center p-3 bg-[#2D2D2D] rounded-lg">
-                <p className="font-semibold text-purple-300">Waiting for delivery partner.</p>
+                <p className="font-semibold text-purple-300">Order out or ready for pickup.</p>
                 <button onClick={() => onUpdateStatus(order.id, OrderStatus.COMPLETED)} className="text-xs text-neutral-400 hover:underline mt-1">
                     Mark as Completed
                 </button>

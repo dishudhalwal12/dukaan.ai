@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
+import { saveUserProfile, saveBusinessProfileToCloud } from '../../services/cloudSync.ts';
 
 const FormField: React.FC<{ label: string; value: string; onChange: (value: string) => void; placeholder?: string }> = 
 ({ label, value, onChange, placeholder }) => (
@@ -73,6 +74,18 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             localStorage.setItem('dukan-supplier-whatsapp-display', supplierWhatsapp); // Save display version too
 
             console.log('Saving store details:', { storeName, address, category, supplierName, supplierWhatsapp });
+            
+            // Sync to Supabase user profile & business profile tables
+            saveUserProfile({
+                store_name: storeName,
+                address: address,
+                store_category: category,
+            });
+            saveBusinessProfileToCloud(storeName, {
+                storeDetails: { storeName, category, address },
+                timestamp: new Date().toISOString()
+            });
+
             setTimeout(() => {
                 setIsSaving(false);
                 onBack();

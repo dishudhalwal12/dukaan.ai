@@ -203,7 +203,7 @@ const SalesScreen: React.FC<{ orders: Order[] }> = ({ orders }) => {
 
   const filteredOrders = useMemo(() => {
     const relevantOrders = orders
-      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED)
+      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.PENDING && o.status !== OrderStatus.REJECTED && o.status !== OrderStatus.CANCELLED)
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     switch (activeFilter) {
@@ -220,7 +220,7 @@ const SalesScreen: React.FC<{ orders: Order[] }> = ({ orders }) => {
 
   const chartData = useMemo(() => {
     const relevantOrders = orders
-      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED);
+      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.PENDING && o.status !== OrderStatus.REJECTED && o.status !== OrderStatus.CANCELLED);
     
     const today = new Date();
 

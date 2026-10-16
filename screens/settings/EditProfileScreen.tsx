@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
+import { saveUserProfile } from '../../services/cloudSync.ts';
 
 const FormField: React.FC<{ label: string; type: string; value: string; placeholder?: string; disabled?: boolean; isVerified?: boolean; onChange: (value: string) => void }> = 
 ({ label, type, value, placeholder, disabled, isVerified, onChange }) => (
@@ -88,6 +89,10 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             }
 
             console.log('Saving profile:', { name, email });
+            saveUserProfile({
+                owner_name: name,
+                email: email,
+            });
             // Simulate API call
             setTimeout(() => {
                 setIsSaving(false);

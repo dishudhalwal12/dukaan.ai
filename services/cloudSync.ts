@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
-import { Product, Order } from '../types.ts';
+import { Product, Order, OrderStatus, UserProfile } from '../types.ts';
 import type { User } from './auth.ts';
 
 /**
@@ -27,6 +27,90 @@ export const resolveActiveUserId = async (explicitUserId?: string): Promise<stri
   }
 
   return null;
+};
+
+/**
+ * Saves or updates a shopkeeper user profile in the public.users table.
+ */
+export const saveUserProfile = async (
+  userData: Partial<UserProfile> | any,
+  explicitUserId?: string
+): Promise<UserProfile | null> => {
+  try {
+    if (!isSupabaseConfigured()) {
+      console.log('Supabase not configured. User profile not saved to cloud.');
+      return null;
+    }
+
+    const userId = await resolveActiveUserId(explicitUserId || userData?.id);
+    if (!userId) {
+      console.warn('saveUserProfile: No authenticated user ID found.');
+      return null;
+    }
+
+    const payload: Record<string, any> = {
+      id: userId,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (userData.email !== undefined) payload.email = userData.email;
+    const ownerName = userData.owner_name ?? userData.ownerName;
+    if (ownerName !== undefined) payload.owner_name = ownerName;
+    const storeName = userData.store_name ?? userData.storeName;
+    if (storeName !== undefined) payload.store_name = storeName;
+    const storeCategory = userData.store_category ?? userData.storeCategory;
+    if (storeCategory !== undefined) payload.store_category = storeCategory;
+    const phoneNumber = userData.phone_number ?? userData.phoneNumber;
+    if (phoneNumber !== undefined) payload.phone_number = phoneNumber;
+    if (userData.address !== undefined) payload.address = userData.address;
+    const upiId = userData.upi_id ?? userData.upiId;
+    if (upiId !== undefined) payload.upi_id = upiId;
+
+    const { data, error } = await supabase
+      .from('users')
+      .upsert(payload, { onConflict: 'id' })
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Supabase DB Error (saveUserProfile):', error.message);
+      return null;
+    }
+
+    console.log('User profile saved successfully to public.users for ID:', userId);
+    return data as UserProfile;
+  } catch (error) {
+    console.warn('Failed to save user profile to public.users:', error);
+    return null;
+  }
+};
+
+/**
+ * Fetches the shopkeeper user profile from public.users table.
+ */
+export const fetchUserProfile = async (explicitUserId?: string): Promise<UserProfile | null> => {
+  try {
+    if (!isSupabaseConfigured()) return null;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Supabase DB Error (fetchUserProfile):', error.message);
+      return null;
+    }
+
+    return data as UserProfile | null;
+  } catch (error) {
+    console.warn('Failed to fetch user profile from public.users:', error);
+    return null;
+  }
 };
 
 /**
@@ -252,6 +336,8 @@ export const fetchProductsFromCloud = async (): Promise<Product[] | null> => {
 
 /**
  * Syncs orders to Supabase database for the logged-in user.
+ * Explicitly maps customer details to top-level fields (customer_phone, customer_name, delivery_address)
+ * and ensures payment_method and status are never rejected by DB constraints.
  */
 export const syncOrdersToCloud = async (
   orders: Order[],
@@ -263,17 +349,31 @@ export const syncOrdersToCloud = async (
 
     const userId = await resolveActiveUserId(explicitUserId);
 
-    const rows = orders.map(order => ({
-      id: order.id,
-      user_id: userId,
-      customer: order.customer,
-      items: order.items,
-      total: order.total,
-      payment_method: order.paymentMethod,
-      status: order.status,
-      created_at: order.timestamp,
-      updated_at: new Date().toISOString()
-    }));
+    const rows = orders.map(order => {
+      const customerPhone = order.customer?.whatsappNumber || order.customer_phone || '';
+      const customerName = order.customer?.name || order.customer_name || 'Walk-in Customer';
+      const deliveryAddress = order.customer?.address || order.delivery_address || '—';
+
+      return {
+        id: order.id,
+        user_id: userId,
+        customer_phone: customerPhone || null,
+        customer_name: customerName,
+        delivery_address: deliveryAddress || null,
+        customer: order.customer || {
+          name: customerName,
+          whatsappNumber: customerPhone,
+          address: deliveryAddress,
+        },
+        items: order.items || [],
+        total: Number(order.total ?? 0),
+        payment_method: order.paymentMethod || 'COD',
+        status: order.status || OrderStatus.NEW,
+        notes: order.notes || null,
+        created_at: order.timestamp || new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+    });
 
     const { error } = await supabase
       .from('orders')
@@ -314,12 +414,22 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
 
     return data.map((item: any) => ({
       id: item.id,
-      customer: item.customer,
-      items: item.items,
-      total: Number(item.total),
-      paymentMethod: item.payment_method,
-      status: item.status,
-      timestamp: item.created_at
+      customer: (item.customer && Object.keys(item.customer).length > 0)
+        ? item.customer
+        : {
+            name: item.customer_name || 'Walk-in Customer',
+            whatsappNumber: item.customer_phone || '',
+            address: item.delivery_address || '—',
+          },
+      customer_name: item.customer_name || undefined,
+      customer_phone: item.customer_phone || undefined,
+      delivery_address: item.delivery_address || undefined,
+      items: item.items || [],
+      total: Number(item.total || 0),
+      paymentMethod: (item.payment_method || 'COD') as 'COD' | 'UPI',
+      status: (item.status || OrderStatus.NEW) as OrderStatus,
+      timestamp: item.created_at || new Date().toISOString(),
+      notes: item.notes || undefined,
     }));
   } catch (error) {
     console.warn('Failed to fetch orders from Supabase database.', error);
@@ -355,7 +465,38 @@ export const syncOnLogin = async (
     // 1. First claim any unassigned guest records from onboarding
     await claimUnassignedRecords(userId);
 
-    // 2. Fetch existing cloud data
+    // 2. Sync shopkeeper user profile (public.users)
+    const userProfile = await fetchUserProfile(userId);
+    if (userProfile) {
+      if (userProfile.store_name) localStorage.setItem('dukan-store-name', userProfile.store_name);
+      if (userProfile.store_category) localStorage.setItem('dukan-store-category', userProfile.store_category);
+      if (userProfile.owner_name) localStorage.setItem('dukan-profile-name', userProfile.owner_name);
+      if (userProfile.email) localStorage.setItem('dukan-profile-email', userProfile.email);
+      if (userProfile.phone_number) localStorage.setItem('dukan-profile-phone', userProfile.phone_number);
+      if (userProfile.address) localStorage.setItem('dukan-store-address', userProfile.address);
+      if (userProfile.upi_id) localStorage.setItem('dukan-upi-id', userProfile.upi_id);
+    } else {
+      const storeName = localStorage.getItem('dukan-store-name') || 'My Kirana Store';
+      const category = localStorage.getItem('dukan-store-category') || 'Grocery / Kirana';
+      const ownerName = localStorage.getItem('dukan-profile-name') || loggedInUser?.user_metadata?.full_name || '';
+      const email = loggedInUser?.email || localStorage.getItem('dukan-profile-email') || '';
+      const phone = localStorage.getItem('dukan-profile-phone') || '';
+      const address = localStorage.getItem('dukan-store-address') || '';
+      const upiId = localStorage.getItem('dukan-upi-id') || '';
+
+      await saveUserProfile({
+        id: userId,
+        email,
+        owner_name: ownerName,
+        store_name: storeName,
+        store_category: category,
+        phone_number: phone,
+        address,
+        upi_id: upiId,
+      }, userId);
+    }
+
+    // 3. Fetch existing cloud business data
     const cloudProfile = await fetchBusinessProfileFromCloud();
     const cloudProducts = await fetchProductsFromCloud();
     const cloudOrders = await fetchOrdersFromCloud();

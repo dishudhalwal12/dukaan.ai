@@ -49,16 +49,21 @@ const TimeAgo: React.FC<{ timestamp: string }> = ({ timestamp }) => {
 };
 
 const OrderStatusChip: React.FC<{ status: OrderStatus }> = ({ status }) => {
-    const styles = {
+    const styles: Record<string, string> = {
         [OrderStatus.NEW]: 'bg-blue-500/20 text-blue-300',
+        [OrderStatus.PENDING]: 'bg-amber-500/20 text-amber-300',
+        [OrderStatus.ACCEPTED]: 'bg-cyan-500/20 text-cyan-300',
         [OrderStatus.PREPARING]: 'bg-yellow-500/20 text-yellow-300',
         [OrderStatus.READY_FOR_PICKUP]: 'bg-purple-500/20 text-purple-300',
+        [OrderStatus.OUT_FOR_DELIVERY]: 'bg-indigo-500/20 text-indigo-300',
         [OrderStatus.COMPLETED]: 'bg-green-500/20 text-green-300',
+        [OrderStatus.DELIVERED]: 'bg-emerald-500/20 text-emerald-300',
         [OrderStatus.REJECTED]: 'bg-red-500/20 text-red-300',
+        [OrderStatus.CANCELLED]: 'bg-rose-500/20 text-rose-300',
     };
     return (
-        <div className={`px-2 py-0.5 text-xs font-semibold rounded-full ${styles[status]}`}>
-            {status.replace('_', ' ')}
+        <div className={`px-2 py-0.5 text-xs font-semibold rounded-full ${styles[status] || 'bg-neutral-600/30 text-neutral-300'}`}>
+            {(status || '').replace(/_/g, ' ')}
         </div>
     );
 };
@@ -111,9 +116,25 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
   };
 
   const filteredOrders = useMemo(() => {
+      if (activeFilter === OrderStatus.NEW) {
+          return orders.filter(o => o.status === OrderStatus.NEW || o.status === OrderStatus.PENDING);
+      }
+      if (activeFilter === OrderStatus.PREPARING) {
+          return orders.filter(o => 
+              o.status === OrderStatus.PREPARING || 
+              o.status === OrderStatus.ACCEPTED || 
+              o.status === OrderStatus.READY_FOR_PICKUP || 
+              o.status === OrderStatus.OUT_FOR_DELIVERY
+          );
+      }
       if (activeFilter === OrderStatus.COMPLETED) {
-          // A more general "Completed" tab
-          return orders.filter(o => o.status === OrderStatus.COMPLETED || o.status === OrderStatus.REJECTED);
+          // A general "History / Completed" tab
+          return orders.filter(o => 
+              o.status === OrderStatus.COMPLETED || 
+              o.status === OrderStatus.DELIVERED || 
+              o.status === OrderStatus.REJECTED || 
+              o.status === OrderStatus.CANCELLED
+          );
       }
       return orders.filter(o => o.status === activeFilter);
   }, [orders, activeFilter]);
@@ -127,8 +148,20 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
         <div className="flex items-center justify-center bg-[#1A1A1A] p-1 rounded-full">
             {filters.map(filter => {
                 const count = orders.filter(o => {
-                    if (filter === OrderStatus.COMPLETED) return o.status === OrderStatus.COMPLETED || o.status === OrderStatus.REJECTED;
-                    return o.status === filter
+                    if (filter === OrderStatus.NEW) return o.status === OrderStatus.NEW || o.status === OrderStatus.PENDING;
+                    if (filter === OrderStatus.PREPARING) {
+                        return o.status === OrderStatus.PREPARING || 
+                               o.status === OrderStatus.ACCEPTED || 
+                               o.status === OrderStatus.READY_FOR_PICKUP || 
+                               o.status === OrderStatus.OUT_FOR_DELIVERY;
+                    }
+                    if (filter === OrderStatus.COMPLETED) {
+                        return o.status === OrderStatus.COMPLETED || 
+                               o.status === OrderStatus.DELIVERED || 
+                               o.status === OrderStatus.REJECTED || 
+                               o.status === OrderStatus.CANCELLED;
+                    }
+                    return o.status === filter;
                 }).length;
                 const filterKey = filter === OrderStatus.COMPLETED ? 'orders_filter_history' : `orders_filter_${filter.toLowerCase()}`;
                 const label = t(filterKey);
