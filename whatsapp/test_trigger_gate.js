@@ -339,11 +339,19 @@ ok('Test 23: reconcileMissedActions saves an address the model forgot to save', 
 // "just 2 maggi total" must not match "Lifebuoy *Total* 10 Soap".
 ok('Test 24: the safety net ignores products the customer never named', () => {
   const jid = JID('reconcile-brand');
+  // An order requires a matched shop and its catalog, so connect the local one.
+  activeShops.set(jid, {
+    shopId: 'local',
+    shopName: 'Dukaan Store',
+    userId: 'dev-owner',
+    catalog: dukanCatalog.getAll(),
+  });
   const res = reconcileMissedActions('add 2 maggi, that is the total', 'Adding 2 Maggi.', [], jid, 'T', '0', null);
   assert.strictEqual(res.cart.items.length, 1, 'only Maggi may be added');
   assert.ok(/maggi/i.test(res.cart.items[0].name));
   assert.strictEqual(res.cart.totalAmount, res.cart.items[0].price * 2);
   customerCarts.delete(jid);
+  activeShops.delete(jid);
 
   // "You're all set" is not an action claim.
   assert.strictEqual(

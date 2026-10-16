@@ -55,6 +55,11 @@ export const NO_ITEMS_REPLY = `That store hasn't listed any items yet, so there'
 
 Please try again later.`;
 
+// Shown when a customer tries to confirm an order with no store connected.
+export const NOT_CONNECTED_REPLY = `I can't place that order yet — I don't have a store connected to your location.
+
+Send /hey and share your location pin and I'll route your order to the nearest store.`;
+
 /** The reply when no shop can serve this location (no guessing, no order). */
 export function noShopReply(match) {
   if (match?.reason === 'out-of-range' && Number.isFinite(match.nearestKm)) {
@@ -270,14 +275,35 @@ export function deduplicateProducts(products) {
 }
 
 /**
- * The catalog that applies to this customer: the matched shop's own catalog when
- * one is loaded, otherwise the global catalog (offline/dev). Every item the bot
- * may order comes from here — it can never order something the shop does not sell.
+ * The catalog that applies to this customer: the matched shop's own catalog, and
+ * nothing else. A customer with no connected shop cannot order anything — that is
+ * what stops an unrouted (and therefore unowned) order from ever being created.
  */
 export function catalogForCustomer(jid) {
   const shop = activeShops.get(jid);
-  if (Array.isArray(shop?.catalog) && shop.catalog.length > 0) return shop.catalog;
-  return dukanCatalog.getAll();
+  return Array.isArray(shop?.catalog) ? shop.catalog : [];
+}
+
+/**
+ * The single choke point for creating an order.
+ *
+ * An order with no owner is visible to nobody on a shared backend, so it is never
+ * created: the pipeline fails closed and the customer is told why.
+ * @returns the order, or null when this customer has no shop.
+ */
+function createOwnedOrder(jid, fields) {
+  const userId = ownerForCustomer(jid);
+  if (!userId) {
+    console.warn(`[Dukan Bot] Refusing to create an order for ${jid}: no shop is connected.`);
+    return null;
+  }
+  return dukanOrders.createOrder({ ...fields, userId });
+}
+
+/** True when a shop (with a catalog) is connected for this customer. */
+export function hasConnectedShop(jid) {
+  const shop = activeShops.get(jid);
+  return Boolean(shop && shop.userId);
 }
 
 /**
@@ -407,18 +433,21 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
       const parsed = JSON.parse(jsonMatch[1].trim());
       if (parsed.action === 'CREATE_ORDER' && Array.isArray(parsed.items) && parsed.items.length > 0) {
         const resolved = resolveAndPriceItems(parsed.items, catalogForCustomer(jid));
-        newOrder = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: resolvedPhone,
-          customerName: parsed.customerName || defaultName || 'Customer',
-          deliveryAddress: (locationData ? locationData.fullDescription : '') || parsed.deliveryAddress || 'Address not specified',
-          location: locationData || null,
-          items: resolved.items,
-          totalAmount: resolved.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
-        });
-        customerCarts.delete(jid);
+        // An order with nothing in it is not an order: every requested item was
+        // dropped by the gate (nothing this shop stocks was asked for).
+        if (resolved.items.length > 0) {
+          newOrder = createOwnedOrder(jid, {
+            customerJid: jid,
+            customerPhone: resolvedPhone,
+            customerName: parsed.customerName || defaultName || 'Customer',
+            deliveryAddress: (locationData ? locationData.fullDescription : '') || parsed.deliveryAddress || 'Address not specified',
+            location: locationData || null,
+            items: resolved.items,
+            totalAmount: resolved.totalAmount,
+            notes: 'Cash on Delivery'
+          });
+          if (newOrder) customerCarts.delete(jid);
+        }
       }
     } catch (e) {}
   }
@@ -427,7 +456,7 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
   if (!newOrder) {
     const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '', catalogForCustomer(jid));
     if (extracted && extracted.items.length > 0 && /confirm/i.test(userText)) {
-      newOrder = dukanOrders.createOrder({
+      newOrder = createOwnedOrder(jid, {
         customerJid: jid,
         customerPhone: resolvedPhone,
         customerName: defaultName || 'Customer',
@@ -435,10 +464,9 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
         location: locationData || null,
         items: extracted.items,
         totalAmount: extracted.totalAmount,
-        notes: 'Cash on Delivery',
-        userId: ownerForCustomer(jid)
+        notes: 'Cash on Delivery'
       });
-      customerCarts.delete(jid);
+      if (newOrder) customerCarts.delete(jid);
     }
   }
 
@@ -696,7 +724,7 @@ export function executeModelActions(actions, jid, pushName, phone, locationData,
       cartUpdated = true;
     } else if (act.type === 'CONFIRM_ORDER') {
       if (cart.items.length > 0) {
-        orderCreated = dukanOrders.createOrder({
+        orderCreated = createOwnedOrder(jid, {
           customerJid: jid,
           customerPhone: phone,
           customerName: cart.customerName || pushName || 'Customer',
@@ -704,11 +732,10 @@ export function executeModelActions(actions, jid, pushName, phone, locationData,
           location: locationData || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
+          notes: 'Cash on Delivery'
         });
-        customerCarts.delete(jid);
-        return { cartUpdated: false, orderCreated, cart: null, unavailable, clarifications };
+        if (orderCreated) customerCarts.delete(jid);
+        return { cartUpdated: false, orderCreated, cart: orderCreated ? null : cart, unavailable, clarifications };
       }
     } else if (act.type === 'CANCEL_ORDER') {
       customerCarts.delete(jid);
@@ -1234,7 +1261,7 @@ export const dukanBot = {
     if (isExplicitConfirm) {
       const cart = customerCarts.get(jid);
       if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
-        const order = dukanOrders.createOrder({
+        const order = createOwnedOrder(jid, {
           customerJid: jid,
           customerPhone: phone,
           customerName: cart.customerName || pushName || 'Customer',
@@ -1242,9 +1269,12 @@ export const dukanBot = {
           location: loc || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
+          notes: 'Cash on Delivery'
         });
+        if (!order) {
+          // No shop is connected for this customer: fail closed and keep the cart.
+          return { reply: NOT_CONNECTED_REPLY, newOrder: null };
+        }
         customerCarts.delete(jid);
         conversationHistories.delete(jid);
         return { reply: formatOrderConfirmation(order), newOrder: order };
