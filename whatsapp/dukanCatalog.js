@@ -58,7 +58,7 @@ const KNOWN_NAME_MAP = {
   'product_tata_salt': 'Tata Salt',
 };
 
-function getAliasesForName(name) {
+export function getAliasesForName(name) {
   const lower = name.toLowerCase();
   const aliases = [lower];
   const clean = lower.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
