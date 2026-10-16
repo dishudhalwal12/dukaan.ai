@@ -9,7 +9,12 @@ import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '.env'), override: true });
+// Existing environment variables WIN over .env (dotenv's default): the process
+// environment is the explicit, higher-precedence channel — a test pins it, a
+// shell export sets it, a platform injects it. With `override: true` a developer's
+// .env silently beat all three, which is how the test suite once inherited live
+// Supabase credentials and read the real registry.
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // In-memory conversation history: jid -> messages[]
 const conversationHistories = new Map();

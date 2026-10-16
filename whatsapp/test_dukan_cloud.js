@@ -1,3 +1,4 @@
+import './test_setup_orders_file.js'; // pin the stores, blank the live credentials
 import assert from 'assert';
 
 // Configure a fake Supabase so the provider path is exercised without a network.
