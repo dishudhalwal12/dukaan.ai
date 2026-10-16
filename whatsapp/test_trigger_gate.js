@@ -1,4 +1,10 @@
 import assert from 'assert';
+
+// Dev-mode owner: with no Supabase registry wired, the single local fallback
+// shop is owned by this account. Without it, a pin would (correctly) match no
+// shop and the bot would refuse to order.
+process.env.DUKAN_DEFAULT_OWNER_ID = process.env.DUKAN_DEFAULT_OWNER_ID || 'dev-owner';
+
 import {
   isBotTrigger,
   stripBotTrigger,
@@ -210,7 +216,7 @@ const ackReply = await dukanBot.handleMessage(
 assert.ok(/connected to/.test(ackReply.reply), 'location must produce a "connected to <shop>" reply');
 assert.strictEqual(isAwaitingLocation(flowJid), false, 'handshake complete after the pin');
 assert.ok(activeShops.has(flowJid), 'the matched shop must be remembered for this customer');
-assert.strictEqual(activeShops.get(flowJid).shopName, 'Dukaan Store', 'local fallback shop until Supabase is wired');
+assert.strictEqual(activeShops.get(flowJid).shopName, 'Dukaan Store', 'dev fallback shop when no Supabase registry is wired');
 passed++;
 console.log('✓ Test 16: the location pin connects a shop and ends the handshake');
 
@@ -333,11 +339,19 @@ ok('Test 23: reconcileMissedActions saves an address the model forgot to save', 
 // "just 2 maggi total" must not match "Lifebuoy *Total* 10 Soap".
 ok('Test 24: the safety net ignores products the customer never named', () => {
   const jid = JID('reconcile-brand');
+  // An order requires a matched shop and its catalog, so connect the local one.
+  activeShops.set(jid, {
+    shopId: 'local',
+    shopName: 'Dukaan Store',
+    userId: 'dev-owner',
+    catalog: dukanCatalog.getAll(),
+  });
   const res = reconcileMissedActions('add 2 maggi, that is the total', 'Adding 2 Maggi.', [], jid, 'T', '0', null);
   assert.strictEqual(res.cart.items.length, 1, 'only Maggi may be added');
   assert.ok(/maggi/i.test(res.cart.items[0].name));
   assert.strictEqual(res.cart.totalAmount, res.cart.items[0].price * 2);
   customerCarts.delete(jid);
+  activeShops.delete(jid);
 
   // "You're all set" is not an action claim.
   assert.strictEqual(

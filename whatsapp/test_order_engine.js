@@ -2,7 +2,7 @@ import './test_setup_orders_file.js';
 import assert from 'assert';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
-import { resolveAndPriceItems, extractOrderFromSummaryText, parseOpenRouterReply } from './dukanBot.js';
+import { resolveAndPriceItems, extractOrderFromSummaryText, parseOpenRouterReply, activeShops } from './dukanBot.js';
 
 console.log('--- RUNNING ORDER ENGINE & CATALOG VALIDATION TESTS ---');
 
@@ -76,9 +76,20 @@ const locationData = {
   fullDescription: 'Jaipur Street No. 17'
 };
 
+const jid4 = '917300372323@s.whatsapp.net';
+// An order requires a matched shop and that shop's own catalog, so connect one.
+activeShops.set(jid4, {
+  shopId: 'shop-1',
+  shopName: 'Test Store',
+  userId: 'owner-engine',
+  latitude: 26.9124,
+  longitude: 75.7873,
+  catalog: [{ id: 'p1', name: 'Parle-G Biscuits', category: 'Biscuits', price: 10, unit: 'pack', inStock: true, keywords: ['parle-g', 'parleg', 'biscuit'] }],
+});
+
 const parseResult = parseOpenRouterReply(
   fakeAIReply,
-  '917300372323@s.whatsapp.net',
+  jid4,
   '917300372323',
   'Pulkit Khowal',
   'yes',

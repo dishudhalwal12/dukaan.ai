@@ -1,9 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { dukanCatalog } from './dukanCatalog.js';
+import { dukanCatalog, resolveCatalogItem } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
-import { matchNearestShop } from './dukanShops.js';
+import { matchNearestShop, loadShops } from './dukanShops.js';
+import { registryStatus, loadShopCatalog } from './dukanCloud.js';
 import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,34 @@ How to send it:
 
 That one pin is all I need.`;
 
+// Shown when the store directory cannot be reached. We refuse to order rather
+// than guess an owner or a shop on a shared backend.
+export const SERVICE_UNAVAILABLE_REPLY = `I can't reach the store directory right now, so I can't place an order this moment.
+
+Please try again in a minute — send /hey and share your location again.`;
+
+// Shown when the shop has not listed any items yet.
+export const NO_ITEMS_REPLY = `That store hasn't listed any items yet, so there's nothing to order from it right now.
+
+Please try again later.`;
+
+// Shown when a customer tries to confirm an order with no store connected.
+export const NOT_CONNECTED_REPLY = `I can't place that order yet — I don't have a store connected to your location.
+
+Send /hey and share your location pin and I'll route your order to the nearest store.`;
+
+/** The reply when no shop can serve this location (no guessing, no order). */
+export function noShopReply(match) {
+  if (match?.reason === 'out-of-range' && Number.isFinite(match.nearestKm)) {
+    return `Sorry — no store in our network delivers to your area yet. The nearest one is about ${match.nearestKm.toFixed(1)} km away.
+
+Nothing has been ordered. You can try a location closer to the store.`;
+  }
+  return `Sorry — there's no Dukaan store serving your area right now, so I can't take an order.
+
+Nothing has been ordered.`;
+}
+
 // jid -> last activity timestamp (ms)
 const activeSessions = new Map();
 
@@ -51,6 +80,34 @@ const activeSessions = new Map();
 const awaitingLocations = new Set();  // jids that sent /hey and still need a pin
 const pendingRequests = new Map();    // jid -> text typed alongside /hey
 export const activeShops = new Map(); // jid -> shop matched from their location
+
+// Remembered delivery location per customer: jid -> { value, at }.
+// A customer shares ONE pin. Every later turn must reuse it and the final order
+// must carry it, so the bot never asks for the address a second time. Keyed by
+// jid (never by shop) because one WhatsApp number serves many shops.
+export const customerLocations = new Map();
+
+/** Remembers the delivery location for this customer (no-op without a pin). */
+export function rememberLocation(jid, locationData, now = Date.now()) {
+  if (!jid || !locationData) return;
+  customerLocations.set(jid, { value: locationData, at: now });
+}
+
+/**
+ * The delivery location to use for this customer: an explicit pin wins, else the
+ * remembered one, else null. A remembered pin older than the idle window is
+ * evicted and ignored — a lapsed chat must not reuse a stale address.
+ */
+export function locationFor(jid, locationData = null, now = Date.now()) {
+  if (locationData) return locationData;
+  const entry = jid ? customerLocations.get(jid) : null;
+  if (!entry) return null;
+  if (now - entry.at > SESSION_IDLE_TTL_MS) {
+    customerLocations.delete(jid);
+    return null;
+  }
+  return entry.value;
+}
 
 export function isBotTrigger(text) {
   return BOT_TRIGGER_REGEX.test(String(text || ''));
@@ -111,6 +168,7 @@ export function beginLocationHandshake(jid, pendingText = '') {
   if (!jid) return;
   customerCarts.delete(jid);
   conversationHistories.delete(jid);
+  customerLocations.delete(jid); // a new order starts fresh — no stale address
   awaitingLocations.add(jid);
   if (pendingText) pendingRequests.set(jid, pendingText);
   else pendingRequests.delete(jid);
@@ -122,7 +180,10 @@ export function beginLocationHandshake(jid, pendingText = '') {
  */
 export function completeLocationHandshake(jid, shop) {
   awaitingLocations.delete(jid);
+  // A pin that matches no shop must not leave a stale shop (or a stale owner)
+  // attached to this customer.
   if (shop) activeShops.set(jid, shop);
+  else activeShops.delete(jid);
   const pending = pendingRequests.get(jid) || '';
   pendingRequests.delete(jid);
   return pending;
@@ -153,6 +214,7 @@ export function resetAllContext() {
   awaitingLocations.clear();
   pendingRequests.clear();
   activeShops.clear();
+  customerLocations.clear();
   console.log('[Dukan Bot] Chatbot context completely erased on startup/restart.');
 }
 
@@ -213,15 +275,51 @@ export function deduplicateProducts(products) {
 }
 
 /**
- * Deterministic Order Resolver & Pricing Engine.
- * Matches requested item names against dukanCatalog, retrieves authoritative prices,
- * computes item totals, and calculates the true order total.
+ * The catalog that applies to this customer: the matched shop's own catalog, and
+ * nothing else. A customer with no connected shop cannot order anything — that is
+ * what stops an unrouted (and therefore unowned) order from ever being created.
  */
-export function resolveAndPriceItems(rawItems) {
+export function catalogForCustomer(jid) {
+  const shop = activeShops.get(jid);
+  return Array.isArray(shop?.catalog) ? shop.catalog : [];
+}
+
+/**
+ * The single choke point for creating an order.
+ *
+ * An order with no owner is visible to nobody on a shared backend, so it is never
+ * created: the pipeline fails closed and the customer is told why.
+ * @returns the order, or null when this customer has no shop.
+ */
+function createOwnedOrder(jid, fields) {
+  const userId = ownerForCustomer(jid);
+  if (!userId) {
+    console.warn(`[Dukan Bot] Refusing to create an order for ${jid}: no shop is connected.`);
+    return null;
+  }
+  return dukanOrders.createOrder({ ...fields, userId });
+}
+
+/** True when a shop (with a catalog) is connected for this customer. */
+export function hasConnectedShop(jid) {
+  const shop = activeShops.get(jid);
+  return Boolean(shop && shop.userId);
+}
+
+/**
+ * Deterministic Order Resolver & Pricing Engine.
+ * Matches requested item names against a catalog, retrieves authoritative prices,
+ * computes item totals, and calculates the true order total.
+ *
+ * An item the catalog does not contain is DROPPED — it is never priced from the
+ * model's own number (that is how a hallucinated ₹30 line used to reach an order).
+ */
+export function resolveAndPriceItems(rawItems, catalog = null) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return { items: [], totalAmount: 0 };
   }
 
+  const products = catalog || dukanCatalog.getAll();
   const verifiedItems = [];
 
   for (const raw of rawItems) {
@@ -230,9 +328,9 @@ export function resolveAndPriceItems(rawItems) {
     query = query.replace(/\([^\)]+\)/g, '').replace(/product_/g, '').trim();
     const qty = Math.max(1, parseInt(raw.quantity || raw.qty, 10) || 1);
 
-    const matches = dukanCatalog.search(query);
-    if (matches.length > 0) {
-      const matched = matches[0];
+    const match = resolveCatalogItem(products, query);
+    if (match.status === 'ok') {
+      const matched = match.product;
       const unitPrice = Number(matched.price) || 0;
       verifiedItems.push({
         id: matched.id,
@@ -243,18 +341,8 @@ export function resolveAndPriceItems(rawItems) {
         quantity: qty,
         total: unitPrice * qty
       });
-    } else {
-      const fallbackPrice = typeof raw.price === 'number'
-        ? raw.price
-        : (parseFloat(String(raw.price || 0).replace(/[^\d.]/g, '')) || 0);
-      verifiedItems.push({
-        name: raw.name || query || 'Item',
-        price: fallbackPrice,
-        quantity: qty,
-        total: fallbackPrice * qty,
-        unit: 'unit'
-      });
     }
+    // No else: an unmatched item is dropped, never priced from the model's guess.
   }
 
   const totalAmount = verifiedItems.reduce((sum, it) => sum + (it.total || 0), 0);
@@ -264,7 +352,7 @@ export function resolveAndPriceItems(rawItems) {
 /**
  * Extracts order details from summary text (for compatibility / testing)
  */
-export function extractOrderFromSummaryText(text, defaultAddress = '') {
+export function extractOrderFromSummaryText(text, defaultAddress = '', catalog = null) {
   if (!text) return null;
 
   let deliveryAddress = defaultAddress;
@@ -323,7 +411,7 @@ export function extractOrderFromSummaryText(text, defaultAddress = '') {
     return null;
   }
 
-  const priced = resolveAndPriceItems(items);
+  const priced = resolveAndPriceItems(items, catalog);
   return {
     items: priced.items,
     totalAmount: priced.totalAmount,
@@ -344,28 +432,31 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
     try {
       const parsed = JSON.parse(jsonMatch[1].trim());
       if (parsed.action === 'CREATE_ORDER' && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const resolved = resolveAndPriceItems(parsed.items);
-        newOrder = dukanOrders.createOrder({
-          customerJid: jid,
-          customerPhone: resolvedPhone,
-          customerName: parsed.customerName || defaultName || 'Customer',
-          deliveryAddress: (locationData ? locationData.fullDescription : '') || parsed.deliveryAddress || 'Address not specified',
-          location: locationData || null,
-          items: resolved.items,
-          totalAmount: resolved.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
-        });
-        customerCarts.delete(jid);
+        const resolved = resolveAndPriceItems(parsed.items, catalogForCustomer(jid));
+        // An order with nothing in it is not an order: every requested item was
+        // dropped by the gate (nothing this shop stocks was asked for).
+        if (resolved.items.length > 0) {
+          newOrder = createOwnedOrder(jid, {
+            customerJid: jid,
+            customerPhone: resolvedPhone,
+            customerName: parsed.customerName || defaultName || 'Customer',
+            deliveryAddress: (locationData ? locationData.fullDescription : '') || parsed.deliveryAddress || 'Address not specified',
+            location: locationData || null,
+            items: resolved.items,
+            totalAmount: resolved.totalAmount,
+            notes: 'Cash on Delivery'
+          });
+          if (newOrder) customerCarts.delete(jid);
+        }
       }
     } catch (e) {}
   }
 
   // Summary text fallback
   if (!newOrder) {
-    const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '');
+    const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '', catalogForCustomer(jid));
     if (extracted && extracted.items.length > 0 && /confirm/i.test(userText)) {
-      newOrder = dukanOrders.createOrder({
+      newOrder = createOwnedOrder(jid, {
         customerJid: jid,
         customerPhone: resolvedPhone,
         customerName: defaultName || 'Customer',
@@ -373,10 +464,9 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
         location: locationData || null,
         items: extracted.items,
         totalAmount: extracted.totalAmount,
-        notes: 'Cash on Delivery',
-        userId: ownerForCustomer(jid)
+        notes: 'Cash on Delivery'
       });
-      customerCarts.delete(jid);
+      if (newOrder) customerCarts.delete(jid);
     }
   }
 
@@ -552,9 +642,15 @@ function cleanUserFacingReply(raw) {
 }
 
 /**
- * Executes parsed model action tags deterministically
+ * Executes parsed model action tags deterministically.
+ *
+ * ADD_TO_CART is gated by the customer's catalog: a stocked item is added at the
+ * shop's authoritative price, an unknown item is dropped (`unavailable`), and a
+ * genuinely ambiguous one is not guessed (`clarifications`) — the caller turns
+ * those into a rebuilt reply.
  */
-function executeModelActions(actions, jid, pushName, phone, locationData) {
+export function executeModelActions(actions, jid, pushName, phone, locationData, catalog = null) {
+  const products = catalog || catalogForCustomer(jid);
   let cart = customerCarts.get(jid) || {
     items: [],
     totalAmount: 0,
@@ -568,42 +664,40 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
   let cartUpdated = false;
   let orderCreated = null;
   let orderCancelled = false;
+  const unavailable = [];
+  const clarifications = [];
 
   for (const act of actions) {
     if (act.type === 'ADD_TO_CART' && act.args.name) {
-      const matches = dukanCatalog.search(String(act.args.name));
-      const p = matches.length > 0 ? matches[0] : null;
+      const requested = String(act.args.name);
+      const resolution = resolveCatalogItem(products, requested);
       const qty = Math.max(1, parseInt(act.args.qty, 10) || 1);
-      if (p) {
-        const existing = cart.items.find(it => it.id === p.id);
-        if (existing) {
-          existing.quantity += qty;
-          existing.total = existing.price * existing.quantity;
-        } else {
-          cart.items.push({
-            id: p.id,
-            name: p.name,
-            category: p.category,
-            price: p.price,
-            unit: p.unit,
-            quantity: qty,
-            total: p.price * qty
-          });
-        }
-        cartUpdated = true;
-      } else {
-        const name = String(act.args.name);
-        cart.items.push({
-          id: 'custom-' + Date.now(),
-          name,
-          category: 'Grocery',
-          price: parseInt(act.args.price, 10) || 30,
-          unit: 'unit',
-          quantity: qty,
-          total: (parseInt(act.args.price, 10) || 30) * qty
-        });
-        cartUpdated = true;
+      if (resolution.status === 'ambiguous') {
+        // Never guess between genuinely distinct products.
+        clarifications.push({ name: requested, options: resolution.options });
+        continue;
       }
+      if (resolution.status === 'missing') {
+        unavailable.push(requested);
+        continue;
+      }
+      const p = resolution.product;
+      const existing = cart.items.find(it => it.id === p.id);
+      if (existing) {
+        existing.quantity += qty;
+        existing.total = existing.price * existing.quantity;
+      } else {
+        cart.items.push({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          price: p.price,
+          unit: p.unit,
+          quantity: qty,
+          total: p.price * qty
+        });
+      }
+      cartUpdated = true;
     } else if (act.type === 'UPDATE_QTY' && act.args.name) {
       const q = String(act.args.name).toLowerCase();
       const existing = cart.items.find(it => it.name.toLowerCase().includes(q) || q.includes(it.name.toLowerCase()));
@@ -630,7 +724,7 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
       cartUpdated = true;
     } else if (act.type === 'CONFIRM_ORDER') {
       if (cart.items.length > 0) {
-        orderCreated = dukanOrders.createOrder({
+        orderCreated = createOwnedOrder(jid, {
           customerJid: jid,
           customerPhone: phone,
           customerName: cart.customerName || pushName || 'Customer',
@@ -638,17 +732,16 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
           location: locationData || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
+          notes: 'Cash on Delivery'
         });
-        customerCarts.delete(jid);
-        return { cartUpdated: false, orderCreated, cart: null };
+        if (orderCreated) customerCarts.delete(jid);
+        return { cartUpdated: false, orderCreated, cart: orderCreated ? null : cart, unavailable, clarifications };
       }
     } else if (act.type === 'CANCEL_ORDER') {
       customerCarts.delete(jid);
       dukanOrders.cancelOrderByCustomer(phone || jid);
       orderCancelled = true;
-      return { cartUpdated: false, orderCreated: null, orderCancelled: true, cart: null };
+      return { cartUpdated: false, orderCreated: null, orderCancelled: true, cart: null, unavailable, clarifications };
     }
   }
 
@@ -658,7 +751,46 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
     customerCarts.set(jid, cart);
   }
 
-  return { cartUpdated, orderCreated, orderCancelled, cart };
+  return { cartUpdated, orderCreated, orderCancelled, cart, unavailable, clarifications };
+}
+
+/**
+ * Rebuilds the customer-facing narrative around what the gate actually did.
+ *
+ * The model's own words can claim it added something the shop does not stock, or
+ * silently pick one of several similar products. The cart footer is appended by
+ * the caller from the REAL cart state, so here we only fix the prose:
+ *  - an ambiguous match becomes one concrete either/or question;
+ *  - a dropped item's claim is removed and the customer is told.
+ */
+export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [] } = {}) {
+  if (clarifications.length > 0) {
+    const options = clarifications
+      .flatMap((c) => c.options)
+      .slice(0, 3)
+      .map((p) => `${p.name} (₹${p.price})`)
+      .join('  ·  ');
+    return `Which one did you mean — ${options}? Reply with the exact item and I will add it.`;
+  }
+
+  let out = String(narrative || '').trim();
+
+  if (unavailable.length > 0) {
+    const names = unavailable.map((n) => String(n).toLowerCase());
+    // Drop any sentence of the model's prose that claims the unavailable item.
+    out = out
+      .split(/\n|(?<=[.!?])\s+/)
+      .filter((line) => !names.some((n) => line.toLowerCase().includes(n)))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const list = unavailable.join(', ');
+    const note = `Sorry, this store does not have: ${list}. Anything else?`;
+    out = out ? `${out}\n\n${note}` : note;
+  }
+
+  return out;
 }
 
 /**
@@ -927,6 +1059,8 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   const actions = parseActionTags(rawClean);
   const modelResult = executeModelActions(actions, jid, customerName, customerPhone, locationData);
   let { cartUpdated, orderCreated, cart: currentCart } = modelResult;
+  const unavailable = [...(modelResult.unavailable || [])];
+  const clarifications = [...(modelResult.clarifications || [])];
 
   // The model's own words, with any cart block it wrote itself removed.
   let narrative = stripModelCartBlock(cleanUserFacingReply(rawClean));
@@ -938,6 +1072,8 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
       cartUpdated = cartUpdated || reconciled.cartUpdated;
       orderCreated = reconciled.orderCreated || orderCreated;
       currentCart = reconciled.cart || currentCart;
+      unavailable.push(...(reconciled.unavailable || []));
+      clarifications.push(...(reconciled.clarifications || []));
     }
   }
 
@@ -955,6 +1091,10 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   if (!narrative) {
     narrative = cartUpdated ? 'Added to your cart.' : 'Got it — what else do you need?';
   }
+
+  // The gate may have dropped items or found an ambiguous one: rebuild the prose
+  // so the reply never claims something the shop does not stock.
+  narrative = composeGatedNarrative(narrative, { unavailable, clarifications });
 
   // Append the ONE authoritative cart block, built from the real cart state.
   let reply = narrative;
@@ -1011,6 +1151,11 @@ export const dukanBot = {
     // Keep the engaged chat warm (sliding idle window)
     activateSession(jid, Date.now());
 
+    // A pin on this turn is remembered for every later turn; `loc` is the
+    // location to use for the rest of this message (explicit pin, else memory).
+    if (locationData) rememberLocation(jid, locationData);
+    const loc = locationFor(jid, locationData);
+
     // "/hey" trigger. Ordering needs a location pin first (the pin decides which
     // store serves them), so the trigger only opens the handshake — no AI call.
     // Anything typed with it ("/hey 2 maggi") is held and replayed once the pin
@@ -1023,11 +1168,52 @@ export const dukanBot = {
     // Handshake: waiting for the location pin.
     if (isAwaitingLocation(jid)) {
       if (locationData) {
-        const shop = matchNearestShop(locationData);
+        const cloudReady = registryStatus() === 'configured';
+        const shops = await loadShops();
+
+        // A live registry we cannot reach must fail closed: never guess a shop.
+        if (cloudReady && shops === null) {
+          clearLocationHandshake(jid);
+          console.warn(`[Dukan Bot] ${jid} -> registry unreachable; refusing to order`);
+          return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
+        }
+
+        const match = matchNearestShop(locationData, shops || [], {
+          // The default owner is a dev-only fallback; a live registry never uses it.
+          fallbackOwner: cloudReady ? null : (process.env.DUKAN_DEFAULT_OWNER_ID || null),
+        });
+
+        if (!match.matched) {
+          clearLocationHandshake(jid);
+          activeShops.delete(jid);
+          console.log(`[Dukan Bot] ${jid} -> no shop (${match.reason})`);
+          return { reply: noShopReply(match), newOrder: null };
+        }
+
+        // Load the matched shop's OWN catalog. The bot may only order from it, so
+        // an empty or unreadable catalog must stop the order, not fall back to the
+        // global one.
+        const shop = { ...match.shop };
+        let catalog;
+        try {
+          catalog = await loadShopCatalog(shop.userId);
+        } catch (e) {
+          clearLocationHandshake(jid);
+          console.warn(`[Dukan Bot] ${jid} -> catalog unavailable: ${e.message}`);
+          return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
+        }
+        if (!Array.isArray(catalog) || catalog.length === 0) {
+          clearLocationHandshake(jid);
+          console.log(`[Dukan Bot] ${jid} -> shop "${shop.shopName}" has no catalog`);
+          return { reply: NO_ITEMS_REPLY, newOrder: null };
+        }
+        shop.catalog = catalog;
+
         const pending = completeLocationHandshake(jid, shop);
         console.log(
-          `[Dukan Bot] ${jid} -> shop "${shop?.shopName}"` +
-            (shop?.distanceKm != null ? ` (${shop.distanceKm.toFixed(1)} km away)` : ' (no shop registry yet, local fallback)')
+          `[Dukan Bot] ${jid} -> shop "${shop.shopName}"` +
+            (match.distanceKm != null ? ` (${match.distanceKm.toFixed(1)} km away)` : ' (local fallback)') +
+            ` · ${shop.catalog.length} items`
         );
         const ack = buildLocationAck(shop, locationData);
         if (pending) {
@@ -1046,11 +1232,11 @@ export const dukanBot = {
     }
 
     // Location pin received without explicit message text
-    if (!text && locationData) {
-      text = `My delivery location is: ${locationData.fullDescription}`;
+    if (!text && loc) {
+      text = `My delivery location is: ${loc.fullDescription}`;
     }
 
-    if (!text && !locationData) return null;
+    if (!text && !loc) return null;
 
     // Security & Credential Leak Guards
     if (/\b(VITE_|SUPABASE|ANON_KEY|API_KEY|SECRET_KEY|DATABASE_URL|GITHUB_TOKEN|system prompt|ignore previous|prompt leak|SELECT\s+.*FROM|DROP\s+TABLE|INSERT\s+INTO)\b/i.test(text)) {
@@ -1075,17 +1261,20 @@ export const dukanBot = {
     if (isExplicitConfirm) {
       const cart = customerCarts.get(jid);
       if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
-        const order = dukanOrders.createOrder({
+        const order = createOwnedOrder(jid, {
           customerJid: jid,
           customerPhone: phone,
           customerName: cart.customerName || pushName || 'Customer',
-          deliveryAddress: cart.deliveryAddress || (locationData ? locationData.fullDescription : 'Address not specified'),
-          location: locationData || cart.location || null,
+          deliveryAddress: cart.deliveryAddress || (loc ? loc.fullDescription : 'Address not specified'),
+          location: loc || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery',
-          userId: ownerForCustomer(jid)
+          notes: 'Cash on Delivery'
         });
+        if (!order) {
+          // No shop is connected for this customer: fail closed and keep the cart.
+          return { reply: NOT_CONNECTED_REPLY, newOrder: null };
+        }
         customerCarts.delete(jid);
         conversationHistories.delete(jid);
         return { reply: formatOrderConfirmation(order), newOrder: order };
@@ -1106,7 +1295,7 @@ export const dukanBot = {
 
     // DYNAMIC AI BRAIN: Let the AI model think, reason, and answer dynamically!
     try {
-      const aiResult = await callAiEngine(text, pushName, phone, jid, locationData);
+      const aiResult = await callAiEngine(text, pushName, phone, jid, loc);
       if (aiResult) {
         return aiResult;
       }
