@@ -275,10 +275,14 @@ CLIENTS=25 SOAK_S=600 BURST_TOTAL=20000 ./deploy/wispbyte/stress/run.sh
 |---|---|
 | Cold start → first `/api/status` | ~1 s |
 | 3 000 mixed requests @ 50 concurrent | 100 % success, **3 254 req/s** |
+| Heavy soak burst (20 000 @ 100 concurrent) | 100 % success, **5 468 req/s** (3.66 s) |
+| Heavy soak sustained (25 clients, 10 min) | 1 275 msgs, 0 errors |
 | Burst latency p95 / p99 | 37 ms / 46 ms |
+| Heavy soak latency p95 (burst / sustained) | 32.7 ms / 21.4 ms |
 | Sustained latency p95 (5 clients, 60 s) | 25 ms |
 | SSE stream through the proxy | connected, 0 errors |
 | Bot RSS idle → peak under load | 21 MB → **139 MB** (27 % of the 512 MiB box) |
+| Bot RSS over 10-min soak (first / peak / last) | 4 MB → 184 MB → 23 MB (36 % of 512 MiB; no growth) |
 | Disk used on the box | ~70 MB of 1 GiB |
 | Shopkeeper clients | each costs **~0 MB extra RAM** — the bot is a relay |
 
