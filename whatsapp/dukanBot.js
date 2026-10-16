@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dukanCatalog, resolveCatalogItem } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
 import { matchNearestShop, loadShops } from './dukanShops.js';
+import { registryStatus, loadShopCatalog } from './dukanCloud.js';
 import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +43,29 @@ How to send it:
 3. Tap "Send your current location"
 
 That one pin is all I need.`;
+
+// Shown when the store directory cannot be reached. We refuse to order rather
+// than guess an owner or a shop on a shared backend.
+export const SERVICE_UNAVAILABLE_REPLY = `I can't reach the store directory right now, so I can't place an order this moment.
+
+Please try again in a minute — send /hey and share your location again.`;
+
+// Shown when the shop has not listed any items yet.
+export const NO_ITEMS_REPLY = `That store hasn't listed any items yet, so there's nothing to order from it right now.
+
+Please try again later.`;
+
+/** The reply when no shop can serve this location (no guessing, no order). */
+export function noShopReply(match) {
+  if (match?.reason === 'out-of-range' && Number.isFinite(match.nearestKm)) {
+    return `Sorry — no store in our network delivers to your area yet. The nearest one is about ${match.nearestKm.toFixed(1)} km away.
+
+Nothing has been ordered. You can try a location closer to the store.`;
+  }
+  return `Sorry — there's no Dukaan store serving your area right now, so I can't take an order.
+
+Nothing has been ordered.`;
+}
 
 // jid -> last activity timestamp (ms)
 const activeSessions = new Map();
@@ -1117,19 +1141,52 @@ export const dukanBot = {
     // Handshake: waiting for the location pin.
     if (isAwaitingLocation(jid)) {
       if (locationData) {
+        const cloudReady = registryStatus() === 'configured';
         const shops = await loadShops();
+
+        // A live registry we cannot reach must fail closed: never guess a shop.
+        if (cloudReady && shops === null) {
+          clearLocationHandshake(jid);
+          console.warn(`[Dukan Bot] ${jid} -> registry unreachable; refusing to order`);
+          return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
+        }
+
         const match = matchNearestShop(locationData, shops || [], {
-          fallbackOwner: process.env.DUKAN_DEFAULT_OWNER_ID || null,
+          // The default owner is a dev-only fallback; a live registry never uses it.
+          fallbackOwner: cloudReady ? null : (process.env.DUKAN_DEFAULT_OWNER_ID || null),
         });
-        const shop = match.matched ? match.shop : null;
+
+        if (!match.matched) {
+          clearLocationHandshake(jid);
+          activeShops.delete(jid);
+          console.log(`[Dukan Bot] ${jid} -> no shop (${match.reason})`);
+          return { reply: noShopReply(match), newOrder: null };
+        }
+
+        // Load the matched shop's OWN catalog. The bot may only order from it, so
+        // an empty or unreadable catalog must stop the order, not fall back to the
+        // global one.
+        const shop = { ...match.shop };
+        let catalog;
+        try {
+          catalog = await loadShopCatalog(shop.userId);
+        } catch (e) {
+          clearLocationHandshake(jid);
+          console.warn(`[Dukan Bot] ${jid} -> catalog unavailable: ${e.message}`);
+          return { reply: SERVICE_UNAVAILABLE_REPLY, newOrder: null };
+        }
+        if (!Array.isArray(catalog) || catalog.length === 0) {
+          clearLocationHandshake(jid);
+          console.log(`[Dukan Bot] ${jid} -> shop "${shop.shopName}" has no catalog`);
+          return { reply: NO_ITEMS_REPLY, newOrder: null };
+        }
+        shop.catalog = catalog;
+
         const pending = completeLocationHandshake(jid, shop);
         console.log(
-          `[Dukan Bot] ${jid} -> shop "${shop?.shopName}"` +
-            (match.matched
-              ? match.distanceKm != null
-                ? ` (${match.distanceKm.toFixed(1)} km away)`
-                : ' (local fallback)'
-              : ` (no shop: ${match.reason})`)
+          `[Dukan Bot] ${jid} -> shop "${shop.shopName}"` +
+            (match.distanceKm != null ? ` (${match.distanceKm.toFixed(1)} km away)` : ' (local fallback)') +
+            ` · ${shop.catalog.length} items`
         );
         const ack = buildLocationAck(shop, locationData);
         if (pending) {

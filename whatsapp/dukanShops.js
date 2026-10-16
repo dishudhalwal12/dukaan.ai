@@ -153,18 +153,14 @@ export function matchNearestShop(location, shops = [], options = {}) {
 }
 
 /**
- * Default provider: the live Supabase registry. Kept behind an injectable
- * seam so every test runs without a network. Returns raw rows; `loadShops`
- * normalises them.
+ * Default provider: the live Supabase registry. Kept behind an injectable seam
+ * so every test runs without a network. Returns raw rows; `loadShops` normalises
+ * them. Errors propagate on purpose — `loadShops` must be able to tell an
+ * unreachable registry (null) from an empty one ([]).
  */
 async function defaultProvider() {
-  try {
-    const cloud = await import('./dukanCloud.js');
-    return await cloud.fetchShopRows();
-  } catch (e) {
-    console.warn('[Shops] Supabase registry provider unavailable:', e.message);
-    return [];
-  }
+  const cloud = await import('./dukanCloud.js');
+  return await cloud.fetchShopRows();
 }
 
 /**

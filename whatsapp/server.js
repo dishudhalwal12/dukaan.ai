@@ -11,6 +11,7 @@ import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders, selectOrders } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
+import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -45,17 +46,21 @@ app.use(express.static(path.join(__dirname, 'public')));
 resetAllContext();
 
 // The bot stamps each order with the owner of the shop that fulfils it, so it
-// reaches exactly one account. Until the shop registry is wired that owner is
-// DUKAN_DEFAULT_OWNER_ID; without any owner source the bot's orders reach
-// nobody. Fail loud rather than let orders vanish silently.
-const SHOPS_FILE = path.resolve(__dirname, 'store', 'shops.json');
-if (!process.env.DUKAN_DEFAULT_OWNER_ID && !fs.existsSync(SHOPS_FILE)) {
+// reaches exactly one account. With Supabase configured the owner comes from the
+// matched shop's row; without it, the single local shop uses
+// DUKAN_DEFAULT_OWNER_ID. Without ANY owner source bot orders reach nobody, so
+// fail loud rather than let them vanish silently.
+if (registryStatus() === 'configured') {
+  console.log('[Cloud] Shop registry: Supabase (owner comes from the matched shop).');
+} else if (!process.env.DUKAN_DEFAULT_OWNER_ID) {
   console.warn(
-    '\n⚠️  No order owner configured (DUKAN_DEFAULT_OWNER_ID unset, no store/shops.json).\n' +
+    '\n⚠️  No order owner configured (Supabase unset and DUKAN_DEFAULT_OWNER_ID unset).\n' +
     "    Bot-created orders will have no owner and will NOT appear in any shopkeeper's app.\n" +
-    '    Set DUKAN_DEFAULT_OWNER_ID in whatsapp/.env to the merchant\'s Supabase user id\n' +
-    '    (Supabase → Authentication → Users) to route orders to that account.\n'
+    '    Set SUPABASE_URL + SUPABASE_SERVICE_KEY (multi-shop), or DUKAN_DEFAULT_OWNER_ID in\n' +
+    '    whatsapp/.env for a single local shop, to route orders to an account.\n'
   );
+} else {
+  console.log(`[Cloud] Single-shop dev mode: orders are owned by ${process.env.DUKAN_DEFAULT_OWNER_ID}.`);
 }
 
 // State variables
@@ -80,6 +85,18 @@ function broadcastSSE(data) {
       sseClients.delete(client);
     }
   }
+}
+
+/**
+ * Mirrors an order (or a status change) to Supabase so the shopkeeper app sees
+ * it. Never throws and never blocks the shopkeeper's own response.
+ */
+async function mirrorOrderQuietly(order) {
+  const result = await mirrorOrder(order);
+  if (!result.ok && !result.skipped) {
+    console.warn(`[Cloud] Supabase mirror failed for #${order?.id}: ${result.error}`);
+  }
+  return result;
 }
 
 // Clean phone number to WhatsApp JID format
@@ -406,6 +423,10 @@ async function initWhatsApp() {
                     console.log(`   Address:  ${botResult.newOrder.deliveryAddress}`);
                     console.log(`   Items:    ${(botResult.newOrder.items || []).map(it => `${it.quantity}x ${it.name} (₹${it.price || 0})`).join(', ')}`);
                     console.log(`   Total:    ₹${botResult.newOrder.totalAmount}\n`);
+                    // Mirror into Supabase so the shopkeeper's app sees it too.
+                    const mirror = await mirrorOrder(botResult.newOrder);
+                    if (mirror.ok) console.log(`   Mirrored to Supabase (shop ${botResult.newOrder.userId}).`);
+                    else if (!mirror.skipped) console.warn(`   ⚠️ Supabase mirror failed: ${mirror.error}`);
                     broadcastSSE({
                       type: 'dukan_new_order',
                       order: botResult.newOrder,
@@ -936,6 +957,7 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
     }
   }
 
+  await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
   console.log(`[Dukan] Order #${order.id} ACCEPTED by shopkeeper.`);
   res.json({ success: true, order });
@@ -961,6 +983,7 @@ app.post('/api/dukan/orders/:id/ready', async (req, res) => {
     dukanBot.endSession(order.customerJid);
   }
 
+  await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
   res.json({ success: true, order });
 });
@@ -983,6 +1006,7 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
     dukanBot.endSession(order.customerJid);
   }
 
+  await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
   res.json({ success: true, order });
 });
@@ -1005,6 +1029,7 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
     dukanBot.endSession(order.customerJid);
   }
 
+  await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
   res.json({ success: true, order });
 });
