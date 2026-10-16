@@ -134,6 +134,15 @@ export function clearLocationHandshake(jid) {
 }
 
 /**
+ * The account that owns the shop serving this customer, or null when no shop
+ * has been matched yet. Stamped onto every order the bot creates so the order
+ * reaches exactly one shopkeeper — never all of them.
+ */
+export function ownerForCustomer(jid) {
+  return activeShops.get(jid)?.userId || null;
+}
+
+/**
  * Completely erases all in-memory chatbot context on server restart.
  */
 export function resetAllContext() {
@@ -344,7 +353,8 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
           location: locationData || null,
           items: resolved.items,
           totalAmount: resolved.totalAmount,
-          notes: 'Cash on Delivery'
+          notes: 'Cash on Delivery',
+          userId: ownerForCustomer(jid)
         });
         customerCarts.delete(jid);
       }
@@ -363,7 +373,8 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
         location: locationData || null,
         items: extracted.items,
         totalAmount: extracted.totalAmount,
-        notes: 'Cash on Delivery'
+        notes: 'Cash on Delivery',
+        userId: ownerForCustomer(jid)
       });
       customerCarts.delete(jid);
     }
@@ -627,7 +638,8 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
           location: locationData || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery'
+          notes: 'Cash on Delivery',
+          userId: ownerForCustomer(jid)
         });
         customerCarts.delete(jid);
         return { cartUpdated: false, orderCreated, cart: null };
@@ -1071,7 +1083,8 @@ export const dukanBot = {
           location: locationData || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
-          notes: 'Cash on Delivery'
+          notes: 'Cash on Delivery',
+          userId: ownerForCustomer(jid)
         });
         customerCarts.delete(jid);
         conversationHistories.delete(jid);

@@ -104,16 +104,31 @@ export function rankShops(shops, location) {
 }
 
 /**
+ * The account that owns the local single shop, until the shop registry is
+ * wired. Orders with no owner are visible to no one, so this must resolve for
+ * the bot's orders to reach a shopkeeper's app.
+ */
+function defaultOwnerId() {
+  return process.env.DUKAN_DEFAULT_OWNER_ID || null;
+}
+
+/**
  * Picks the shop that should serve this customer location.
  * Falls back to the local single shop until the registry is populated.
  */
 export function matchNearestShop(location, shops = loadShops()) {
   if (!location) return null;
   const ranked = rankShops(shops, location);
-  if (ranked.length > 0) return { ...ranked[0], isFallback: false };
+  if (ranked.length > 0) {
+    // A registered shop may not carry an owner id yet; the default fills the
+    // gap so the order still reaches exactly one shopkeeper.
+    const best = ranked[0];
+    return { ...best, userId: best.userId || defaultOwnerId(), isFallback: false };
+  }
 
   return {
     shopId: 'local',
+    userId: defaultOwnerId(),
     shopName: 'Dukaan Store',
     distanceKm: null,
     catalogItemCount: dukanCatalog.getAll().length,

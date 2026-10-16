@@ -67,6 +67,8 @@ export interface Order {
   status: OrderStatus;
   timestamp: string; // ISO String
   customerJid?: string;
+  /** Owning account (Supabase user id). Absent on ownerless/legacy orders. */
+  userId?: string;
 }
 
 export interface UnityDeal {

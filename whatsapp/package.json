@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "terminal": "node ../scripts/terminal_chat.js"
+    "terminal": "node ../scripts/terminal_chat.js",
+    "test": "node test_order_ownership.js && node test_shop_owner_stamping.js && node test_order_engine.js && node test_trigger_gate.js"
   },
   "keywords": [],
   "author": "",

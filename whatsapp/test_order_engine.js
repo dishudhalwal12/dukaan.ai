@@ -1,3 +1,4 @@
+import './test_setup_orders_file.js';
 import assert from 'assert';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';

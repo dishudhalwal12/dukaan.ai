@@ -9,7 +9,7 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
-import { dukanOrders } from './dukanOrders.js';
+import { dukanOrders, selectOrders } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
@@ -43,6 +43,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Erase all previous chatbot memory & carts on server start/restart
 resetAllContext();
+
+// The bot stamps each order with the owner of the shop that fulfils it, so it
+// reaches exactly one account. Until the shop registry is wired that owner is
+// DUKAN_DEFAULT_OWNER_ID; without any owner source the bot's orders reach
+// nobody. Fail loud rather than let orders vanish silently.
+const SHOPS_FILE = path.resolve(__dirname, 'store', 'shops.json');
+if (!process.env.DUKAN_DEFAULT_OWNER_ID && !fs.existsSync(SHOPS_FILE)) {
+  console.warn(
+    '\n⚠️  No order owner configured (DUKAN_DEFAULT_OWNER_ID unset, no store/shops.json).\n' +
+    "    Bot-created orders will have no owner and will NOT appear in any shopkeeper's app.\n" +
+    '    Set DUKAN_DEFAULT_OWNER_ID in whatsapp/.env to the merchant\'s Supabase user id\n' +
+    '    (Supabase → Authentication → Users) to route orders to that account.\n'
+  );
+}
 
 // State variables
 let sock = null;
@@ -880,14 +894,15 @@ app.delete('/api/dukan/catalog/:id', (req, res) => {
   res.json({ success: ok });
 });
 
-// Get Orders
+// Get Orders — scoped to the requesting account. `?scope=all` is the operator
+// console's explicit cross-shop view; an unowned/unidentified request gets [].
 app.get('/api/dukan/orders', (req, res) => {
-  res.json({ orders: dukanOrders.getAll() });
+  res.json({ orders: selectOrders(req.query) });
 });
 
 // Get Dukan Stats
 app.get('/api/dukan/stats', (req, res) => {
-  const all = dukanOrders.getAll();
+  const all = selectOrders(req.query);
   const pending = all.filter(o => o.status === 'PENDING').length;
   const accepted = all.filter(o => o.status === 'ACCEPTED' || o.status === 'PREPARING' || o.status === 'OUT_FOR_DELIVERY').length;
   const delivered = all.filter(o => o.status === 'DELIVERED').length;
