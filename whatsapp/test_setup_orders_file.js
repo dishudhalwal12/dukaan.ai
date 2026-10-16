@@ -26,3 +26,10 @@ process.env.SUPABASE_SERVICE_KEY = '';
 process.env.GROQ_API_KEY = '';
 process.env.OPENROUTER_API_KEY = '';
 process.env.LLM_BASE_URL = '';
+
+// The delivery radius is a policy knob a live .env may widen (ours sets 15 km).
+// The pipeline tests assert against the 5 km default, so a widened local radius
+// flips them red here while CI — a fresh checkout with no .env — stays green.
+// Pin the default the tests were written against. (test_shop_matching saves and
+// restores this value around its own override, so pinning is safe.)
+process.env.DUKAN_MAX_DELIVERY_KM = '5';
