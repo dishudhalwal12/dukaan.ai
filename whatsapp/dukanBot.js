@@ -812,13 +812,16 @@ export function executeModelActions(actions, jid, pushName, phone, locationData,
 }
 
 /**
- * Items the reply TALKS about while the served shop does not stock them.
+ * Items a reply names that the served shop does not stock, drawn from the catalog
+ * this process knows (the shared catalogue file).
  *
  * The gate only ever sees items the model tried to ADD, so a text-only model can
  * simply SAY it has something — the reported "I have *Lifeboy soap* in stock at
  * ₹30. Would you like to add it?" — and no tag means nothing corrects it. This
- * closes that hole: any catalog name that appears verbatim in the reply and is not
- * on the shop's list is treated as an unavailable claim.
+ * catches that when the named item is one this process's catalog knows about: the
+ * global-catalog leak that caused the report. It cannot know an invented brand it
+ * has never seen, so the prompt's STORE CATALOG rules remain the first line of
+ * defence, and this is the backstop.
  *
  * A name is skipped when a stocked name contains it (or it contains a stocked
  * name): those are variants of the same product, not a claim about another one.
@@ -843,6 +846,22 @@ export function unstockedMentions(narrative, catalog = []) {
 }
 
 /**
+ * The words that mean "the shop stocks this": each item's full name and its first
+ * word, so a reply saying "Tata Salt" still matches a stocked
+ * "Tata Salt Vaccum Evaporated (1kg)".
+ */
+function stockedWords(catalog) {
+  const words = new Set();
+  for (const p of catalog || []) {
+    const name = String(p?.name || '').toLowerCase().trim();
+    if (!name) continue;
+    words.add(name);
+    words.add(name.split(/\s+/)[0]);
+  }
+  return [...words];
+}
+
+/**
  * Rebuilds the customer-facing narrative around what the gate actually did.
  *
  * The model's own words can claim it added — or simply says it has — something the
@@ -852,8 +871,12 @@ export function unstockedMentions(narrative, catalog = []) {
  *  - an ambiguous match becomes one concrete either/or question;
  *  - a dropped or merely-mentioned unstocked item's claim is removed and the
  *    customer is told.
+ *
+ * `catalog` is the served shop's list; it is what tells a sentence that is merely
+ * phrased like an offer of the missing item ("would you like to add it?") from one
+ * that offers something the shop really has ("we have Tata Salt, want it?").
  */
-export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [], unstocked = [] } = {}) {
+export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [], unstocked = [], catalog = [] } = {}) {
   if (clarifications.length > 0) {
     const options = clarifications
       .flatMap((c) => c.options)
@@ -872,23 +895,31 @@ export function composeGatedNarrative(narrative, { unavailable = [], clarificati
 
   if (missing.length > 0) {
     const names = missing.map((n) => n.toLowerCase());
-    // Drop any sentence of the model's prose that claims a missing item, and any
-    // sentence that dangles off such a claim ("Would you like to add it to your
-    // cart?" back-refers to the item the previous sentence claimed). What remains
-    // is the model's prose about things the shop really has, plus the note below.
+    // A sentence is dropped when it claims a missing item, or when it refers back
+    // to such a claim ("would you like to add it?") and names nothing the shop
+    // actually stocks. That second condition is what keeps a true offer like
+    // "we have Tata Salt, would you like to add it?" from dying with the claim it
+    // happened to follow.
+    const stockWords = stockedWords(catalog);
+    const namesStocked = (line) => stockWords.some((w) => line.includes(w));
     const BACK_REFERENCE = /\b(it|that|this|these|those|them)\b/i;
     const OFFER_VERB = /\b(add|order|get|pack|include|buy|want|like)\b/i;
-    out = out
-      .split(/\n|(?<=[.!?])\s+/)
-      .filter((line) => {
-        const lower = line.toLowerCase();
-        if (names.some((n) => lower.includes(n))) return false;
-        if (BACK_REFERENCE.test(lower) && OFFER_VERB.test(lower)) return false;
-        return true;
-      })
-      .join('\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+
+    const kept = [];
+    let droppedPrevious = false;
+    for (const line of out.split(/\n|(?<=[.!?])\s+/)) {
+      const lower = line.toLowerCase();
+      const claimsMissing = names.some((n) => lower.includes(n));
+      const danglesFromMissing =
+        droppedPrevious && BACK_REFERENCE.test(lower) && OFFER_VERB.test(lower) && !namesStocked(lower);
+      if (claimsMissing || danglesFromMissing) {
+        droppedPrevious = true;
+        continue;
+      }
+      droppedPrevious = false;
+      kept.push(line);
+    }
+    out = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
     const list = missing.join(', ');
     const note = `Sorry, this store does not have: ${list}. Anything else?`;
@@ -1201,7 +1232,12 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   // have claimed an item in prose without emitting any tag: rebuild the prose so
   // the reply never claims something the shop does not stock.
   const unstocked = unstockedMentions(narrative, catalogForCustomer(jid));
-  narrative = composeGatedNarrative(narrative, { unavailable, clarifications, unstocked });
+  narrative = composeGatedNarrative(narrative, {
+    unavailable,
+    clarifications,
+    unstocked,
+    catalog: catalogForCustomer(jid),
+  });
 
   // Append the ONE authoritative cart block, built from the real cart state.
   let reply = narrative;

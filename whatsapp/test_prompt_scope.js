@@ -124,12 +124,23 @@ console.log('✓ 5: un-tagged claims are flagged, stocked items are not');
 // ── 6: the corrected reply drops the claim and says why ─────────────────────
 const corrected = bot.composeGatedNarrative(
   'I have *Lifeboy soap* in stock at ₹30. Would you like to add it to your cart?',
-  { unstocked: [lifeboy] }
+  { unstocked: [lifeboy], catalog: SHOP_CATALOG }
 );
 assert.ok(/does not have/i.test(corrected), 'the customer is told the shop does not have it');
 assert.ok(!/would you like to add/i.test(corrected), 'the offer is gone');
 console.log('✓ 6: the reply is rebuilt from the real stock list');
 
+// ── 7: a correct sentence about a STOCKED item survives the correction ──────
+// Dropping the claim is not a licence to drop the rest: "we have Tata Salt,
+// would you like to add it?" is a true offer and must reach the customer.
+const crossSell = bot.composeGatedNarrative(
+  'We do not have Colgate. We have Tata Salt, would you like to add it?',
+  { unstocked: [{ name: 'Colgate' }], catalog: SHOP_CATALOG }
+);
+assert.ok(/tata salt/i.test(crossSell), 'the offer of a stocked item survives');
+assert.ok(/does not have: Colgate/i.test(crossSell), 'the missing item is still named');
+console.log('✓ 7: a sentence about a stocked item is never dropped with the claim');
+
 console.log('\n========================================');
-console.log('🎉 ALL 6 PROMPT SCOPE TESTS PASSED 🎉');
+console.log('🎉 ALL 7 PROMPT SCOPE TESTS PASSED 🎉');
 console.log('========================================');
