@@ -269,6 +269,14 @@ ok('Test 21: reconcileMissedActions settles quantity instead of doubling it', ()
   assert.ok(maggi, 'catalog must contain Maggi for this test');
 
   const jid = JID('reconcile-double');
+  // The reconciler searches the SERVED shop's catalog (never the global one), so
+  // connect the local shop — exactly as Test 24 does.
+  activeShops.set(jid, {
+    shopId: 'local',
+    shopName: 'Dukaan Store',
+    userId: 'dev-owner',
+    catalog: dukanCatalog.getAll(),
+  });
   customerCarts.set(jid, {
     items: [{ id: maggi.id, name: maggi.name, price: maggi.price, unit: maggi.unit, quantity: 2, total: maggi.price * 2 }],
     totalAmount: maggi.price * 2,
@@ -300,6 +308,7 @@ ok('Test 21: reconcileMissedActions settles quantity instead of doubling it', ()
   );
 
   customerCarts.delete(jid);
+  activeShops.delete(jid);
 });
 
 // Test 22: a headless receipt line the model wrote is dropped too

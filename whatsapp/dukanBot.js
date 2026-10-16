@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { dukanCatalog, resolveCatalogItem } from './dukanCatalog.js';
+import { dukanCatalog, resolveCatalogItem, searchInCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
 import { matchNearestShop, loadShops } from './dukanShops.js';
 import { registryStatus, loadShopCatalog } from './dukanCloud.js';
@@ -491,10 +491,45 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
   return { reply: cleanReply, newOrder };
 }
 
+// Above this many items the catalog is summarised (matching items + categories)
+// instead of inlined, to keep the prompt small. A merchant catalog is normally
+// far below it, so the model sees the full, authoritative list.
+const CATALOG_INLINE_LIMIT = 40;
+
 /**
- * Constructs the dynamic, intelligent system prompt with inventory and cart context
+ * Renders the authoritative item list for the prompt.
+ *
+ * This is the ONLY place a prompt may get items from: `callAiEngine` passes the
+ * served shop's catalog. The global catalog used to leak in here, so the model was
+ * shown (and confidently offered) items the serving shop does not stock — the
+ * reported "I have Lifeboy soap at ₹30 … sorry, this store does not have it".
  */
-function buildDynamicSystemPrompt(customerName, cart, matchedProducts = [], lastOffered = [], userText = '') {
+function renderStoreCatalog(catalog, userText) {
+  if (!Array.isArray(catalog) || catalog.length === 0) {
+    return 'No store is connected to this customer yet, so there is nothing to order.';
+  }
+
+  const line = (p) => `- ${p.name} (${p.unit || 'unit'}) – ₹${p.price}`;
+
+  if (catalog.length <= CATALOG_INLINE_LIMIT) {
+    return catalog.map(line).join('\n');
+  }
+
+  const categories = [...new Set(catalog.map(p => p.category).filter(Boolean))];
+  const matches = searchInCatalog(catalog, userText).slice(0, 10);
+  return [
+    `This store stocks ${catalog.length} items across: ${categories.join(', ')}.`,
+    matches.length > 0
+      ? 'Items matching this request:\n' + matches.map(line).join('\n')
+      : 'Nothing in this store matches the request.'
+  ].join('\n');
+}
+
+/**
+ * Constructs the dynamic system prompt: the store's own catalog + the live cart.
+ * Both are inputs; the prompt never sources either from anywhere else.
+ */
+export function buildDynamicSystemPrompt(customerName, cart, catalog = [], userText = '') {
 
   let cartSummary = 'Empty';
   if (cart && Array.isArray(cart.items) && cart.items.length > 0) {
@@ -502,13 +537,7 @@ function buildDynamicSystemPrompt(customerName, cart, matchedProducts = [], last
     cartSummary = `${lines}\n*Total:* ₹${cart.totalAmount}\n*Delivery Address:* ${cart.deliveryAddress || 'Not set yet'}`;
   }
 
-  let inventoryContext = '';
-  const isMiniList = /\b(mini[- ]list|from this list only|from this mini[- ]list)\b/i.test(userText);
-  if (!isMiniList && matchedProducts.length > 0) {
-    inventoryContext = `\nRELEVANT IN-STOCK STORE ITEMS:\n` + matchedProducts.map((p, idx) => `${idx + 1}. ${p.name} (${p.unit}) – ₹${p.price}`).join('\n');
-  } else if (!isMiniList && lastOffered && lastOffered.length > 0) {
-    inventoryContext = `\nRECENTLY OFFERED ITEMS:\n` + lastOffered.map((p, idx) => `${idx + 1}. ${p.name} (${p.unit}) – ₹${p.price}`).join('\n');
-  }
+  const storeCatalog = renderStoreCatalog(catalog, userText);
 
   return `You are "Dukaan", the WhatsApp ordering assistant for a neighbourhood kirana store in Jaipur, India. Customer: ${customerName || 'Customer'}.
 
@@ -519,18 +548,20 @@ REPLY STYLE (this goes to a phone screen):
 - At most ONE emoji per reply, and only when it adds meaning (📍 location, ✅ done). No emoji strings.
 - Short lines; "•" bullets for lists; *bold* product names only.
 
+STORE CATALOG — the ONLY items this store sells:
+${storeCatalog}
+
 HARD RULES:
-- The CART block below is the single source of truth. NEVER print a cart, item list, subtotal or total yourself — the system appends that. Never say the cart is empty and never estimate money.
-- Use only prices from CART or IN STOCK. Never invent a product or a price. If the variant is unclear, ask ONE short question.
-- Item not in the catalog: say it is not available in one line, and offer a listed alternative only if one exists.
-- We sell packaged groceries, staples, dairy, snacks, beverages, spices, personal care and household cleaning. No cooked food, no fresh fruit or vegetables, no alcohol or tobacco. For a cooked dish, suggest the packaged ingredients we do stock.
+- Sell ONLY what STORE CATALOG lists. If an item is not printed there, this store does not have it: say so in one line and offer a listed alternative only if one genuinely exists. Never answer that you will "check", "look for", "find out" or "order it in".
+- Never name a product, brand, size or price that is not printed in STORE CATALOG — not even one you know from other shops. A price you did not read there does not exist.
+- The CART block below is the single source of truth for what is being ordered. NEVER print a cart, item list, subtotal or total yourself — the system appends that. Never say the cart is empty and never estimate money.
+- If the customer's wording could mean two different listings in STORE CATALOG, ask ONE short question.
 - Their name comes from their WhatsApp profile; if asked, say exactly that and that we only use this chat to arrange delivery.
 
-INDIAN PHRASING: "14 rs wali maggie" = the ₹14 pack, qty 1 (NOT 14 packs). "2 kar do" = set quantity to 2. "aur ek doodh" = add one more milk. "ye hata do" = remove it. A bare number like "4" = the 4th item you last showed.
+INDIAN PHRASING: "14 rs wali" = the ₹14 listing, qty 1 (NOT 14 packs). "2 kar do" = set quantity to 2. "aur ek doodh" = add one more milk. "ye hata do" = remove it. A bare number like "4" = the 4th item you last showed.
 
 CART:
 ${cartSummary}
-${inventoryContext}
 
 CART ACTIONS — this is the ONLY way the cart actually changes. The tags are machine-read and never shown to the customer, so they cost you nothing:
 End EVERY reply that changes the cart with the matching tag. If you say you added or changed something and omit the tag, the change does NOT happen and the customer is misled. That is the worst possible reply.
@@ -542,9 +573,9 @@ End EVERY reply that changes the cart with the matching tag. If you say you adde
 - Place the order — only after they explicitly confirm: [ACTION: CONFIRM_ORDER]
 - Cancel the order: [ACTION: CANCEL_ORDER]
 
-Never re-add an item already listed in CART — that is what UPDATE_QTY is for. When the customer states a quantity ("2 maggi", "make it 3") for an item that is ALREADY in CART, that number is the FINAL quantity: use [ACTION: UPDATE_QTY ... qty=2], never add on top. Add no tag for questions, prices or browsing. Never write a tag for something you are not actually doing.
+Never re-add an item already listed in CART — that is what UPDATE_QTY is for. When the customer states a quantity ("2 of it", "make it 3") for an item that is ALREADY in CART, that number is the FINAL quantity: use [ACTION: UPDATE_QTY ... qty=2], never add on top. Add no tag for questions, prices or browsing. Never write a tag for something you are not actually doing.
 
-Example — customer: "2 amul milk" → reply "Adding 2 *Amul Taaza Toned Milk (500ml)*." then on a new line put: [ACTION: ADD_TO_CART name="Amul Taaza Toned Milk (500ml)" qty=2]`;
+Example — the customer asks for two of a listing in STORE CATALOG → reply "Adding 2 *<that listing's exact name>*." then on a new line put: [ACTION: ADD_TO_CART name="<that listing's exact name>" qty=2]`;
 }
 
 /**
@@ -760,15 +791,48 @@ export function executeModelActions(actions, jid, pushName, phone, locationData,
 }
 
 /**
+ * Items the reply TALKS about while the served shop does not stock them.
+ *
+ * The gate only ever sees items the model tried to ADD, so a text-only model can
+ * simply SAY it has something — the reported "I have *Lifeboy soap* in stock at
+ * ₹30. Would you like to add it?" — and no tag means nothing corrects it. This
+ * closes that hole: any catalog name that appears verbatim in the reply and is not
+ * on the shop's list is treated as an unavailable claim.
+ *
+ * A name is skipped when a stocked name contains it (or it contains a stocked
+ * name): those are variants of the same product, not a claim about another one.
+ * That is what keeps "Maggi 2-Minute Noodles" (a longer name in the global list)
+ * from flagging the shop's own "Maggi 2-Minute Noodles (70g)".
+ */
+export function unstockedMentions(narrative, catalog = []) {
+  const text = String(narrative || '').toLowerCase();
+  if (!text || !Array.isArray(catalog) || catalog.length === 0) return [];
+
+  const stocked = catalog.map(p => String(p.name || '').toLowerCase().trim()).filter(Boolean);
+  const covered = (name) => stocked.some(s => s === name || s.includes(name) || name.includes(s));
+
+  return dukanCatalog.getAll().filter(p => {
+    const name = String(p.name || '').toLowerCase().trim();
+    // Too short to be a reliable claim ("Salt", "Eggs") — a bare word like that in
+    // prose is far more likely to be phrasing than a named product.
+    if (name.length < 6) return false;
+    if (!text.includes(name)) return false;
+    return !covered(name);
+  });
+}
+
+/**
  * Rebuilds the customer-facing narrative around what the gate actually did.
  *
- * The model's own words can claim it added something the shop does not stock, or
- * silently pick one of several similar products. The cart footer is appended by
- * the caller from the REAL cart state, so here we only fix the prose:
+ * The model's own words can claim it added — or simply says it has — something the
+ * shop does not stock, or silently pick one of several similar products. The cart
+ * footer is appended by the caller from the REAL cart state, so here we only fix
+ * the prose:
  *  - an ambiguous match becomes one concrete either/or question;
- *  - a dropped item's claim is removed and the customer is told.
+ *  - a dropped or merely-mentioned unstocked item's claim is removed and the
+ *    customer is told.
  */
-export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [] } = {}) {
+export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [], unstocked = [] } = {}) {
   if (clarifications.length > 0) {
     const options = clarifications
       .flatMap((c) => c.options)
@@ -778,19 +842,34 @@ export function composeGatedNarrative(narrative, { unavailable = [], clarificati
     return `Which one did you mean — ${options}? Reply with the exact item and I will add it.`;
   }
 
+  const missing = [
+    ...unavailable.map((n) => String(n)),
+    ...unstocked.map((p) => String((p && p.name) || p)),
+  ].filter(Boolean);
+
   let out = String(narrative || '').trim();
 
-  if (unavailable.length > 0) {
-    const names = unavailable.map((n) => String(n).toLowerCase());
-    // Drop any sentence of the model's prose that claims the unavailable item.
+  if (missing.length > 0) {
+    const names = missing.map((n) => n.toLowerCase());
+    // Drop any sentence of the model's prose that claims a missing item, and any
+    // sentence that dangles off such a claim ("Would you like to add it to your
+    // cart?" back-refers to the item the previous sentence claimed). What remains
+    // is the model's prose about things the shop really has, plus the note below.
+    const BACK_REFERENCE = /\b(it|that|this|these|those|them)\b/i;
+    const OFFER_VERB = /\b(add|order|get|pack|include|buy|want|like)\b/i;
     out = out
       .split(/\n|(?<=[.!?])\s+/)
-      .filter((line) => !names.some((n) => line.toLowerCase().includes(n)))
+      .filter((line) => {
+        const lower = line.toLowerCase();
+        if (names.some((n) => lower.includes(n))) return false;
+        if (BACK_REFERENCE.test(lower) && OFFER_VERB.test(lower)) return false;
+        return true;
+      })
       .join('\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
 
-    const list = unavailable.join(', ');
+    const list = missing.join(', ');
     const note = `Sorry, this store does not have: ${list}. Anything else?`;
     out = out ? `${out}\n\n${note}` : note;
   }
@@ -869,7 +948,7 @@ export function reconcileMissedActions(userText, narrative, actions, jid, pushNa
     // variants of the same product ("Maggi 70g", "Maggi 4-pack") share keywords
     // and collapse into a single, best-ranked match.
     const picked = [];
-    for (const product of dukanCatalog.search(userText)) {
+    for (const product of searchInCatalog(catalogForCustomer(jid), userText)) {
       if (!mentionsProduct(userText, product)) continue;
       const keys = [...(product.keywords || []), product.name].map(k => String(k).toLowerCase());
       const alreadyCovered = picked.some(p =>
@@ -934,11 +1013,11 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   const cart = customerCarts.get(jid) || null;
   const history = conversationHistories.get(jid) || [];
   
-  const isMiniListPrompt = /\b(mini[- ]list|from this list only|from this mini[- ]list)\b/i.test(userText);
-  const matchedProducts = !isMiniListPrompt ? dukanCatalog.search(userText).slice(0, 6) : [];
-  const lastOffered = (lastOfferedItems.get(jid) || []).slice(0, 4);
+  // The ONLY item source: the served shop's catalog. It used to be the global
+  // catalog, which showed the model items the shop does not stock.
+  const catalog = catalogForCustomer(jid);
 
-  const systemPrompt = buildDynamicSystemPrompt(customerName, cart, matchedProducts, lastOffered, userText);
+  const systemPrompt = buildDynamicSystemPrompt(customerName, cart, catalog, userText);
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -1097,9 +1176,11 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
     narrative = cartUpdated ? 'Added to your cart.' : 'Got it — what else do you need?';
   }
 
-  // The gate may have dropped items or found an ambiguous one: rebuild the prose
-  // so the reply never claims something the shop does not stock.
-  narrative = composeGatedNarrative(narrative, { unavailable, clarifications });
+  // The gate may have dropped items or found an ambiguous one, and the model may
+  // have claimed an item in prose without emitting any tag: rebuild the prose so
+  // the reply never claims something the shop does not stock.
+  const unstocked = unstockedMentions(narrative, catalogForCustomer(jid));
+  narrative = composeGatedNarrative(narrative, { unavailable, clarifications, unstocked });
 
   // Append the ONE authoritative cart block, built from the real cart state.
   let reply = narrative;
