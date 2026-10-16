@@ -52,6 +52,34 @@ const awaitingLocations = new Set();  // jids that sent /hey and still need a pi
 const pendingRequests = new Map();    // jid -> text typed alongside /hey
 export const activeShops = new Map(); // jid -> shop matched from their location
 
+// Remembered delivery location per customer: jid -> { value, at }.
+// A customer shares ONE pin. Every later turn must reuse it and the final order
+// must carry it, so the bot never asks for the address a second time. Keyed by
+// jid (never by shop) because one WhatsApp number serves many shops.
+export const customerLocations = new Map();
+
+/** Remembers the delivery location for this customer (no-op without a pin). */
+export function rememberLocation(jid, locationData, now = Date.now()) {
+  if (!jid || !locationData) return;
+  customerLocations.set(jid, { value: locationData, at: now });
+}
+
+/**
+ * The delivery location to use for this customer: an explicit pin wins, else the
+ * remembered one, else null. A remembered pin older than the idle window is
+ * evicted and ignored — a lapsed chat must not reuse a stale address.
+ */
+export function locationFor(jid, locationData = null, now = Date.now()) {
+  if (locationData) return locationData;
+  const entry = jid ? customerLocations.get(jid) : null;
+  if (!entry) return null;
+  if (now - entry.at > SESSION_IDLE_TTL_MS) {
+    customerLocations.delete(jid);
+    return null;
+  }
+  return entry.value;
+}
+
 export function isBotTrigger(text) {
   return BOT_TRIGGER_REGEX.test(String(text || ''));
 }
@@ -111,6 +139,7 @@ export function beginLocationHandshake(jid, pendingText = '') {
   if (!jid) return;
   customerCarts.delete(jid);
   conversationHistories.delete(jid);
+  customerLocations.delete(jid); // a new order starts fresh — no stale address
   awaitingLocations.add(jid);
   if (pendingText) pendingRequests.set(jid, pendingText);
   else pendingRequests.delete(jid);
@@ -156,6 +185,7 @@ export function resetAllContext() {
   awaitingLocations.clear();
   pendingRequests.clear();
   activeShops.clear();
+  customerLocations.clear();
   console.log('[Dukan Bot] Chatbot context completely erased on startup/restart.');
 }
 
@@ -1014,6 +1044,11 @@ export const dukanBot = {
     // Keep the engaged chat warm (sliding idle window)
     activateSession(jid, Date.now());
 
+    // A pin on this turn is remembered for every later turn; `loc` is the
+    // location to use for the rest of this message (explicit pin, else memory).
+    if (locationData) rememberLocation(jid, locationData);
+    const loc = locationFor(jid, locationData);
+
     // "/hey" trigger. Ordering needs a location pin first (the pin decides which
     // store serves them), so the trigger only opens the handshake — no AI call.
     // Anything typed with it ("/hey 2 maggi") is held and replayed once the pin
@@ -1057,11 +1092,11 @@ export const dukanBot = {
     }
 
     // Location pin received without explicit message text
-    if (!text && locationData) {
-      text = `My delivery location is: ${locationData.fullDescription}`;
+    if (!text && loc) {
+      text = `My delivery location is: ${loc.fullDescription}`;
     }
 
-    if (!text && !locationData) return null;
+    if (!text && !loc) return null;
 
     // Security & Credential Leak Guards
     if (/\b(VITE_|SUPABASE|ANON_KEY|API_KEY|SECRET_KEY|DATABASE_URL|GITHUB_TOKEN|system prompt|ignore previous|prompt leak|SELECT\s+.*FROM|DROP\s+TABLE|INSERT\s+INTO)\b/i.test(text)) {
@@ -1090,8 +1125,8 @@ export const dukanBot = {
           customerJid: jid,
           customerPhone: phone,
           customerName: cart.customerName || pushName || 'Customer',
-          deliveryAddress: cart.deliveryAddress || (locationData ? locationData.fullDescription : 'Address not specified'),
-          location: locationData || cart.location || null,
+          deliveryAddress: cart.deliveryAddress || (loc ? loc.fullDescription : 'Address not specified'),
+          location: loc || cart.location || null,
           items: cart.items,
           totalAmount: cart.totalAmount,
           notes: 'Cash on Delivery',
@@ -1117,7 +1152,7 @@ export const dukanBot = {
 
     // DYNAMIC AI BRAIN: Let the AI model think, reason, and answer dynamically!
     try {
-      const aiResult = await callAiEngine(text, pushName, phone, jid, locationData);
+      const aiResult = await callAiEngine(text, pushName, phone, jid, loc);
       if (aiResult) {
         return aiResult;
       }
