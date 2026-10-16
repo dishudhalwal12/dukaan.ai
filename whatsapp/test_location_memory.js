@@ -6,6 +6,7 @@ import path from 'path';
 // Isolate the order store and run in dev mode so a pin matches the local shop.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dukan-loc-'));
 process.env.DUKAN_ORDERS_FILE = path.join(tmpDir, 'orders.json');
+process.env.DUKAN_CATALOG_FILE = path.join(tmpDir, 'catalog.json');
 process.env.DUKAN_DEFAULT_OWNER_ID = 'owner-loc';
 
 const { dukanOrders } = await import('./dukanOrders.js');

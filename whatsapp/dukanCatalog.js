@@ -5,7 +5,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.resolve(__dirname, 'store');
-const CATALOG_FILE = path.join(DATA_DIR, 'catalog.json');
+// Overridable so tests are hermetic: they point this at a throwaway file and get
+// the default catalog, instead of depending on whatever the developer's
+// store/catalog.json happens to contain.
+const CATALOG_FILE = process.env.DUKAN_CATALOG_FILE || path.join(DATA_DIR, 'catalog.json');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });

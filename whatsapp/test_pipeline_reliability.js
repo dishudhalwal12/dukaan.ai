@@ -26,6 +26,7 @@ import path from 'path';
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dukan-rel-'));
 process.env.DUKAN_ORDERS_FILE = path.join(tmpDir, 'orders.json');
+process.env.DUKAN_CATALOG_FILE = path.join(tmpDir, 'catalog.json');
 
 const { dukanOrders } = await import('./dukanOrders.js');
 const bot = await import('./dukanBot.js');

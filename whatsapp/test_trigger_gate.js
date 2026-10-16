@@ -1,3 +1,4 @@
+import './test_setup_orders_file.js'; // isolate store files + use the default catalog
 import assert from 'assert';
 
 // Dev-mode owner: with no Supabase registry wired, the single local fallback

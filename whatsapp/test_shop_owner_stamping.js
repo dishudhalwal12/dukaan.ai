@@ -6,6 +6,7 @@ import path from 'path';
 // Isolate the order store AND configure the single-shop fallback owner.
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dukan-bot-owner-'));
 process.env.DUKAN_ORDERS_FILE = path.join(tmpDir, 'orders.json');
+process.env.DUKAN_CATALOG_FILE = path.join(tmpDir, 'catalog.json');
 process.env.DUKAN_DEFAULT_OWNER_ID = 'owner-42';
 
 const { dukanOrders } = await import('./dukanOrders.js');
