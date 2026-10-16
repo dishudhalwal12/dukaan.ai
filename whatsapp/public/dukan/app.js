@@ -222,7 +222,7 @@ btnRejectOrder.addEventListener('click', async () => {
 // Load Orders
 async function loadOrders() {
   try {
-    const res = await fetch('/api/dukan/orders');
+    const res = await fetch('/api/dukan/orders?scope=all');
     const data = await res.json();
     state.orders = data.orders || [];
     renderOrders();
@@ -371,7 +371,7 @@ function updateOrderInList(order) {
 // Load Stats
 async function loadStats() {
   try {
-    const res = await fetch('/api/dukan/stats');
+    const res = await fetch('/api/dukan/stats?scope=all');
     const stats = await res.json();
     statPendingCount.textContent = stats.pending || 0;
     statActiveCount.textContent = stats.accepted || 0;

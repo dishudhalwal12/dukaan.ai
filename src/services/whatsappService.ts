@@ -173,11 +173,14 @@ export const whatsappService = {
   },
 
   /**
-   * Fetches all real customer orders stored in the backend
+   * Fetches the customer orders stored in the backend for ONE account.
+   * The backend is shared across shops, so the owner is always named; an
+   * unnamed request is served nothing rather than every shop's orders.
    */
-  async fetchOrders(): Promise<{ orders: any[] }> {
+  async fetchOrders(userId?: string | null): Promise<{ orders: any[] }> {
     try {
-      const res = await fetch(getApiUrl('/api/dukan/orders'));
+      const qs = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+      const res = await fetch(getApiUrl(`/api/dukan/orders${qs}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {

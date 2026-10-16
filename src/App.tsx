@@ -28,6 +28,7 @@ import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
 import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboardingStatus.ts';
 import { PROFILE_NAME_KEY, resolveGreetingName } from './utils/greetingName.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
+import { orderBelongsTo, ownedOrdersOnly } from './utils/orderOwnership.ts';
 
 const getInitialScreen = (): Screen => {
   if (typeof window !== 'undefined') {
@@ -428,14 +429,23 @@ const AppContent: React.FC = () => {
         longitude,
       },
       customerJid: raw.customerJid || (customerPhone ? `${customerPhone}@s.whatsapp.net` : undefined),
+      userId: raw.userId ? String(raw.userId) : undefined,
     };
   }, []);
 
-  // Sync real orders from WhatsApp backend on mount
+  // Sync real orders from WhatsApp backend on mount. The backend is shared by
+  // many shops, so we ask for OUR account's orders only and, as defence in
+  // depth, drop anything the response returns that isn't explicitly ours.
   useEffect(() => {
-    whatsappService.fetchOrders().then(res => {
+    const myId = currentUserRef.current?.id;
+    if (!myId) return; // No account → no backend orders (guests stay local).
+
+    whatsappService.fetchOrders(myId).then(res => {
       if (res?.orders && res.orders.length > 0) {
-        const backendOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+        const backendOrders: Order[] = ownedOrdersOnly(
+          res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
+          myId,
+        );
         setOrders(prev => {
           const prevMap = new Map(prev.map(p => [p.id, p]));
           const merged: Order[] = [];
@@ -472,7 +482,7 @@ const AppContent: React.FC = () => {
     }).catch(err => {
       console.warn('[Dukan] Failed to fetch backend orders on mount:', err);
     });
-  }, [normalizeIncomingOrder]);
+  }, [normalizeIncomingOrder, currentUser?.id]);
 
   // Real-time WhatsApp Baileys SSE listener + 2.5s robust polling fallback
   useEffect(() => {
@@ -480,6 +490,10 @@ const AppContent: React.FC = () => {
       if (event.type === 'dukan_new_order' && event.order) {
         const incomingOrder = normalizeIncomingOrder(event.order);
         if (!incomingOrder.id) return;
+
+        // Shared backend: an event may concern another shop. Ignore anything
+        // that isn't explicitly owned by the signed-in account.
+        if (!orderBelongsTo(incomingOrder, currentUserRef.current?.id)) return;
 
         // Dedup: already alerted/seen
         if (seenOrderIds.current.has(incomingOrder.id)) return;
@@ -508,7 +522,7 @@ const AppContent: React.FC = () => {
         });
       } else if (event.type === 'dukan_order_updated' && event.order) {
         const updated = normalizeIncomingOrder(event.order);
-        if (updated.id) {
+        if (updated.id && orderBelongsTo(updated, currentUserRef.current?.id)) {
           setOrders(prev => prev.map(o => {
             if (o.id !== updated.id) return o;
             const effectiveStatus = (o.status === OrderStatus.COMPLETED && updated.status !== OrderStatus.COMPLETED)
@@ -528,9 +542,15 @@ const AppContent: React.FC = () => {
 
     // 2.5s polling fallback to ensure 100% delivery guarantee
     const pollInterval = setInterval(() => {
-      whatsappService.fetchOrders().then(res => {
+      const myId = currentUserRef.current?.id;
+      if (!myId) return; // No account → nothing to reconcile.
+
+      whatsappService.fetchOrders(myId).then(res => {
         if (!res?.orders || !Array.isArray(res.orders)) return;
-        const freshOrders: Order[] = res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id));
+        const freshOrders: Order[] = ownedOrdersOnly(
+          res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
+          myId,
+        );
 
         // The poll is a state-reconcile path only. It must NOT raise order
         // alerts: on a fresh browser it sees every pre-existing NEW order at

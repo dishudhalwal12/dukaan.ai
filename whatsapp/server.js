@@ -9,7 +9,7 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
-import { dukanOrders } from './dukanOrders.js';
+import { dukanOrders, selectOrders } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
@@ -880,14 +880,15 @@ app.delete('/api/dukan/catalog/:id', (req, res) => {
   res.json({ success: ok });
 });
 
-// Get Orders
+// Get Orders — scoped to the requesting account. `?scope=all` is the operator
+// console's explicit cross-shop view; an unowned/unidentified request gets [].
 app.get('/api/dukan/orders', (req, res) => {
-  res.json({ orders: dukanOrders.getAll() });
+  res.json({ orders: selectOrders(req.query) });
 });
 
 // Get Dukan Stats
 app.get('/api/dukan/stats', (req, res) => {
-  const all = dukanOrders.getAll();
+  const all = selectOrders(req.query);
   const pending = all.filter(o => o.status === 'PENDING').length;
   const accepted = all.filter(o => o.status === 'ACCEPTED' || o.status === 'PREPARING' || o.status === 'OUT_FOR_DELIVERY').length;
   const delivered = all.filter(o => o.status === 'DELIVERED').length;

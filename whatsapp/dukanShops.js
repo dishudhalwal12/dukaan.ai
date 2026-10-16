@@ -114,6 +114,10 @@ export function matchNearestShop(location, shops = loadShops()) {
 
   return {
     shopId: 'local',
+    // Owner of the local single shop, until the shop registry is wired. Orders
+    // with no owner are visible to no one, so this must be set for the bot's
+    // orders to reach the shopkeeper's app.
+    userId: process.env.DUKAN_DEFAULT_OWNER_ID || null,
     shopName: 'Dukaan Store',
     distanceKm: null,
     catalogItemCount: dukanCatalog.getAll().length,
