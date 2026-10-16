@@ -11,6 +11,7 @@ import { initialUnityDeals } from '../data/unityDeals.ts';
 import { useBusinessLabel } from '../hooks/useBusinessLabel.ts';
 import LocationModal from '../components/LocationModal.tsx';
 import { hasStoreLocation, saveStoreLocation } from '../utils/location.ts';
+import { saveStoreLocationToCloud } from '../services/cloudSync.ts';
 
 const CatalogHeader: React.FC = () => {
     const label = useBusinessLabel('CATALOG');
@@ -290,6 +291,10 @@ const CatalogScreen: React.FC<CatalogScreenProps> = ({ onModalStateChange }) => 
                 mode="required"
                 onCaptured={(location) => {
                     saveStoreLocation(location);
+                    // The position also belongs to the account, not just this
+                    // browser: onboarding may have been finished weeks ago, so
+                    // nothing else will send it.
+                    void saveStoreLocationToCloud(location);
                     setIsLocationModalOpen(false);
                     setProductToEdit(null);
                     setIsProductModalOpen(true);

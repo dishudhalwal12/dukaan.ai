@@ -328,18 +328,30 @@ CREATE POLICY "owner deletes own preferences" ON public.merchant_preferences
 -- security_invoker = true is NOT optional here. A view defaults to running with
 -- its DEFINER's rights, which would let any signed-in shopkeeper read every
 -- other shop's money straight through these views, bypassing RLS entirely.
+-- Money metrics exclude REJECTED and CANCELLED orders. Counting them as revenue
+-- while the same view counts them as refunds made the two columns contradict
+-- each other: a shop that cancels most orders showed inflated GMV.
 CREATE VIEW public.merchant_order_metrics
 WITH (security_invoker = true) AS
 SELECT
     o.user_id,
     count(*)                                                                AS total_orders,
-    coalesce(sum(o.total), 0)                                               AS total_gross_merchandise_value,
-    coalesce(round(avg(o.total), 2), 0)                                     AS average_order_value_aov,
-    coalesce(round(avg(jsonb_array_length(o.items)), 2), 0)                 AS average_items_per_order,
+    coalesce(sum(o.total) FILTER (WHERE o.status NOT IN ('REJECTED', 'CANCELLED')), 0)
+                                                                            AS total_gross_merchandise_value,
+    coalesce(round(avg(o.total) FILTER (WHERE o.status NOT IN ('REJECTED', 'CANCELLED')), 2), 0)
+                                                                            AS average_order_value_aov,
+    coalesce(round(avg(jsonb_array_length(o.items))
+        FILTER (WHERE o.status NOT IN ('REJECTED', 'CANCELLED')), 2), 0)    AS average_items_per_order,
     max(o.created_at)                                                       AS last_ordered_at,
+    -- Elapsed weeks from the epoch, not date_part('week', interval): that unit
+    -- is rejected for intervals before PG 18, and the whole script would fail to
+    -- apply. Everything is numeric so round(numeric, 2) resolves — a numeric
+    -- divided by a double becomes a double, and round(double, 2) does not exist.
     coalesce(round
         (count(*)::numeric
-         / greatest(date_part('week', now() - min(o.created_at)), 1), 2), 0) AS order_frequency_per_week,
+         / greatest(
+             EXTRACT(EPOCH FROM (now() - min(o.created_at)))::numeric / 604800.0,
+             1), 2), 0)                                                     AS order_frequency_per_week,
     coalesce(round
         (100.0 * count(*) FILTER (WHERE o.status IN ('REJECTED', 'CANCELLED'))
          / greatest(count(*), 1), 2), 0)                                     AS refund_rate_percentage,

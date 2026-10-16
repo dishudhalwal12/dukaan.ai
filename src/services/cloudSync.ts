@@ -2,7 +2,7 @@ import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
-import { getStoredStoreLocation } from '../utils/location.ts';
+import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
 
 /**
  * Helper to resolve the active user ID from explicit argument, Supabase session,
@@ -392,6 +392,51 @@ export const saveMerchantPreferencesToCloud = async (explicitUserId?: string): P
   } catch (error) {
     noteSyncError();
     console.warn('Failed to save merchant preferences to Supabase.', error);
+  }
+};
+
+/**
+ * Push just the store's position to the owner's profile row.
+ *
+ * Separate from saveBusinessProfileToCloud because the catalog gate can capture
+ * a position long after onboarding, when the profile row already exists and
+ * nothing else needs rewriting. Without this the coordinates would live only in
+ * the browser that captured them: a second device would find nothing to restore
+ * and would have to be standing in the shop again.
+ *
+ * An UPDATE rather than an upsert: the row may not exist yet (the owner has not
+ * finished onboarding), and an upsert would fail on the NOT NULL store_name. A
+ * no-op update is safe because the position is also in localStorage, so the next
+ * saveBusinessProfileToCloud carries it along.
+ */
+export const saveStoreLocationToCloud = async (
+  location: StoreLocation,
+  explicitUserId?: string,
+): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured()) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return;
+
+    const { error } = await supabase
+      .from('business_profiles')
+      .update({
+        store_lat: location.lat,
+        store_lng: location.lng,
+        store_location_accuracy_m: location.accuracy_m,
+        store_location_source: location.source,
+        store_location_captured_at: location.captured_at,
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (saveStoreLocationToCloud):', error.message);
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save the store location to Supabase.', error);
   }
 };
 

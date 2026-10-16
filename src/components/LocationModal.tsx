@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { captureStoreLocation, StoreLocation } from '../utils/location.ts';
 
 interface LocationModalProps {
@@ -38,6 +38,16 @@ const LocationModal: React.FC<LocationModalProps> = ({
 }) => {
   const [isLocating, setIsLocating] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+
+  // This component stays mounted while closed, so a failure from the previous
+  // attempt would still be on screen the next time it opens — before the
+  // shopkeeper has tried anything.
+  useEffect(() => {
+    if (isOpen) {
+      setFailure(null);
+      setIsLocating(false);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

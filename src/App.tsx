@@ -20,6 +20,7 @@ import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import { listenToAuthState, signOutUser, User } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
+import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
@@ -612,7 +613,12 @@ const AppContent: React.FC = () => {
 
   const handleLogout = useCallback(async () => {
     await signOutUser();
+    // The install id identifies this browser, not the account that just left, so
+    // it has to outlive the logout — otherwise every logout looks like a brand
+    // new device and fragments the device-level telemetry.
+    const installId = getInstallId();
     clearLocalStore();
+    localStorage.setItem('dukan-install-id', installId);
     setCurrentUser(null);
     currentUserRef.current = null;
     setShowAuthModal(true);
