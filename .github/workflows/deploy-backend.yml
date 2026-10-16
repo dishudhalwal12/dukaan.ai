@@ -1,0 +1,53 @@
+name: Deploy backend (Wispbyte)
+
+# The bot has no shell on the free tier, so a deploy = a power-restart: the box
+# has "Auto Update on Startup" on, so starting it pulls the branch and runs the
+# startup command (git pull -> npm ci -> node). This workflow triggers that.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   WISPBYTE_PANEL_URL   e.g. https://panel.wispbyte.com
+#   WISPBYTE_API_KEY     Account -> API Credentials -> create key
+#   WISPBYTE_SERVER_ID   the short id in the panel URL of your server
+# Without them the job warns and exits 0 — deploy then = "Restart" in the panel.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'whatsapp/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  restart:
+    name: Restart the VPS (pull + reboot the bot)
+    runs-on: ubuntu-latest
+    env:
+      PANEL_URL: ${{ secrets.WISPBYTE_PANEL_URL }}
+      API_KEY: ${{ secrets.WISPBYTE_API_KEY }}
+      SERVER_ID: ${{ secrets.WISPBYTE_SERVER_ID }}
+    steps:
+      - name: Skip when the secrets are not configured
+        if: ${{ env.API_KEY == '' || env.SERVER_ID == '' || env.PANEL_URL == '' }}
+        run: |
+          echo "::warning title=Manual step needed::WISPBYTE_* secrets are unset. Open the panel and press Restart to apply this change."
+
+      - name: Restart the server
+        if: ${{ env.API_KEY != '' && env.SERVER_ID != '' && env.PANEL_URL != '' }}
+        run: |
+          set -euo pipefail
+          # Pterodactyl client API (Wispbyte's panel is Pterodactyl-based).
+          code=$(curl -sS -o /tmp/resp.txt -w '%{http_code}' -X POST \
+            "$PANEL_URL/api/client/servers/$SERVER_ID/power" \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            -d '{"signal":"restart"}')
+          echo "HTTP $code: $(cat /tmp/resp.txt)"
+          case "$code" in
+            2*) echo "✅ restart signalled — the box is pulling the new code" ;;
+            *)  echo "::error title=Restart failed::Panel answered HTTP $code. Check the secrets, or press Restart in the panel."; exit 1 ;;
+          esac
