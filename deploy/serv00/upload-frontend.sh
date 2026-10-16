@@ -29,9 +29,13 @@ npm run build
 
 DEST="domains/$DOMAIN/public_nodejs/public"
 echo "== uploading dist/ -> $TARGET:$DEST =="
-if command -v rsync >/dev/null 2>&1; then
-  rsync -azah --info=progress2 -e "ssh -p $PORT" dist/ "$TARGET:$DEST/"
+# macOS ships openrsync, which rejects some GNU rsync flags — so try rsync with
+# a minimal flag set, and fall back to scp on any failure.
+if command -v rsync >/dev/null 2>&1 \
+   && rsync -azh -e "ssh -p $PORT" dist/ "$TARGET:$DEST/"; then
+  : # uploaded with rsync
 else
+  echo "   (rsync unavailable or failed — using scp instead)"
   ssh -p "$PORT" "$TARGET" "mkdir -p $DEST"
   scp -P "$PORT" -r dist/* "$TARGET:$DEST/"
 fi

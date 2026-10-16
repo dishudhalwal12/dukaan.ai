@@ -97,7 +97,8 @@ Serv00 names to write down as you go:
 4. Click **`advanced settings`**, then:
    - **Domain:** `<DOMAIN>` (e.g. `deku.serv00.net`)
    - **Website type:** **`Node.js`**
-   - **Node.js binary:** `node22` (or the highest available)
+   - **Node.js binary:** the **highest** available — `24`, `25` or `26`
+     (setup.sh needs Node ≥ 22.12; see Part 3)
    - **Environment:** `production`
    - Click **`add`**.
 5. Done — Serv00 creates `/usr/home/<LOGIN>/domains/<DOMAIN>/public_nodejs/`.
@@ -150,7 +151,8 @@ keep-alive cron, and restarts the site.
 
 ## 6. Part 4 — Fill in your secrets (on the server)
 
-`setup.sh` created `whatsapp/.env` with everything commented out. Open it:
+`setup.sh` created `whatsapp/.env` from the template (its two defaults —
+`LLM_BASE_URL` and `DUKAN_MAX_DELIVERY_KM=5` — are already set). Open it:
 
 ```bash
 nano ~/domains/<DOMAIN>/public_nodejs/whatsapp/.env
@@ -212,8 +214,10 @@ Then in the panel: **WWW websites → Details → SSL**, issue a free Let's Encr
 certificate for `<DOMAIN>` if it isn't already there. Reload
 **`https://<DOMAIN>`** — green padlock.
 
-> If SSL isn't ready yet, leave `sslonly off` until it is, or the site will
-> redirect loop.
+> ⚠️ **Don't skip this step.** The keep-alive cron (Part 7) pings
+> `https://<DOMAIN>/api/status`, so the 24 h idle timer only keeps resetting
+> once HTTPS works. If SSL isn't ready yet, leave `sslonly off` until it is or
+> the site will redirect loop — but come back and finish it.
 
 ---
 
@@ -239,10 +243,10 @@ add the URL to a free external pinger (e.g. **https://cron-job.org**) every
 
 ## 10. Part 8 — Link WhatsApp (scan the QR)
 
-The bot prints a QR on startup. Watch the log:
+The bot logs to stdout, which Serv00 captures in the website's log file:
 
 ```bash
-tail -f ~/domains/<DOMAIN>/public_nodejs/whatsapp/*.log 2>/dev/null || true
+tail -f ~/domains/<DOMAIN>/logs/error.log
 ```
 
 Or just open **`https://<DOMAIN>` → Settings → WhatsApp** in the browser — the

@@ -9,7 +9,8 @@
 set -euo pipefail
 
 # Non-interactive SSH sessions get a minimal PATH; devil/crontab live here.
-export PATH="/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:$HOME/.npm-global/bin:$HOME/bin:$PATH"
+# $HOME/bin goes first so the Node.js version we pin below wins.
+export PATH="$HOME/bin:$HOME/.npm-global/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:$PATH"
 
 DOMAIN="${1:-}"
 if [ -z "$DOMAIN" ]; then
@@ -30,13 +31,33 @@ if ! grep -q 'npm-global/bin' "$HOME/.bash_profile" 2>/dev/null; then
   echo 'export PATH=~/.npm-global/bin:~/bin:$PATH' >> "$HOME/.bash_profile"
 fi
 
-# ── 2. Pin Node.js 22 (the version Server runs by default) ────────────────────
+# ── 2. Pin the NEWEST Node.js and prove it can load our ESM app ───────────────
+# Passenger loads app.js with require(), and require()-ing an ES module needs
+# Node >= 22.12. So: newest binary wins, then a real capability probe.
 mkdir -p "$HOME/bin"
-if [ -x /usr/local/bin/node22 ]; then
-  ln -fs /usr/local/bin/node22 "$HOME/bin/node"
-  ln -fs /usr/local/bin/npm22  "$HOME/bin/npm"
+for v in 26 25 24 23 22; do
+  if [ -x "/usr/local/bin/node$v" ]; then
+    ln -fs "/usr/local/bin/node$v" "$HOME/bin/node"
+    [ -x "/usr/local/bin/npm$v" ] && ln -fs "/usr/local/bin/npm$v" "$HOME/bin/npm"
+    break
+  fi
+done
+if ! command -v node >/dev/null 2>&1; then
+  echo "FATAL: no node binary found. Pick a 'Node.js binary' for this website in the Serv00 panel." >&2
+  exit 1
 fi
-echo "   node   : $(command -v node) -> $(node -v 2>/dev/null || echo 'not found')"
+NODE_V="$(node -v)"
+echo "   node   : $(command -v node) -> $NODE_V"
+PROBE="$HOME/.dukaan_esm_probe.mjs"
+echo 'export default 1;' > "$PROBE"
+if ! node -e "require('$PROBE')" >/dev/null 2>&1; then
+  rm -f "$PROBE"
+  echo "FATAL: Node $NODE_V cannot require() an ES module (needs Node >= 22.12)." >&2
+  echo "       In the Serv00 panel set this website's 'Node.js binary' to 24/25/26, then re-run." >&2
+  exit 1
+fi
+rm -f "$PROBE"
+echo "   ESM entry: OK (require of ESM supported)"
 
 # ── 3. Backend dependencies (the bot only; the frontend is built on your Mac) ─
 echo "   installing backend dependencies …"
@@ -53,6 +74,11 @@ else
   cp "$ROOT/whatsapp/.env.example" "$ROOT/whatsapp/.env"
   echo "   created whatsapp/.env from template  ⚠️  YOU MUST EDIT IT (see README Part 4)"
 fi
+# The bot READS whatsapp/.env, but two of its API handlers WRITE to <cwd>/.env.
+# Under Passenger the cwd is the project root, so point that path at the same
+# file — otherwise keys saved from the POS UI would silently land in the wrong
+# place and vanish on restart.
+[ -e "$ROOT/.env" ] || ln -s whatsapp/.env "$ROOT/.env"
 
 # ── 6. Static frontend must be uploaded into public/ (see README Part 5) ──────
 if [ -f "$ROOT/public/index.html" ]; then
