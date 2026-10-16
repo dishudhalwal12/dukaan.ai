@@ -3,6 +3,7 @@ import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
+import { ownerColumnsFromAuthUser, orderRowFromOrder } from '../utils/cloudRows.ts';
 
 /**
  * Helper to resolve the active user ID from explicit argument, Supabase session,
@@ -35,6 +36,16 @@ export const resolveActiveUserId = async (explicitUserId?: string): Promise<stri
 // `UPDATE ... WHERE user_id IS NULL` on products and orders, so the first
 // account to sign in absorbed every unowned row in the whole database. Guest
 // sessions no longer write to Supabase at all, so there is nothing to claim.
+
+/** The signed-in auth user, metadata included. Null for a cached/guest session. */
+const currentAuthUser = async (): Promise<User | null> => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user ?? null;
+  } catch (e) {
+    return null;
+  }
+};
 
 /**
  * Safely saves the business profile to Supabase database without blocking the UI.
@@ -71,6 +82,10 @@ export const saveBusinessProfileToCloud = async (
         category: profileData?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
         profile_data: profileData,
         onboarding: onboarding ?? {},
+        // Owner identity, mirrored from the auth session: first/last name, picture,
+        // provider and language. Without this the dashboard has only the raw
+        // profile_data blob and these columns stay NULL.
+        ...ownerColumnsFromAuthUser(await currentAuthUser()),
         ...(storeLocation ? {
           store_lat: storeLocation.lat,
           store_lng: storeLocation.lng,
@@ -258,17 +273,10 @@ export const syncOrdersToCloud = async (
     // would be adopted by whichever account signs in next.
     if (!userId) return;
 
-    const rows = orders.map(order => ({
-      external_id: order.id,
-      user_id: userId,
-      customer: order.customer,
-      items: order.items,
-      total: order.total,
-      payment_method: order.paymentMethod,
-      status: order.status,
-      created_at: order.timestamp,
-      updated_at: new Date().toISOString()
-    }));
+    // `orderRowFromOrder` adds the flat customer columns beside the JSONB, so a
+    // dashboard reads a column instead of digging into JSON.
+    const now = new Date().toISOString();
+    const rows = orders.map(order => orderRowFromOrder(order, userId, now));
 
     const { error } = await supabase
       .from('orders')

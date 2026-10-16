@@ -142,6 +142,19 @@ assert.strictEqual(mapPaymentMethod({ notes: 'Pay by UPI please' }), 'UPI');
 assert.strictEqual(buildOrderRow({ ...order, userId: null }).user_id, null, 'the mapper does not invent an owner');
 ok('payment method is COD unless UPI is stated');
 
+// The merchant dashboard reads these flat columns directly; both writers used to
+// leave them NULL while the customer JSONB carried the same facts.
+assert.strictEqual(row.customer_phone, '919999999999', 'the flat customer phone is written');
+assert.strictEqual(row.customer_name, 'Cust', 'the flat customer name is written');
+assert.strictEqual(row.delivery_address, 'Model Town, Jaipur', 'the flat delivery address is written');
+assert.strictEqual(row.notes, 'Cash on Delivery', 'the order note is written');
+const bare = buildOrderRow({ ...order, customerPhone: undefined, customerName: undefined, deliveryAddress: undefined, notes: undefined });
+assert.strictEqual(bare.customer_phone, null, 'a missing phone is null, never undefined');
+assert.strictEqual(bare.customer_name, 'Customer', 'the flat name falls back the same way the JSONB does');
+assert.strictEqual(bare.delivery_address, null, 'a missing address is null');
+assert.strictEqual(bare.notes, null, 'a missing note is null');
+ok('the flat order columns are written for the merchant dashboard');
+
 const mirrorFetch = fakeFetch(() => ({ status: 201 }));
 const mirrored = await mirrorOrder(order, { fetchImpl: mirrorFetch });
 assert.strictEqual(mirrored.ok, true);

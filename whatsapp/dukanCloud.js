@@ -157,6 +157,12 @@ export function buildOrderRow(order) {
       longitude,
     },
     items: Array.isArray(order?.items) ? order.items : [],
+    // Flat copies of the customer fields, for dashboards that read a column rather
+    // than digging into the JSONB (the client writer fills the same four).
+    customer_phone: order?.customerPhone || null,
+    customer_name: order?.customerName || 'Customer',
+    delivery_address: order?.deliveryAddress || null,
+    notes: order?.notes ?? null,
   };
 }
 

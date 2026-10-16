@@ -101,6 +101,15 @@ CREATE TABLE public.orders (
     items          JSONB NOT NULL DEFAULT '[]'::jsonb,
     total          NUMERIC NOT NULL DEFAULT 0,
     payment_method TEXT NOT NULL CHECK (payment_method IN ('COD', 'UPI')),
+
+    -- Flat copies of the customer fields, for a dashboard that reads a column
+    -- instead of digging into the JSONB. Both writers (the WhatsApp bot and the
+    -- POS app) fill customer/customer_* together, so the two never disagree.
+    customer_phone   TEXT,
+    customer_name    TEXT,
+    delivery_address TEXT,
+    notes            TEXT,
+
     status         TEXT NOT NULL CHECK (status IN ('NEW', 'PREPARING', 'READY_FOR_PICKUP', 'COMPLETED', 'REJECTED', 'CANCELLED')),
     created_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
