@@ -21,27 +21,31 @@ const withShop = (userId) => {
   activeShops.set(jid, { shopId: 'local', shopName: 'Dukaan Store', userId });
 };
 
-// ── Test 1: fallback shop carries the configured owner ────────────────────────
-console.log('\nTest 1: matchNearestShop fallback carries DUKAN_DEFAULT_OWNER_ID');
-const fallback = matchNearestShop({ latitude: 26.9, longitude: 75.7 });
-assert.strictEqual(fallback.isFallback, true, 'empty registry must fall back to local shop');
-assert.strictEqual(fallback.userId, 'owner-42', 'fallback shop must carry the configured owner');
+// ── Test 1: the local fallback carries the configured owner ───────────────────
+// Ruling (T1): the local fallback applies ONLY when an explicit fallbackOwner is
+// supplied (offline/dev). A live registry with no shops must reject instead.
+console.log('\nTest 1: the local fallback carries the explicit fallback owner');
+const fallback = matchNearestShop({ latitude: 26.9, longitude: 75.7 }, [], { fallbackOwner: 'owner-42' });
+assert.strictEqual(fallback.matched, true, 'empty registry + fallbackOwner must match the local shop');
+assert.strictEqual(fallback.isFallback, true, 'the local shop is flagged as a fallback');
+assert.strictEqual(fallback.shop.userId, 'owner-42', 'fallback shop must carry the configured owner');
 console.log('✓ Test 1 Passed: fallback shop is owned');
 
-// ── Test 1b: a ranked shop without its own owner falls back to the default ────
+// ── Test 1b: a ranked shop is used only when it owns itself ───────────────────
 console.log('\nTest 1b: ranked shop owner resolution');
 const loc = { latitude: 26.9124, longitude: 75.7873 };
 const rankedNoOwner = matchNearestShop(loc, [
   { shopId: 's1', shopName: 'S', latitude: 26.9124, longitude: 75.7873, catalogItemCount: 1 },
 ]);
-assert.strictEqual(rankedNoOwner.isFallback, false, 'a located shop is a real match');
-assert.strictEqual(rankedNoOwner.userId, 'owner-42', 'ownerless ranked shop falls back to the default owner');
+assert.strictEqual(rankedNoOwner.matched, false, 'an ownerless shop is skipped, never default-filled');
+assert.strictEqual(rankedNoOwner.reason, 'no-shops', 'skipping an ownerless shop leaves no shops');
 
 const rankedOwned = matchNearestShop(loc, [
   { shopId: 's2', shopName: 'S', latitude: 26.9124, longitude: 75.7873, catalogItemCount: 1, userId: 'shop-owner-7' },
 ]);
-assert.strictEqual(rankedOwned.userId, 'shop-owner-7', 'a shop with its own owner keeps it, ignoring the default');
-console.log('✓ Test 1b Passed: registry owner wins, default fills the gap');
+assert.strictEqual(rankedOwned.matched, true, 'a located, owned shop is a real match');
+assert.strictEqual(rankedOwned.shop.userId, 'shop-owner-7', 'a shop with its own owner keeps it');
+console.log('✓ Test 1b Passed: registry owner is required, never invented');
 
 // ── Test 2: a bot-created order is stamped with the matched shop's owner ───────
 console.log('\nTest 2: CREATE_ORDER stamps the matched shop owner');

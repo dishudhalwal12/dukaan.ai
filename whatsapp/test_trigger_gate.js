@@ -1,4 +1,10 @@
 import assert from 'assert';
+
+// Dev-mode owner: with no Supabase registry wired, the single local fallback
+// shop is owned by this account. Without it, a pin would (correctly) match no
+// shop and the bot would refuse to order.
+process.env.DUKAN_DEFAULT_OWNER_ID = process.env.DUKAN_DEFAULT_OWNER_ID || 'dev-owner';
+
 import {
   isBotTrigger,
   stripBotTrigger,
@@ -210,7 +216,7 @@ const ackReply = await dukanBot.handleMessage(
 assert.ok(/connected to/.test(ackReply.reply), 'location must produce a "connected to <shop>" reply');
 assert.strictEqual(isAwaitingLocation(flowJid), false, 'handshake complete after the pin');
 assert.ok(activeShops.has(flowJid), 'the matched shop must be remembered for this customer');
-assert.strictEqual(activeShops.get(flowJid).shopName, 'Dukaan Store', 'local fallback shop until Supabase is wired');
+assert.strictEqual(activeShops.get(flowJid).shopName, 'Dukaan Store', 'dev fallback shop when no Supabase registry is wired');
 passed++;
 console.log('✓ Test 16: the location pin connects a shop and ends the handshake');
 

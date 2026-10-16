@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
-import { matchNearestShop } from './dukanShops.js';
+import { matchNearestShop, loadShops } from './dukanShops.js';
 import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -122,7 +122,10 @@ export function beginLocationHandshake(jid, pendingText = '') {
  */
 export function completeLocationHandshake(jid, shop) {
   awaitingLocations.delete(jid);
+  // A pin that matches no shop must not leave a stale shop (or a stale owner)
+  // attached to this customer.
   if (shop) activeShops.set(jid, shop);
+  else activeShops.delete(jid);
   const pending = pendingRequests.get(jid) || '';
   pendingRequests.delete(jid);
   return pending;
@@ -1023,11 +1026,19 @@ export const dukanBot = {
     // Handshake: waiting for the location pin.
     if (isAwaitingLocation(jid)) {
       if (locationData) {
-        const shop = matchNearestShop(locationData);
+        const shops = await loadShops();
+        const match = matchNearestShop(locationData, shops || [], {
+          fallbackOwner: process.env.DUKAN_DEFAULT_OWNER_ID || null,
+        });
+        const shop = match.matched ? match.shop : null;
         const pending = completeLocationHandshake(jid, shop);
         console.log(
           `[Dukan Bot] ${jid} -> shop "${shop?.shopName}"` +
-            (shop?.distanceKm != null ? ` (${shop.distanceKm.toFixed(1)} km away)` : ' (no shop registry yet, local fallback)')
+            (match.matched
+              ? match.distanceKm != null
+                ? ` (${match.distanceKm.toFixed(1)} km away)`
+                : ' (local fallback)'
+              : ` (no shop: ${match.reason})`)
         );
         const ack = buildLocationAck(shop, locationData);
         if (pending) {

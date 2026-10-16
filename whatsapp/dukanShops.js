@@ -1,12 +1,9 @@
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dukanCatalog } from './dukanCatalog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, 'store');
-const SHOPS_FILE = path.join(DATA_DIR, 'shops.json');
 
 /**
  * Shop registry + nearest-shop matcher.
@@ -17,55 +14,26 @@ const SHOPS_FILE = path.join(DATA_DIR, 'shops.json');
  * hand that shop's catalog to the ordering bot.
  *
  * RANKING: nearest shop to the customer first; ties broken by the shop carrying
- * the most catalog items (more items = more likely to be able to fulfil).
+ * the most catalog items, then by a stable id so the choice never depends on
+ * input order.
  *
- * STATUS: LOCAL STUB — no database yet. Shops are read from `store/shops.json`
- * when that file exists; otherwise the bot falls back to the single local shop
- * that owns `store/catalog.json`. The message flow around this is final, so
- * wiring the database below switches the whole thing on without other changes.
+ * RANGE: a shop farther than DUKAN_MAX_DELIVERY_KM (default 5 km) does not
+ * serve the customer, and neither does an empty registry — in that case the bot
+ * places NO order. A single local fallback shop exists only for offline/dev use
+ * (an explicit `fallbackOwner`); it is never chosen while the registry is live.
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * TODO(next dev): connect this to Supabase (branch `dukaan.ai-by-vishi`)
- * ─────────────────────────────────────────────────────────────────────────────
- * Schema on that branch (from the vishi app's supabase_schema.sql):
- *   business_profiles(id TEXT PK, user_id UUID, store_name TEXT, profile_data JSONB, ...)
- *   products(id TEXT PK, user_id UUID, name TEXT, price TEXT, stock INT, stock_unit, image_url, ...)
- *   orders(id TEXT PK, user_id UUID, customer JSONB, items JSONB, total, payment_method, status, ...)
- *
- * Steps to switch on:
- *   1. `cd whatsapp && npm i @supabase/supabase-js`
- *   2. add SUPABASE_URL and SUPABASE_SERVICE_KEY to whatsapp/.env
- *   3. shop coordinates live in business_profiles.profile_data as:
- *        { "latitude": 26.9124, "longitude": 75.7873 }
- *   4. rewrite `loadShops()` to fetch:
- *        business_profiles(id, store_name, profile_data)  -- where lat/lng are set
- *      and attach each shop's catalog size with a `products` count grouped by user_id.
- *      Keep the returned shape: { shopId, userId, shopName, latitude, longitude, catalogItemCount }
- *   5. orders created by the bot must carry the matched shop's user_id
- *      (dukanOrders.createOrder needs a `userId`/`shopId` field — see dukanOrders.js).
- *   6. load the matched shop's catalog instead of the global one:
- *        dukanCatalog.syncFromStore(rows from products where user_id = shop.userId)
- *      `activeShops` in dukanBot.js already remembers the match per customer.
- *   7. SECURITY: `products`/`orders` RLS on that branch lets `anon` read+write
- *      everything. Use the service key server-side only, and tighten the
- *      policies before any real shop data lands there.
+ * FAIL CLOSED: a shop row is only usable when it has a real owner (`userId`) and
+ * valid coordinates. An ownerless shop is skipped rather than default-filled,
+ * because an order with no owner is visible to nobody and an order filled with
+ * a default owner is misrouted to one shop on a shared backend.
  */
 
-/**
- * Shops known to this backend. Shape:
- * { shopId, userId, shopName, latitude, longitude, catalogItemCount }
- * Coordinates are optional; shops without them are ignored for distance ranking.
- */
-export function loadShops() {
-  try {
-    if (fs.existsSync(SHOPS_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(SHOPS_FILE, 'utf8'));
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn('[Shops] Could not read store/shops.json:', e.message);
-  }
-  return [];
+export const DEFAULT_MAX_DELIVERY_KM = 5;
+
+/** Delivery radius in km. A missing, non-numeric or non-positive value → 5. */
+export function maxDeliveryKm(env = process.env) {
+  const raw = Number(env.DUKAN_MAX_DELIVERY_KM);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_MAX_DELIVERY_KM;
 }
 
 /** Great-circle distance in km between two { latitude, longitude } points. */
@@ -80,58 +48,137 @@ export function distanceKm(a, b) {
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** A finite number inside [lo, hi], or null. `0` and `"0"` are valid; ""/null are not. */
+function coord(v, lo, hi) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < lo || n > hi) return null;
+  return n;
+}
+
 /**
- * Orders shops for a customer location: nearest first, then biggest catalog.
- * Returns [{ ...shop, distanceKm }]. Shops without coordinates are dropped.
+ * Turns a shop row into the canonical shape, or null when it cannot serve an
+ * order. Accepts both the canonical shape and a raw Supabase `business_profiles`
+ * row, so the network provider stays a thin `fetch`.
+ *
+ * Shape: { shopId, userId, shopName, latitude, longitude, catalogItemCount }
+ */
+export function normaliseShop(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const userId = raw.userId ?? raw.user_id ?? null;
+  if (typeof userId !== 'string' || userId.trim() === '') return null;
+
+  const latitude = coord(raw.latitude ?? raw.store_lat ?? raw.lat, -90, 90);
+  const longitude = coord(raw.longitude ?? raw.store_lng ?? raw.lng, -180, 180);
+  if (latitude === null || longitude === null) return null;
+
+  return {
+    shopId: String(raw.shopId ?? raw.user_id ?? userId),
+    userId,
+    shopName: String(raw.shopName ?? raw.store_name ?? 'Store'),
+    latitude,
+    longitude,
+    catalogItemCount: Number(raw.catalogItemCount ?? raw.product_count ?? raw.catalog_count) || 0,
+  };
+}
+
+/**
+ * Orders shops for a customer location: nearest first, then biggest catalog,
+ * then a stable id tie-break. Shops that cannot serve an order are dropped.
+ * Returns [{ ...shop, distanceKm }].
  */
 export function rankShops(shops, location) {
   if (!location || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
     return [];
   }
-  return shops
-    .filter((s) => s && Number.isFinite(Number(s.latitude)) && Number.isFinite(Number(s.longitude)))
+  return (Array.isArray(shops) ? shops : [])
+    .map((s) => (s && typeof s.userId === 'string' && Number.isFinite(s.latitude) ? s : normaliseShop(s)))
+    .filter(Boolean)
     .map((s) => ({
       ...s,
-      latitude: Number(s.latitude),
-      longitude: Number(s.longitude),
-      distanceKm: distanceKm(location, { latitude: Number(s.latitude), longitude: Number(s.longitude) }),
+      distanceKm: distanceKm(location, { latitude: s.latitude, longitude: s.longitude }),
     }))
     .sort(
       (a, b) =>
         a.distanceKm - b.distanceKm ||
-        (Number(b.catalogItemCount) || 0) - (Number(a.catalogItemCount) || 0)
+        b.catalogItemCount - a.catalogItemCount ||
+        String(a.shopId).localeCompare(String(b.shopId))
     );
 }
 
 /**
- * The account that owns the local single shop, until the shop registry is
- * wired. Orders with no owner are visible to no one, so this must resolve for
- * the bot's orders to reach a shopkeeper's app.
+ * Picks the shop that should serve this customer location.
+ *
+ * @returns {{matched:true, shop, distanceKm:number|null, isFallback:boolean}}
+ *        | {{matched:false, reason:'no-location'|'no-shops'|'out-of-range', nearestKm?:number}}
  */
-function defaultOwnerId() {
-  return process.env.DUKAN_DEFAULT_OWNER_ID || null;
+export function matchNearestShop(location, shops = [], options = {}) {
+  const maxKm = Number.isFinite(options.maxKm) ? options.maxKm : maxDeliveryKm();
+  const fallbackOwner = options.fallbackOwner || null;
+
+  if (!location || !Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) {
+    return { matched: false, reason: 'no-location' };
+  }
+
+  const ranked = rankShops(shops, location);
+
+  if (ranked.length === 0) {
+    // Offline/dev only. A live registry never reaches here with shops present,
+    // and an empty live registry must reject rather than invent an owner.
+    if (fallbackOwner) {
+      return {
+        matched: true,
+        isFallback: true,
+        distanceKm: null,
+        shop: {
+          shopId: 'local',
+          userId: fallbackOwner,
+          shopName: 'Dukaan Store',
+          latitude: location.latitude,
+          longitude: location.longitude,
+          catalogItemCount: dukanCatalog.getAll().length,
+          isFallback: true,
+        },
+      };
+    }
+    return { matched: false, reason: 'no-shops' };
+  }
+
+  const best = ranked[0];
+  if (!(best.distanceKm <= maxKm + 1e-9)) {
+    return { matched: false, reason: 'out-of-range', nearestKm: best.distanceKm };
+  }
+  return { matched: true, isFallback: false, distanceKm: best.distanceKm, shop: { ...best, isFallback: false } };
 }
 
 /**
- * Picks the shop that should serve this customer location.
- * Falls back to the local single shop until the registry is populated.
+ * Default provider: the live Supabase registry. Kept behind an injectable
+ * seam so every test runs without a network. Returns raw rows; `loadShops`
+ * normalises them.
  */
-export function matchNearestShop(location, shops = loadShops()) {
-  if (!location) return null;
-  const ranked = rankShops(shops, location);
-  if (ranked.length > 0) {
-    // A registered shop may not carry an owner id yet; the default fills the
-    // gap so the order still reaches exactly one shopkeeper.
-    const best = ranked[0];
-    return { ...best, userId: best.userId || defaultOwnerId(), isFallback: false };
+async function defaultProvider() {
+  try {
+    const cloud = await import('./dukanCloud.js');
+    return await cloud.fetchShopRows();
+  } catch (e) {
+    console.warn('[Shops] Supabase registry provider unavailable:', e.message);
+    return [];
   }
+}
 
-  return {
-    shopId: 'local',
-    userId: defaultOwnerId(),
-    shopName: 'Dukaan Store',
-    distanceKm: null,
-    catalogItemCount: dukanCatalog.getAll().length,
-    isFallback: true,
-  };
+/**
+ * Loads the shop registry.
+ * @returns {Promise<Array|null>} normalised shops, or null when the registry
+ *   could not be reached (distinct from an empty registry, which is []).
+ */
+export async function loadShops(provider = defaultProvider) {
+  try {
+    const rows = await provider();
+    if (!Array.isArray(rows)) return [];
+    return rows.map(normaliseShop).filter(Boolean);
+  } catch (e) {
+    console.warn('[Shops] Could not load the shop registry:', e.message);
+    return null;
+  }
 }
