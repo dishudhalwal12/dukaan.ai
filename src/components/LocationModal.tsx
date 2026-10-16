@@ -16,6 +16,8 @@ interface LocationModalProps {
 
 const MESSAGES: Record<string, string> = {
   denied: 'Location is blocked. Turn it on for this site, then try again.',
+  blocked_by_device:
+    'This site is allowed, but your device is blocking location. Turn it on in your system settings, then try again.',
   unavailable: 'We could not find your location. Move near a window and try again.',
   timeout: 'Your location took too long. Please try again.',
   unsupported: 'This browser cannot share a location. Please try another browser.',

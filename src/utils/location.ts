@@ -20,7 +20,10 @@ export interface StoreLocation {
   captured_at: string;
 }
 
-export type LocationFailure = 'denied' | 'unavailable' | 'timeout' | 'unsupported';
+export type LocationFailure = 'denied' | 'unavailable' | 'timeout' | 'unsupported'
+  // A site-level block and a device-level block are different problems with
+  // different fixes, and the browser reports both as the same error code.
+  | 'blocked_by_device';
 
 /**
  * A string discriminant, not `ok: true | false`. This project compiles without
@@ -81,6 +84,37 @@ const FAILURES: Record<number, LocationFailure> = {
 };
 
 /**
+ * THIS SITE's permission, which is not the same thing as THIS DEVICE's.
+ *
+ * Chrome reports error code 1 ("denied") both when the shopkeeper blocked this
+ * site and when the operating system has location switched off for the browser
+ * entirely. Only the Permissions API can tell those apart, and they need
+ * different advice — "turn it on for this site" is a lie in the second case and
+ * sends the shopkeeper in circles.
+ */
+export async function geolocationPermissionState(): Promise<string> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.permissions?.query) return 'unknown';
+    const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+    return status.state;
+  } catch {
+    // Safari before 16 rejects this query.
+    return 'unknown';
+  }
+}
+
+/**
+ * Code 1 is ambiguous: the site may have been blocked, or the device may be
+ * blocking every site. If the site permission is granted and we still got code
+ * 1, the refusal came from above the browser.
+ */
+async function classifyFailure(code: number | undefined): Promise<LocationFailure> {
+  const named = FAILURES[code] ?? 'unavailable';
+  if (named !== 'denied') return named;
+  return (await geolocationPermissionState()) === 'granted' ? 'blocked_by_device' : 'denied';
+}
+
+/**
  * Ask the browser for the store's exact position.
  *
  * Never throws and never resolves ambiguously: the caller gets either a
@@ -110,7 +144,9 @@ export function captureStoreLocation(): Promise<LocationAttempt> {
             },
           });
         },
-        (error) => resolve({ status: 'failed', reason: FAILURES[error?.code] ?? 'unavailable' }),
+        async (error) => {
+          resolve({ status: 'failed', reason: await classifyFailure(error?.code) });
+        },
         // A shopkeeper standing in the shop rarely gets an instant fix indoors,
         // but waiting longer than this looks like a frozen screen.
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
