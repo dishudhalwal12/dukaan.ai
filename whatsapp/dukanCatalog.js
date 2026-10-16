@@ -83,6 +83,126 @@ function getAliasesForName(name) {
   return Array.from(new Set(aliases));
 }
 
+/**
+ * Searches ONE catalog. Pure: it reads only the array it is given, so the bot
+ * can search the matched shop's catalog without touching the global one.
+ * Returns the products in best-match order.
+ */
+export function searchInCatalog(products, query) {
+  const list = Array.isArray(products) ? products : [];
+  if (!query || list.length === 0) return [];
+  const rawQ = query.toLowerCase().trim();
+  const cleanQ = rawQ.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const allTokens = cleanQ.split(' ').filter(w => w.length > 1);
+
+  const STOP_WORDS = new Set([
+    'pack', 'packet', 'packets', 'pkt', 'pkts', 'bottle', 'bottles', 'tube', 'tubes',
+    'kg', 'gm', 'g', 'l', 'ml', 'litre', 'liter',
+    'chahiye', 'bhai', 'bhaiya', 'bhej', 'do', 'hai', 'kya', 'ka', 'ke', 'ki', 'ko', 'me', 'mein',
+    'rate', 'bhav', 'price', 'kitne', 'kitna', 'aur', 'and', 'with', 'se', 'ek', 'do', 'teen',
+    'char', 'paanch', 'only', 'sirf', 'bas', 'mang', 'rahe', 'ho', 'abhi', 'fir', 'karo', 'kar', 'yahan',
+    'pehle', 'batao', 'batana', 'pucha', 'tha', 'wala', 'wali', 'wale', 'milega', 'milegi', 'hain',
+    'all', 'long', 'this', 'that', 'those', 'these', 'there', 'where', 'what', 'which', 'how', 'when', 'why', 'who',
+    'saves', 'save', 'saved', 'data', 'get', 'got', 'gonna', 'gotta', 'tell', 'answer', 'question',
+    'type', 'names', 'name', 'list', 'bro', 'sir', 'first', 'learn', 'history', 'because', 'irritate',
+    'some', 'items', 'item', 'need', 'want', 'looking', 'remove', 'stock', 'store'
+  ]);
+
+  let searchTokens = allTokens.filter(t => !STOP_WORDS.has(t) && t.length > 2);
+  if (searchTokens.length === 0) return [];
+  if (allTokens.length >= 3 && searchTokens.length === 1 && searchTokens[0].length <= 4) {
+    // Avoid matching a whole conversational sentence on a single short incidental word
+    const singleTok = searchTokens[0];
+    const hasExactProduct = list.some(p => p.keywords?.includes(singleTok) || p.name.toLowerCase().split(' ').includes(singleTok));
+    if (!hasExactProduct) return [];
+  }
+
+  const scored = [];
+
+  for (const p of list) {
+    if (!p.inStock) continue;
+    const pNameLower = p.name.toLowerCase();
+    const pClean = pNameLower.replace(/[^a-z0-9\s]/g, ' ').trim();
+    const pKeywords = (p.keywords || []).map(k => k.toLowerCase());
+    let score = 0;
+
+    // Full phrase match
+    if (pNameLower.includes(cleanQ) || pKeywords.includes(cleanQ)) {
+      score += 100;
+    }
+
+    // Check each search token
+    let matchedTokenCount = 0;
+    const nameWords = pClean.split(' ');
+    for (const tok of searchTokens) {
+      const inNameWord = nameWords.includes(tok);
+      const inKwExact = pKeywords.includes(tok) || pKeywords.some(k => k.split(/[\s-]+/).includes(tok));
+      const inNameSub = pClean.includes(tok);
+      const inKwSub = pKeywords.some(k => k.includes(tok));
+
+      if (inNameWord || inKwExact) {
+        matchedTokenCount++;
+        if (inNameWord) score += 60;
+        if (inKwExact) score += 40;
+        if (pClean.startsWith(tok)) score += 20;
+      } else if (tok.length >= 4 && (inNameSub || inKwSub)) {
+        matchedTokenCount++;
+        if (inNameSub) score += 10;
+        if (inKwSub) score += 10;
+      }
+    }
+
+    // Multi-token query bonus: extra weight if ALL search tokens matched
+    if (searchTokens.length > 1 && matchedTokenCount === searchTokens.length) {
+      score += 50;
+    }
+
+    if (score > 0 && matchedTokenCount > 0) {
+      scored.push({ product: p, score, matchedTokenCount });
+    }
+  }
+
+  scored.sort((a, b) => {
+    if (b.matchedTokenCount !== a.matchedTokenCount) {
+      return b.matchedTokenCount - a.matchedTokenCount;
+    }
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return a.product.price - b.product.price;
+  });
+
+  return scored.map(s => s.product);
+}
+
+/**
+ * Resolves a customer/model item name against ONE catalog.
+ *
+ * @returns {{status:'ok', product} | {status:'missing'} | {status:'ambiguous', options:product[]}}
+ *
+ * Never guesses: when several distinct products genuinely match (e.g. "maggi"
+ * when the shop stocks three Maggi variants at different prices), the caller must
+ * ask which one — ordering the wrong variant is worse than one extra question.
+ */
+export function resolveCatalogItem(products, rawName) {
+  const list = Array.isArray(products) ? products : [];
+  const q = String(rawName || '').toLowerCase().trim();
+  if (!q || list.length === 0) return { status: 'missing' };
+
+  const exact = list.find((p) => p.name.toLowerCase() === q);
+  if (exact) return { status: 'ok', product: exact };
+
+  const matches = searchInCatalog(list, rawName);
+  if (matches.length === 0) return { status: 'missing' };
+
+  const near = matches.slice(0, 3);
+  const distinctNames = new Set(near.map((p) => p.name));
+  if (distinctNames.size > 1 && near.length > 1 && near[0].price !== near[1].price) {
+    return { status: 'ambiguous', options: near };
+  }
+  return { status: 'ok', product: matches[0] };
+}
+
 export const dukanCatalog = {
   getAll() {
     return catalog;
@@ -97,89 +217,7 @@ export const dukanCatalog = {
   },
 
   search(query) {
-    if (!query) return [];
-    const rawQ = query.toLowerCase().trim();
-    const cleanQ = rawQ.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const allTokens = cleanQ.split(' ').filter(w => w.length > 1);
-
-    const STOP_WORDS = new Set([
-      'pack', 'packet', 'packets', 'pkt', 'pkts', 'bottle', 'bottles', 'tube', 'tubes',
-      'kg', 'gm', 'g', 'l', 'ml', 'litre', 'liter',
-      'chahiye', 'bhai', 'bhaiya', 'bhej', 'do', 'hai', 'kya', 'ka', 'ke', 'ki', 'ko', 'me', 'mein',
-      'rate', 'bhav', 'price', 'kitne', 'kitna', 'aur', 'and', 'with', 'se', 'ek', 'do', 'teen',
-      'char', 'paanch', 'only', 'sirf', 'bas', 'mang', 'rahe', 'ho', 'abhi', 'fir', 'karo', 'kar', 'yahan',
-      'pehle', 'batao', 'batana', 'pucha', 'tha', 'wala', 'wali', 'wale', 'milega', 'milegi', 'hain',
-      'all', 'long', 'this', 'that', 'those', 'these', 'there', 'where', 'what', 'which', 'how', 'when', 'why', 'who',
-      'saves', 'save', 'saved', 'data', 'get', 'got', 'gonna', 'gotta', 'tell', 'answer', 'question',
-      'type', 'names', 'name', 'list', 'bro', 'sir', 'first', 'learn', 'history', 'because', 'irritate',
-      'some', 'items', 'item', 'need', 'want', 'looking', 'remove', 'stock', 'store'
-    ]);
-
-    let searchTokens = allTokens.filter(t => !STOP_WORDS.has(t) && t.length > 2);
-    if (searchTokens.length === 0) return [];
-    if (allTokens.length >= 3 && searchTokens.length === 1 && searchTokens[0].length <= 4) {
-      // Avoid matching a whole conversational sentence on a single short incidental word
-      const singleTok = searchTokens[0];
-      const hasExactProduct = catalog.some(p => p.keywords?.includes(singleTok) || p.name.toLowerCase().split(' ').includes(singleTok));
-      if (!hasExactProduct) return [];
-    }
-
-    const scored = [];
-
-    for (const p of catalog) {
-      if (!p.inStock) continue;
-      const pNameLower = p.name.toLowerCase();
-      const pClean = pNameLower.replace(/[^a-z0-9\s]/g, ' ').trim();
-      const pKeywords = (p.keywords || []).map(k => k.toLowerCase());
-      let score = 0;
-
-      // Full phrase match
-      if (pNameLower.includes(cleanQ) || pKeywords.includes(cleanQ)) {
-        score += 100;
-      }
-
-      // Check each search token
-      let matchedTokenCount = 0;
-      const nameWords = pClean.split(' ');
-      for (const tok of searchTokens) {
-        const inNameWord = nameWords.includes(tok);
-        const inKwExact = pKeywords.includes(tok) || pKeywords.some(k => k.split(/[\s-]+/).includes(tok));
-        const inNameSub = pClean.includes(tok);
-        const inKwSub = pKeywords.some(k => k.includes(tok));
-
-        if (inNameWord || inKwExact) {
-          matchedTokenCount++;
-          if (inNameWord) score += 60;
-          if (inKwExact) score += 40;
-          if (pClean.startsWith(tok)) score += 20;
-        } else if (tok.length >= 4 && (inNameSub || inKwSub)) {
-          matchedTokenCount++;
-          if (inNameSub) score += 10;
-          if (inKwSub) score += 10;
-        }
-      }
-
-      // Multi-token query bonus: extra weight if ALL search tokens matched
-      if (searchTokens.length > 1 && matchedTokenCount === searchTokens.length) {
-        score += 50;
-      }
-
-      if (score > 0 && matchedTokenCount > 0) {
-        scored.push({ product: p, score, matchedTokenCount });
-      }
-    }
-
-    scored.sort((a, b) => {
-      if (b.matchedTokenCount !== a.matchedTokenCount) {
-        return b.matchedTokenCount - a.matchedTokenCount;
-      }
-      if (b.score !== a.score) {
-        return b.score - a.score;
-      }
-      return a.product.price - b.product.price;
-    });
-
-    return scored.map(s => s.product);
+    return searchInCatalog(catalog, query);
   },
 
   addProduct(item) {

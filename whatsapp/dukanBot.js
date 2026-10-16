@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { dukanCatalog } from './dukanCatalog.js';
+import { dukanCatalog, resolveCatalogItem } from './dukanCatalog.js';
 import { dukanOrders } from './dukanOrders.js';
 import { matchNearestShop, loadShops } from './dukanShops.js';
 import dotenv from 'dotenv';
@@ -246,15 +246,30 @@ export function deduplicateProducts(products) {
 }
 
 /**
- * Deterministic Order Resolver & Pricing Engine.
- * Matches requested item names against dukanCatalog, retrieves authoritative prices,
- * computes item totals, and calculates the true order total.
+ * The catalog that applies to this customer: the matched shop's own catalog when
+ * one is loaded, otherwise the global catalog (offline/dev). Every item the bot
+ * may order comes from here — it can never order something the shop does not sell.
  */
-export function resolveAndPriceItems(rawItems) {
+export function catalogForCustomer(jid) {
+  const shop = activeShops.get(jid);
+  if (Array.isArray(shop?.catalog) && shop.catalog.length > 0) return shop.catalog;
+  return dukanCatalog.getAll();
+}
+
+/**
+ * Deterministic Order Resolver & Pricing Engine.
+ * Matches requested item names against a catalog, retrieves authoritative prices,
+ * computes item totals, and calculates the true order total.
+ *
+ * An item the catalog does not contain is DROPPED — it is never priced from the
+ * model's own number (that is how a hallucinated ₹30 line used to reach an order).
+ */
+export function resolveAndPriceItems(rawItems, catalog = null) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) {
     return { items: [], totalAmount: 0 };
   }
 
+  const products = catalog || dukanCatalog.getAll();
   const verifiedItems = [];
 
   for (const raw of rawItems) {
@@ -263,9 +278,9 @@ export function resolveAndPriceItems(rawItems) {
     query = query.replace(/\([^\)]+\)/g, '').replace(/product_/g, '').trim();
     const qty = Math.max(1, parseInt(raw.quantity || raw.qty, 10) || 1);
 
-    const matches = dukanCatalog.search(query);
-    if (matches.length > 0) {
-      const matched = matches[0];
+    const match = resolveCatalogItem(products, query);
+    if (match.status === 'ok') {
+      const matched = match.product;
       const unitPrice = Number(matched.price) || 0;
       verifiedItems.push({
         id: matched.id,
@@ -276,18 +291,8 @@ export function resolveAndPriceItems(rawItems) {
         quantity: qty,
         total: unitPrice * qty
       });
-    } else {
-      const fallbackPrice = typeof raw.price === 'number'
-        ? raw.price
-        : (parseFloat(String(raw.price || 0).replace(/[^\d.]/g, '')) || 0);
-      verifiedItems.push({
-        name: raw.name || query || 'Item',
-        price: fallbackPrice,
-        quantity: qty,
-        total: fallbackPrice * qty,
-        unit: 'unit'
-      });
     }
+    // No else: an unmatched item is dropped, never priced from the model's guess.
   }
 
   const totalAmount = verifiedItems.reduce((sum, it) => sum + (it.total || 0), 0);
@@ -297,7 +302,7 @@ export function resolveAndPriceItems(rawItems) {
 /**
  * Extracts order details from summary text (for compatibility / testing)
  */
-export function extractOrderFromSummaryText(text, defaultAddress = '') {
+export function extractOrderFromSummaryText(text, defaultAddress = '', catalog = null) {
   if (!text) return null;
 
   let deliveryAddress = defaultAddress;
@@ -356,7 +361,7 @@ export function extractOrderFromSummaryText(text, defaultAddress = '') {
     return null;
   }
 
-  const priced = resolveAndPriceItems(items);
+  const priced = resolveAndPriceItems(items, catalog);
   return {
     items: priced.items,
     totalAmount: priced.totalAmount,
@@ -377,7 +382,7 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
     try {
       const parsed = JSON.parse(jsonMatch[1].trim());
       if (parsed.action === 'CREATE_ORDER' && Array.isArray(parsed.items) && parsed.items.length > 0) {
-        const resolved = resolveAndPriceItems(parsed.items);
+        const resolved = resolveAndPriceItems(parsed.items, catalogForCustomer(jid));
         newOrder = dukanOrders.createOrder({
           customerJid: jid,
           customerPhone: resolvedPhone,
@@ -396,7 +401,7 @@ export function parseOpenRouterReply(replyText, jid, resolvedPhone, defaultName,
 
   // Summary text fallback
   if (!newOrder) {
-    const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '');
+    const extracted = extractOrderFromSummaryText(replyText, locationData ? locationData.fullDescription : '', catalogForCustomer(jid));
     if (extracted && extracted.items.length > 0 && /confirm/i.test(userText)) {
       newOrder = dukanOrders.createOrder({
         customerJid: jid,
@@ -585,9 +590,15 @@ function cleanUserFacingReply(raw) {
 }
 
 /**
- * Executes parsed model action tags deterministically
+ * Executes parsed model action tags deterministically.
+ *
+ * ADD_TO_CART is gated by the customer's catalog: a stocked item is added at the
+ * shop's authoritative price, an unknown item is dropped (`unavailable`), and a
+ * genuinely ambiguous one is not guessed (`clarifications`) — the caller turns
+ * those into a rebuilt reply.
  */
-function executeModelActions(actions, jid, pushName, phone, locationData) {
+export function executeModelActions(actions, jid, pushName, phone, locationData, catalog = null) {
+  const products = catalog || catalogForCustomer(jid);
   let cart = customerCarts.get(jid) || {
     items: [],
     totalAmount: 0,
@@ -601,42 +612,40 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
   let cartUpdated = false;
   let orderCreated = null;
   let orderCancelled = false;
+  const unavailable = [];
+  const clarifications = [];
 
   for (const act of actions) {
     if (act.type === 'ADD_TO_CART' && act.args.name) {
-      const matches = dukanCatalog.search(String(act.args.name));
-      const p = matches.length > 0 ? matches[0] : null;
+      const requested = String(act.args.name);
+      const resolution = resolveCatalogItem(products, requested);
       const qty = Math.max(1, parseInt(act.args.qty, 10) || 1);
-      if (p) {
-        const existing = cart.items.find(it => it.id === p.id);
-        if (existing) {
-          existing.quantity += qty;
-          existing.total = existing.price * existing.quantity;
-        } else {
-          cart.items.push({
-            id: p.id,
-            name: p.name,
-            category: p.category,
-            price: p.price,
-            unit: p.unit,
-            quantity: qty,
-            total: p.price * qty
-          });
-        }
-        cartUpdated = true;
-      } else {
-        const name = String(act.args.name);
-        cart.items.push({
-          id: 'custom-' + Date.now(),
-          name,
-          category: 'Grocery',
-          price: parseInt(act.args.price, 10) || 30,
-          unit: 'unit',
-          quantity: qty,
-          total: (parseInt(act.args.price, 10) || 30) * qty
-        });
-        cartUpdated = true;
+      if (resolution.status === 'ambiguous') {
+        // Never guess between genuinely distinct products.
+        clarifications.push({ name: requested, options: resolution.options });
+        continue;
       }
+      if (resolution.status === 'missing') {
+        unavailable.push(requested);
+        continue;
+      }
+      const p = resolution.product;
+      const existing = cart.items.find(it => it.id === p.id);
+      if (existing) {
+        existing.quantity += qty;
+        existing.total = existing.price * existing.quantity;
+      } else {
+        cart.items.push({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          price: p.price,
+          unit: p.unit,
+          quantity: qty,
+          total: p.price * qty
+        });
+      }
+      cartUpdated = true;
     } else if (act.type === 'UPDATE_QTY' && act.args.name) {
       const q = String(act.args.name).toLowerCase();
       const existing = cart.items.find(it => it.name.toLowerCase().includes(q) || q.includes(it.name.toLowerCase()));
@@ -675,13 +684,13 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
           userId: ownerForCustomer(jid)
         });
         customerCarts.delete(jid);
-        return { cartUpdated: false, orderCreated, cart: null };
+        return { cartUpdated: false, orderCreated, cart: null, unavailable, clarifications };
       }
     } else if (act.type === 'CANCEL_ORDER') {
       customerCarts.delete(jid);
       dukanOrders.cancelOrderByCustomer(phone || jid);
       orderCancelled = true;
-      return { cartUpdated: false, orderCreated: null, orderCancelled: true, cart: null };
+      return { cartUpdated: false, orderCreated: null, orderCancelled: true, cart: null, unavailable, clarifications };
     }
   }
 
@@ -691,7 +700,46 @@ function executeModelActions(actions, jid, pushName, phone, locationData) {
     customerCarts.set(jid, cart);
   }
 
-  return { cartUpdated, orderCreated, orderCancelled, cart };
+  return { cartUpdated, orderCreated, orderCancelled, cart, unavailable, clarifications };
+}
+
+/**
+ * Rebuilds the customer-facing narrative around what the gate actually did.
+ *
+ * The model's own words can claim it added something the shop does not stock, or
+ * silently pick one of several similar products. The cart footer is appended by
+ * the caller from the REAL cart state, so here we only fix the prose:
+ *  - an ambiguous match becomes one concrete either/or question;
+ *  - a dropped item's claim is removed and the customer is told.
+ */
+export function composeGatedNarrative(narrative, { unavailable = [], clarifications = [] } = {}) {
+  if (clarifications.length > 0) {
+    const options = clarifications
+      .flatMap((c) => c.options)
+      .slice(0, 3)
+      .map((p) => `${p.name} (₹${p.price})`)
+      .join('  ·  ');
+    return `Which one did you mean — ${options}? Reply with the exact item and I will add it.`;
+  }
+
+  let out = String(narrative || '').trim();
+
+  if (unavailable.length > 0) {
+    const names = unavailable.map((n) => String(n).toLowerCase());
+    // Drop any sentence of the model's prose that claims the unavailable item.
+    out = out
+      .split(/\n|(?<=[.!?])\s+/)
+      .filter((line) => !names.some((n) => line.toLowerCase().includes(n)))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const list = unavailable.join(', ');
+    const note = `Sorry, this store does not have: ${list}. Anything else?`;
+    out = out ? `${out}\n\n${note}` : note;
+  }
+
+  return out;
 }
 
 /**
@@ -960,6 +1008,8 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   const actions = parseActionTags(rawClean);
   const modelResult = executeModelActions(actions, jid, customerName, customerPhone, locationData);
   let { cartUpdated, orderCreated, cart: currentCart } = modelResult;
+  const unavailable = [...(modelResult.unavailable || [])];
+  const clarifications = [...(modelResult.clarifications || [])];
 
   // The model's own words, with any cart block it wrote itself removed.
   let narrative = stripModelCartBlock(cleanUserFacingReply(rawClean));
@@ -971,6 +1021,8 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
       cartUpdated = cartUpdated || reconciled.cartUpdated;
       orderCreated = reconciled.orderCreated || orderCreated;
       currentCart = reconciled.cart || currentCart;
+      unavailable.push(...(reconciled.unavailable || []));
+      clarifications.push(...(reconciled.clarifications || []));
     }
   }
 
@@ -988,6 +1040,10 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
   if (!narrative) {
     narrative = cartUpdated ? 'Added to your cart.' : 'Got it — what else do you need?';
   }
+
+  // The gate may have dropped items or found an ambiguous one: rebuild the prose
+  // so the reply never claims something the shop does not stock.
+  narrative = composeGatedNarrative(narrative, { unavailable, clarifications });
 
   // Append the ONE authoritative cart block, built from the real cart state.
   let reply = narrative;
