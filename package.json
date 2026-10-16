@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node scripts/test_order_ownership_client.js",
     "terminal-chat": "node scripts/terminal_chat.js",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

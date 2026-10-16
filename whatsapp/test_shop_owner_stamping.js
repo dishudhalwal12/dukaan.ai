@@ -28,6 +28,21 @@ assert.strictEqual(fallback.isFallback, true, 'empty registry must fall back to 
 assert.strictEqual(fallback.userId, 'owner-42', 'fallback shop must carry the configured owner');
 console.log('✓ Test 1 Passed: fallback shop is owned');
 
+// ── Test 1b: a ranked shop without its own owner falls back to the default ────
+console.log('\nTest 1b: ranked shop owner resolution');
+const loc = { latitude: 26.9124, longitude: 75.7873 };
+const rankedNoOwner = matchNearestShop(loc, [
+  { shopId: 's1', shopName: 'S', latitude: 26.9124, longitude: 75.7873, catalogItemCount: 1 },
+]);
+assert.strictEqual(rankedNoOwner.isFallback, false, 'a located shop is a real match');
+assert.strictEqual(rankedNoOwner.userId, 'owner-42', 'ownerless ranked shop falls back to the default owner');
+
+const rankedOwned = matchNearestShop(loc, [
+  { shopId: 's2', shopName: 'S', latitude: 26.9124, longitude: 75.7873, catalogItemCount: 1, userId: 'shop-owner-7' },
+]);
+assert.strictEqual(rankedOwned.userId, 'shop-owner-7', 'a shop with its own owner keeps it, ignoring the default');
+console.log('✓ Test 1b Passed: registry owner wins, default fills the gap');
+
 // ── Test 2: a bot-created order is stamped with the matched shop's owner ───────
 console.log('\nTest 2: CREATE_ORDER stamps the matched shop owner');
 withShop('owner-42');

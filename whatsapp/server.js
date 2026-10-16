@@ -44,6 +44,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Erase all previous chatbot memory & carts on server start/restart
 resetAllContext();
 
+// The bot stamps each order with the owner of the shop that fulfils it, so it
+// reaches exactly one account. Until the shop registry is wired that owner is
+// DUKAN_DEFAULT_OWNER_ID; without any owner source the bot's orders reach
+// nobody. Fail loud rather than let orders vanish silently.
+const SHOPS_FILE = path.resolve(__dirname, 'store', 'shops.json');
+if (!process.env.DUKAN_DEFAULT_OWNER_ID && !fs.existsSync(SHOPS_FILE)) {
+  console.warn(
+    '\n⚠️  No order owner configured (DUKAN_DEFAULT_OWNER_ID unset, no store/shops.json).\n' +
+    "    Bot-created orders will have no owner and will NOT appear in any shopkeeper's app.\n" +
+    '    Set DUKAN_DEFAULT_OWNER_ID in whatsapp/.env to the merchant\'s Supabase user id\n' +
+    '    (Supabase → Authentication → Users) to route orders to that account.\n'
+  );
+}
+
 // State variables
 let sock = null;
 let connectionStatus = 'disconnected'; // 'disconnected' | 'connecting' | 'qr_ready' | 'connected'
