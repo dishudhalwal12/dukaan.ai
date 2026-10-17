@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, User } from '../services/auth.ts';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, getEmailConfirmationStatus, User } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 import { classifyAuthOutcome, isUnconfirmedEmailError } from '../utils/authOutcome.ts';
 import { openMailApp } from '../utils/openMail.ts';
 import { supabase } from '../supabase.ts';
+
+/** How often the waiting panel asks the server whether the account confirmed. */
+const CONFIRMATION_POLL_MS = 3000;
 
 interface AuthModalProps {
   onClose: () => void;
@@ -22,6 +25,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [formNotice, setFormNotice] = useState<string | null>(null);
 
   // Held in a ref so the effects below stay subscribed/polling across the
   // frequent re-renders of the app shell instead of tearing down every render.
@@ -65,19 +69,47 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     };
   }, [completeSignIn]);
 
-  // Safety net for when the auth event is not delivered to this tab: while the
-  // confirmation panel is open, poll for the session the link set up.
+  // The confirmation can happen on another device, where the session it creates
+  // is invisible to this browser — so ask the server whether the account is
+  // confirmed yet, and finish the sign-in here ourselves. This is what makes a
+  // laptop confirmation complete the sign-in on the phone, with no second tap.
   useEffect(() => {
     if (!awaitingConfirmation) return;
+    let stopped = false;
+
     const id = window.setInterval(async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        window.clearInterval(id);
-        await completeSignIn(session.user);
+      const confirmed = await getEmailConfirmationStatus(email);
+      if (stopped || !confirmed) return;
+      window.clearInterval(id);
+
+      // The account is confirmed. If the password is still in state, the
+      // sign-in can finish right here. After a reload it is gone (it is
+      // deliberately never persisted), so hand the user back the form.
+      if (!password) {
+        setAwaitingConfirmation(false);
+        setIsSignUp(false);
+        setError(null);
+        setFormNotice('Your email is confirmed — enter your password to finish.');
+        return;
       }
-    }, 4000);
-    return () => window.clearInterval(id);
-  }, [awaitingConfirmation, completeSignIn]);
+
+      const result = await signInWithEmail(email, password);
+      if (result.user) {
+        await completeSignIn(result.user);
+        return;
+      }
+
+      setAwaitingConfirmation(false);
+      setIsSignUp(false);
+      setError(null);
+      setFormNotice('Your email is confirmed — enter your password to finish.');
+    }, CONFIRMATION_POLL_MS);
+
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [awaitingConfirmation, email, password, completeSignIn]);
 
   // Cooldown countdown for resending confirmation email
   useEffect(() => {
@@ -126,6 +158,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     setLoading(true);
     setError(null);
     setResendStatus(null);
+    setFormNotice(null);
 
     const result = isSignUp
       ? await signUpWithEmail(email, password)
@@ -190,7 +223,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               <p className="text-white font-bold text-base mb-1">Check your email</p>
               <p className="text-neutral-400 text-xs leading-relaxed mb-3">
                 We sent a confirmation email to <span className="text-white font-medium">{email}</span>.
-                Open it and tap the link — you'll be signed in here automatically.
+                Tap the link on any device — this screen signs you in automatically.
               </p>
 
               {resendStatus && (
@@ -296,6 +329,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               />
             </div>
 
+            {formNotice && (
+              <div className="p-2.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-emerald-300 text-xs text-left flex items-start space-x-2">
+                <span className="material-symbols-outlined text-sm text-emerald-400 mt-0.5 flex-shrink-0">check_circle</span>
+                <span>{formNotice}</span>
+              </div>
+            )}
+
             {error && (
               <p className="text-red-400 text-xs text-center py-1 bg-red-950/30 rounded-lg border border-red-900/50">{error}</p>
             )}
@@ -318,6 +358,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 onClick={() => {
                   setIsSignUp(!isSignUp);
                   setError(null);
+                  setFormNotice(null);
                 }}
                 className="text-neutral-400 text-xs hover:text-white transition-colors"
               >
