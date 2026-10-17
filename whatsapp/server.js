@@ -14,6 +14,7 @@ import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
 import { createApiAuth } from './apiAuth.js';
+import { corsOptionsFor, parseOrigins } from './corsPolicy.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -43,7 +44,9 @@ const AUTH_DIR = path.resolve(__dirname, process.env.AUTH_DIR || './auth_info');
 const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
-app.use(cors());
+// Only the origins this app is actually served from may call the API; a
+// wildcard let any website read a shopkeeper's orders.
+app.use(cors(corsOptionsFor({ allowedOrigins: parseOrigins(process.env.CORS_ORIGINS) })));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
