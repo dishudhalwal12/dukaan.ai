@@ -128,7 +128,7 @@ Each object in the array must have ONLY these three keys:
 
 export const processPhotoBill = async (file: File): Promise<Order[]> => {
   try {
-    const parsedItems = await callGeminiVisionWithTimeout(file, 3000);
+    const parsedItems = await callGeminiVisionWithTimeout(file);
     
     if (parsedItems.length > 0) {
         return [createOrderFromItems(parsedItems)];
