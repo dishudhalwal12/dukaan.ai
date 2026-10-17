@@ -183,6 +183,26 @@ npm run dev
 > [!WARNING]
 > Every `VITE_*` variable is inlined into the browser bundle and is therefore **public**. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
+### Email confirmation redirects
+
+When **Confirm email** is on, the confirmation link must return the user to the
+app so the session lands in the same browser. This is a Supabase dashboard
+setting, not repo config:
+
+1. Supabase dashboard → **Authentication → URL Configuration**.
+2. **Site URL** → the production app URL (e.g. `https://<app>.vercel.app`).
+3. **Redirect URLs** → add the app origin and the dev server, so the
+   `emailRedirectTo` the app sends (`window.location.origin + pathname`) is
+   allowlisted:
+   - `https://<app>.vercel.app/**`
+   - `http://localhost:3000/**`
+4. Save.
+
+Without step 3 Supabase ignores `emailRedirectTo` and falls back to the Site
+URL, so the confirmation link lands on the wrong page. The confirmation modal
+then offers **Open Gmail** (device deep link, web Gmail fallback) and **Resend**,
+and signs the user in automatically once the link is opened in the same browser.
+
 ---
 
 ## Project Structure
