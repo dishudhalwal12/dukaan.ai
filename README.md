@@ -1,187 +1,158 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-<img src="./public/logo.svg" alt="Dukaan.AI Logo" width="88" height="88" />
+<img src="./public/logo.svg" alt="Dukaan.AI logo" width="88" height="88" />
 
 # Dukaan.AI
 
-*Empowering Local Kirana & Grocery Stores to Win Against Quick Commerce*
+The shop around the corner, now taking orders on WhatsApp.
 
 [![React](https://img.shields.io/badge/React-19.1-blue?style=flat-square&logo=react)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-6.2-646cff?style=flat-square&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js->=20-3c873a?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![WhatsApp Engine](https://img.shields.io/badge/WhatsApp-Baileys%20Engine-25D366?style=flat-square&logo=whatsapp&logoColor=white)](https://github.com/WhiskeySockets/Baileys)
-[![AI Powered](https://img.shields.io/badge/AI-OpenRouter-7c3aed?style=flat-square)](https://openrouter.ai/)
-
-⭐ If you like this project, star it on GitHub — it helps a lot!
-
-[The Challenge](#the-challenge) • [Our Solution](#our-solution) • [How It Helps Kiranas](#how-it-helps-kirana-stores) • [Key Capabilities](#key-capabilities) • [Tech Stack](#tech-stack) • [Getting Started](#getting-started) • [Configuration](#configuration)
+[![Status](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#the-live-beta)
 
 </div>
 
----
+<!-- Demo video goes here. GitHub will not play an mp4 inside a README, so use one
+     of these two, and keep a GIF under about 10 MB or the page loads slowly:
 
-## The Challenge
+       1. Looping GIF:   ![Dukaan.AI demo](docs/demo.gif)
+       2. Thumbnail that opens YouTube or Loom:
+          [![Watch the demo](docs/demo-thumb.png)](https://youtu.be/XXXXXXXX)
+-->
 
-Quick commerce giants (Blinkit, Zepto, Instamart) are rapidly expanding dark stores across Indian neighborhoods, threatening the livelihoods of millions of family-run Kirana and grocery stores.
+## A corner shop cannot beat Blinkit on speed
 
-Yet, local Kirana stores hold the ultimate real-world advantages:
-- **Immediate Proximity**: Located inside the residential colony, minutes away from the customer's doorstep.
-- **Deep Trust & Credit**: Decades of community relationships, trusted product quality, and personalized service.
-- **Fresh Daily Essentials**: Sourced locally every morning without corporate warehouse delays.
+Blinkit, Zepto and Instamart keep opening dark stores inside Indian neighbourhoods. A family kirana cannot win that fight on ten minute delivery or on price. It does not need to. It already has two things no warehouse can buy: it stands a few hundred metres from the customer, and the customer has trusted it for twenty years.
 
-However, neighborhood shopkeepers face a massive digital barrier: they cannot afford to build or maintain custom apps, and everyday customers do not want yet another app taking storage on their phones. Without digital ordering tools, local shops steadily lose regular basket sales to quick commerce monopolies.
+What the shop does not have is a way to take an order online. An app of its own is too expensive to build. Customers do not want one either. Nobody installs a 100 MB app to order milk.
 
-> [!NOTE]
-> WhatsApp is already installed on over 500 million Indian smartphones. Customers do not need another 100MB delivery app when they can message their local store directly.
+WhatsApp is already on more than 500 million Indian phones. So that is where we put the shop.
 
----
+## What it does
 
-## Our Solution
+A customer sends a message to the shop on WhatsApp, by text or by voice note, in whatever language they speak. The bot asks about quantity when something is unclear, then writes the order down properly.
 
-**Dukaan.AI** transforms any neighborhood Kirana or grocery store into an instant commerce powerhouse—leveling the playing field without costly software or complex setups.
+Inside the shop, a screen chimes and shows the new order. The shopkeeper swipes to accept it and the customer gets a confirmation on WhatsApp without anyone typing one. Orders are confirmed in under 15 minutes, which is the point when milk is needed right now.
 
-By connecting **WhatsApp conversational ordering** with a **live, real-time shopkeeper POS dashboard**, Dukaan.AI enables local stores to receive, confirm, and dispatch orders in under 15 minutes right within their neighborhood.
+The shopkeeper gets a live dashboard, a starter catalog for a kirana, stock that can be switched off with one tap, and sales numbers without a spreadsheet. When something runs low the app highlights it and drafts a reorder message for the distributor. The bill photo button works too: send a photo of the bill and the stock updates.
 
-- **Zero App Download for Customers**: Buyers order on WhatsApp using everyday language—texting or sending voice notes in Hindi, English, or regional languages.
-- **Live Real-Time Shopkeeper POS**: Incoming orders instantly alert the merchant with an audio chime and full-screen order summary.
-- **One-Touch Confirmation**: Shopkeepers accept orders with a single swipe, instantly sending an automated confirmation back to the customer on WhatsApp.
-- **Hyper-Local Speed**: Neighborhood Kiranas can fulfill and deliver faster than dark stores because they are already around the corner.
+The screen and the bot both work in English, Hindi, Tamil, Punjabi, Kannada, Gujarati and Urdu.
 
----
+## The live beta
 
-## How It Helps Kirana Stores
+The beta is running at https://dukaan-ai-beta.vercel.app. Open it on a phone or a laptop, sign in with an email or as a guest, and link your WhatsApp number from Settings. Nothing to download, for you or for your customer.
 
-| Pain Point with Quick Commerce | How Dukaan.AI Solves It |
-| :--- | :--- |
-| **High commissions & listing fees** | **Zero platform fee**. Direct connection between shopkeeper and neighborhood buyers. |
-| **Customer app fatigue** | **Zero customer downloads**. Orders flow through WhatsApp, an app customers already use daily. |
-| **Complex inventory software** | **Kirana-first POS**. Fast product lookups, one-touch stock toggles, and grocery catalog presets. |
-| **Language barriers** | **Multilingual by default**. Customers can text or speak in their native tongue; orders arrive clearly structured. |
-| **Lost neighborhood sales** | **Fast local dispatch**. Delivers essentials faster than centralized dark-store couriers. |
+Being honest about a beta: the bot runs on one laptop at home, behind a tunnel, so it goes quiet when that machine sleeps. The AI still misreads a messy message now and then, and voice notes can take a few seconds to come back. If something breaks, tell us and we will fix it.
 
-> [!TIP]
-> Dukaan.AI runs with free AI inference options via OpenRouter, making it practical and accessible for independent shopkeepers with zero upfront software costs.
+We want to hear whether an order came through right, whether the bot understood what you typed, and whether the dashboard made sense the first time you saw it.
 
----
+## Getting started
 
-## Key Capabilities
+### What you need
 
-- **Conversational WhatsApp Ordering**: Customers place orders naturally via text or voice messages. The assistant understands colloquial Indian grocery terms, clarifies quantities, and creates structured orders.
-- **Instant Live POS Chime & Alert**: Web POS sounds a live audio chime whenever a new order arrives, presenting customer details, items, delivery location, and order total.
-- **Swipe-to-Accept Workflow**: Shopkeepers confirm orders instantly with an intuitive gesture, automatically updating inventory and dispatching delivery updates to WhatsApp.
-- **Voice Note & Location Resolution**: Built to handle real-world scenarios—voice notes for hurried buyers and pin-location sharing for precise neighborhood delivery.
-- **Smart Kirana Catalog**: Pre-configured with fast-moving Indian household essentials (dairy, grains, spices, snacks, beverages), allowing shops to get started in minutes.
-- **Predictive Upstocking & Procurement**: Highlights low-stock essentials before they run out and drafts ready-to-send WhatsApp reorder messages for distributors.
-- **Vernacular First**: Full localized interface supporting English, Hindi, Tamil, Punjabi, Kannada, Gujarati, and Urdu.
+- Node.js 20 or higher
+- Git
+- A phone with WhatsApp on it
+- An OpenRouter API key if you want the AI ordering to work (get one at https://openrouter.ai/keys)
 
----
-
-## Tech Stack
-
-### Frontend (Shopkeeper POS)
-- **Framework**: React 19 + Strict TypeScript
-- **Build Tool**: Vite 6
-- **Styling**: Tailwind CSS
-- **Live Events**: Server-Sent Events (`EventSource`) for zero-latency order delivery
-- **Audio Alerts**: Web Audio API (synthesized dual-tone chime, zero external sound assets)
-- **Auth**: Supabase Auth (email + Google OAuth), guest mode when unconfigured
-- **Data & Storage**: React Context + HTML5 LocalStorage, with optional Supabase cloud sync
-
-### Backend & Messaging (WhatsApp Engine)
-- **Runtime**: Node.js (LTS >= 20) + Express 5
-- **WhatsApp Bridge**: `@whiskeysockets/baileys` (multi-device web socket, persistent session)
-- **Intelligence**: OpenRouter AI API (supporting fast, free-tier models)
-- **Voice & Location**: Voice message transcription and reverse-geocoded map coordinates
-- **Event Streaming**: SSE broadcast server pushing live order packets directly to the POS
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) (version 20 or higher)
-- [Git](https://git-scm.com/)
-- A mobile phone with WhatsApp installed
-- *(Optional)* An [OpenRouter API key](https://openrouter.ai/keys) for AI conversational features
-
----
-
-### Quick Start
-
-#### 1. Clone the Repository
+### 1. Clone the repo
 
 ```bash
 git clone https://github.com/dishudhalwal12/dukaan.ai.git
 cd dukaan.ai
 ```
 
-#### 2. Configure Environment
+### 2. Fill in the environment
 
-Copy the example environment files for both root and WhatsApp services:
+There is one environment file for the whole app, and every key it accepts is explained in the template:
 
 ```bash
-# Frontend environment
 cp .env.example .env
-
-# WhatsApp backend environment
-cd whatsapp
-cp .env.example .env
-cd ..
 ```
 
-Add your `OPENROUTER_API_KEY` in both `.env` files if you want AI conversational ordering enabled.
+Open `.env` and add your keys. At a minimum, put your `OPENROUTER_API_KEY` in for the AI ordering. The files under `whatsapp/` are only signposts; the bot reads the root `.env`, so you never copy it twice.
 
-#### 3. Install Dependencies & Start Services
+### 3. Start the two services
 
-You will run two lightweight services: the **WhatsApp Engine** (port 5001) and the **Dukaan POS** (port 3000).
+The bot and the web app run as two small processes.
 
 ```bash
-# Terminal 1: Start WhatsApp Backend Engine
+# Terminal 1: the bot, on port 5001
 cd whatsapp
 npm install
 npm start
 ```
 
 ```bash
-# Terminal 2: Start Dukaan POS Web Application
+# Terminal 2: the dashboard, on port 3000
 npm install
 npm run dev
 ```
 
 > [!IMPORTANT]
-> Keep the WhatsApp service running on `PORT=5001`. The Vite frontend automatically proxies `/api` and `/events` from `http://localhost:3000` to `http://localhost:5001`.
+> The bot has to keep running on port 5001. In development, Vite sends `/api` and `/events` from `http://localhost:3000` straight to `http://localhost:5001` for you.
 
-#### 4. Link Your WhatsApp
+### 4. Link your WhatsApp
 
-1. Open your browser to **http://localhost:3000**.
-2. Navigate to **Settings** > **WhatsApp Settings** (or view the terminal QR code in Terminal 1).
-3. On your phone, open WhatsApp > **Linked Devices** > **Link a Device**.
-4. Scan the QR code displayed on screen.
-5. Your WhatsApp number is now connected. Send a test message from any other phone to start ordering!
+1. Open http://localhost:3000 in a browser.
+2. Go to Settings and open WhatsApp Settings. The terminal running the bot also prints a QR code.
+3. On the phone, open WhatsApp, then Linked Devices, then Link a Device.
+4. Scan the code.
+5. Message the linked number from another phone and the order should land on the dashboard.
 
----
+## Tests
+
+Both halves have tests. They are plain Node scripts, so there is no test runner to install.
+
+```bash
+npm test                    # frontend and repo checks
+cd whatsapp && npm test     # bot checks
+```
+
+The frontend set covers order status, polling, order ownership, cloud rows, the AI fallback gate, API auth, and that no key reached the bundle. The bot set covers the store, the catalog, the prompt scope, message capture, auth, CORS, the AI proxy, and a full pipeline run from a WhatsApp message to a dashboard order.
+
+```bash
+npm run stress                                        # ramp the pipeline
+cd whatsapp && npm run test:reliability                # 1400 cases through the pipeline
+npm run terminal-chat                                  # chat with the bot from a terminal, no WhatsApp needed
+cd whatsapp && npm run export:training                 # see the ledger section below
+```
+
+`npm run build` also runs `scripts/check-secrets.mjs` afterwards. If a secret ever reaches `dist/`, the build fails instead of shipping it.
 
 ## Configuration
 
-### Environment Variables
+Every key lives in the root `.env`. The complete list with the reasoning for each one is in `.env.example`, and the table below is the short version.
 
-| Variable | Location | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `VITE_SUPABASE_URL` | `.env` | *(optional)* | Supabase project URL. Enables cloud sync and Google OAuth. Blank = local-only guest mode. |
-| `VITE_SUPABASE_ANON_KEY` | `.env` | *(optional)* | Supabase anon (publishable) key. Only safe to ship because Row Level Security is enabled. |
-| `VITE_OPENROUTER_API_KEY` | `.env` | *(optional)* | OpenRouter key read by the frontend for conversational AI. |
-| `OPENROUTER_API_KEY` | `.env`, `whatsapp/.env` | *(optional)* | API key for conversational AI assistance (backend) |
-| `OPENROUTER_MODEL` | `.env`, `whatsapp/.env` | `liquid/lfm-2.5-2.6b:free` | Model identifier used for conversation |
-| `GROQ_API_KEY` | `whatsapp/.env` | *(optional)* | Groq key used for fast voice-message transcription |
-| `PORT` | `whatsapp/.env` | `5001` | WhatsApp backend server port |
-| `AUTH_DIR` | `whatsapp/.env` | `./auth_info` | Directory where WhatsApp session credentials persist |
-| `N8N_WEBHOOK_URL` | `whatsapp/.env` | *(optional)* | Webhook endpoint for workflow automations |
+| Variable | Default | What it does |
+| :--- | :--- | :--- |
+| `VITE_SUPABASE_URL` | empty | Supabase project URL. Turns on sign in and cloud sync. Empty means guest mode and local storage only. |
+| `VITE_SUPABASE_ANON_KEY` | empty | The anon (publishable) key. Safe to ship only because Row Level Security is on for every table. |
+| `VITE_API_BASE` | empty | Origin the browser calls for `/api` and `/events`. Leave it empty when the bot serves the site itself. On Vercel, point it at the public backend URL. |
+| `VITE_SUPPORT_WHATSAPP` | empty | Support number with country code, for example `919876543210`. Empty hides the Call Us button. |
+| `SUPABASE_URL` | empty | The same project URL, read by the bot. |
+| `SUPABASE_SERVICE_KEY` | empty | Service role key. The bot uses it to read the shop list, mirror orders, and check a shopkeeper's access token. |
+| `SUPABASE_SERVICE_ROLE_KEY` | empty | The same key under the name some dashboards use. Read only when the line above is empty. |
+| `OPENROUTER_API_KEY` | empty | Key the bot calls models with. The browser never sees it. |
+| `OPENROUTER_MODEL` | `meta-llama/llama-3.1-8b-instruct` | The model to ask for. A server decision, so nobody can request a model the shop cannot afford. |
+| `AI_MODEL_FALLBACKS` | empty | Tried in order when the model above fails. At most three, and at least one must accept images or the bill photo button fails every time. |
+| `AI_DATA_COLLECTION` | `deny` | `deny` keeps shop data out of provider training but rules out free models. A `:free` model needs `allow`. |
+| `GROQ_API_KEY` | empty | Fast voice note transcription. |
+| `GROQ_MODEL` | empty | The model used for that transcription. |
+| `LLM_BASE_URL`, `LLM_MODEL_NAME` | empty | Optional local OpenAI compatible model, server side only. Uncomment only if one is actually running. |
+| `OPERATOR_USER_IDS` | empty | Comma separated Supabase user ids allowed to reach operator routes. Empty means nobody, and those routes answer 403. |
+| `CORS_ORIGINS` | empty | Browser origins allowed to call the API. The Vercel app and the tunnel domain belong here. |
+| `ENABLE_OPS_CONSOLE` | off | The older console at `/ops`. It can re-pair the WhatsApp session, so it is on only when the value is exactly `1`. |
+| `PORT` | `5001` | Port the bot listens on. |
+| `AUTH_DIR` | `./auth_info` | Where the WhatsApp session is kept, resolved against `whatsapp/`. Do not prefix it with `whatsapp/` or the bot starts with no session and every shop has to scan again. |
+| `DUKAN_MAX_DELIVERY_KM` | `5` | A shop farther than this from the customer's pin does not serve them. |
+| `DUKAN_ORDERS_FILE`, `DUKAN_CATALOG_FILE` | `./whatsapp/...` | Where the order and catalog files live. |
+| `DUKAN_DEFAULT_OWNER_ID` | empty | Used only when Supabase is not configured. Without it, and without a service key, the bot refuses every order rather than writing one with no owner. |
+| `N8N_WEBHOOK_URL` | empty | Webhook the bot posts order events to. The ops console writes it back into `.env`. |
 
 > [!WARNING]
-> Every `VITE_*` variable is inlined into the browser bundle and is therefore **public**. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
+> Every `VITE_*` variable ends up inside the browser bundle, where anyone can read it. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
 ### Email confirmation links
 
@@ -192,7 +163,8 @@ repo config:
 
 1. Supabase dashboard → **Authentication → URL Configuration**.
 2. **Site URL** → the production app URL (e.g. `https://<app>.vercel.app`).
-3. **Redirect URLs** → allowlist the app origin and the dev server:
+3. **Redirect URLs** → allowlist the app origin and the dev server, so the
+   `emailRedirectTo` the app sends (`window.location.origin + pathname`) is allowed:
    - `https://<app>.vercel.app/**`
    - `http://localhost:3000/**`
 4. **Authentication → Email Templates → Confirm signup** → replace the link with
@@ -220,12 +192,18 @@ manual refresh and no second tap. Where the link is opened in a mail app's
 browser, Android is offered a hand-off to Chrome; iOS is only advised, because no
 web page can launch another browser.
 
-`emailRedirectTo` is still sent on signup and resend. Once step 4 is applied it no
-longer affects confirmation.
+`emailRedirectTo` is still sent on signup and resend. Before step 4 it is what
+decides where the confirmation link lands; after step 4 it no longer affects
+confirmation. Skip step 3 and Supabase ignores `emailRedirectTo`, falls back to
+the Site URL, and the link opens the wrong page.
 
----
+## Deploying
 
-## Project Structure
+The web app is a static build, so it can live on Vercel. The bot has to run on a machine that stays awake, because it holds the WhatsApp session, and `VITE_API_BASE` points the browser at it.
+
+Two guides cover the whole thing: `deploy/wispbyte/README.md` for the VPS plus Vercel setup, written so that someone who has never deployed anything can follow it, and `deploy/laptop/README.md` for running the bot on a home machine. Once a box is set up, `./deploy/laptop/update.sh` builds, syncs, restarts, and verifies, or puts the previous version back if the check fails.
+
+## Project structure
 
 ```
 dukaan.ai/
@@ -234,7 +212,7 @@ dukaan.ai/
 ├── tsconfig.json                # TypeScript config (scopes src/ + vite.config.ts)
 ├── package.json                 # Frontend dependencies & scripts
 ├── supabase_schema.sql          # Tables + Row Level Security policies
-├── .env.example                 # Frontend environment template
+├── .env.example                 # The one environment template for the whole app
 ├── public/                      # Static assets served as-is
 │   ├── logo.svg
 │   ├── favicon.ico
@@ -264,14 +242,38 @@ dukaan.ai/
 │   ├── store.js                 # JSON state persistence layer
 │   ├── audioTranscriber.js      # Voice message transcription
 │   ├── locationFetcher.js       # Location pin coordinate resolver
+│   ├── export_training_data.js  # The only filter between the ledger and training data
 │   ├── public/                  # QR pairing / status web UI
 │   ├── store/                   # Runtime state (catalog, orders, chats, messages)
 │   └── test_*.js                # Engine + trigger-gate tests
 ├── scripts/                     # Repo-side tooling & tests
 │   ├── local-ai/                # LoRA dataset generation & local model serving
+│   ├── check-secrets.mjs        # Fails the build if a secret reaches dist/
 │   ├── seed_300_catalog.js
 │   ├── terminal_chat.js
 │   └── test_*.js
+├── deploy/                      # Deployment guides and scripts
+│   ├── laptop/                  # Run the bot on a home machine
+│   └── wispbyte/                # VPS + Vercel, step by step
 └── data/                        # LoRA training workspace
     └── generate_dataset.py      # Generates train/valid/test .jsonl (gitignored)
 ```
+
+## The message ledger and the training export
+
+The bot shares the shopkeeper's own WhatsApp number, so the ledger (`whatsapp/store/messages.json`) holds two very different kinds of chat: real customer orders, and the owner's personal messages.
+
+Capture keeps everything on purpose. `whatsapp/server.js` writes every message to the ledger, tagged with a source of `customer`, `human`, or `bot`. Nothing is dropped at capture time, so a mistake in the filter can never lose history.
+
+Filtering happens at export instead. `whatsapp/export_training_data.js` is the only filter. A training session opens on the `/hey` trigger and closes on the bot's order confirmation reply, and everything outside that window counts as personal and stays out:
+
+```bash
+node whatsapp/export_training_data.js --report        # who is personal, who is a session
+node whatsapp/export_training_data.js --out train.jsonl
+```
+
+The trigger is `/hey` with the leading slash, not a bare "hey".
+
+The live ledger lives on the bot's machine, not in a dev checkout. `whatsapp/store/` is gitignored and excluded from the deploy sync, so the running bot keeps its own copy. To export real data, run the exporter on that machine, or copy `messages.json` across and pass `--in <path>`.
+
+The ledger is also written atomically. `store.js` writes through a temp file and renames it into place, so a restart or a crash in the middle of a write cannot truncate the file and wipe the history.
