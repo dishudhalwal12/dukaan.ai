@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle } from '../services/auth.ts';
+import React, { useState, useEffect } from 'react';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 import { classifyAuthOutcome } from '../utils/authOutcome.ts';
+import { supabase } from '../supabase.ts';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -17,6 +18,42 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendStatus, setResendStatus] = useState<string | null>(null);
+  const [checkingSession, setCheckingSession] = useState(false);
+
+  // Auto-close modal if auth state changes to signed-in (e.g. user clicked confirmation link in this browser or another tab)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
+        localStorage.setItem('dukan-auth-user', JSON.stringify({
+          id: session.user.id,
+          email: session.user.email,
+        }));
+        localStorage.removeItem('dukan-guest-mode');
+        try {
+          await syncOnLogin([], [], session.user);
+        } catch (err) {
+          console.warn('Post-email auth sync error:', err);
+        }
+        onSuccess();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [onSuccess]);
+
+  // Cooldown countdown for resending confirmation email
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   const handleGoogleSignIn = async () => {
     setError(null);
@@ -29,6 +66,80 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     // If successful, Supabase redirects the browser to Google OAuth consent
   };
 
+  const handleResend = async () => {
+    if (!email || resendLoading || resendCooldown > 0) return;
+    setResendLoading(true);
+    setResendStatus(null);
+    setError(null);
+
+    const res = await resendConfirmationEmail(email);
+    setResendLoading(false);
+
+    if (res.success) {
+      setResendStatus('Confirmation link resent! Check your inbox and spam folder.');
+      setResendCooldown(30);
+    } else {
+      setError(res.error || 'Failed to resend confirmation email.');
+    }
+  };
+
+  const handleCheckConfirmed = async () => {
+    setCheckingSession(true);
+    setError(null);
+    setResendStatus(null);
+
+    // 1. Check if Supabase session is already present (e.g. link was opened in this browser)
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      localStorage.setItem('dukan-auth-user', JSON.stringify({
+        id: session.user.id,
+        email: session.user.email,
+      }));
+      localStorage.removeItem('dukan-guest-mode');
+
+      try {
+        await syncOnLogin([], [], session.user);
+      } catch (err) {
+        console.warn('Post-email auth sync error:', err);
+      }
+      setCheckingSession(false);
+      onSuccess();
+      return;
+    }
+
+    // 2. Try signing in with existing password if present
+    if (password) {
+      const signInResult = await signInWithEmail(email, password);
+      if (signInResult.user && signInResult.session) {
+        localStorage.setItem('dukan-auth-user', JSON.stringify({
+          id: signInResult.user.id,
+          email: signInResult.user.email,
+        }));
+        localStorage.removeItem('dukan-guest-mode');
+        try {
+          await syncOnLogin([], [], signInResult.user);
+        } catch (err) {
+          console.warn('Post-email auth sync error:', err);
+        }
+        setCheckingSession(false);
+        onSuccess();
+        return;
+      } else if (signInResult.error) {
+        if (signInResult.error.toLowerCase().includes('not confirmed')) {
+          setCheckingSession(false);
+          setError('Email is not confirmed yet. Please click the link in your email.');
+          return;
+        }
+      }
+    }
+
+    // 3. Switch back to Sign In mode with prompt
+    setCheckingSession(false);
+    setAwaitingConfirmation(false);
+    setIsSignUp(false);
+    setError('Confirmed your email? Enter your password to complete sign in.');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -38,6 +149,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
 
     setLoading(true);
     setError(null);
+    setResendStatus(null);
 
     const result = isSignUp
       ? await signUpWithEmail(email, password)
@@ -100,20 +212,78 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
           </div>
 
           {awaitingConfirmation ? (
-            <div className="text-center py-4">
-              <span className="material-symbols-outlined text-4xl text-[#E6E6FA] mb-3 block">mark_email_unread</span>
-              <p className="text-white font-semibold mb-1.5">Check your email</p>
-              <p className="text-neutral-400 text-xs leading-relaxed">
-                We sent a confirmation link to <span className="text-white">{email}</span>.
-                Confirm it, then sign in.
+            <div className="text-center py-2">
+              <div className="w-12 h-12 bg-[#E6E6FA]/10 border border-[#E6E6FA]/30 rounded-2xl flex items-center justify-center mx-auto mb-3 text-[#E6E6FA]">
+                <span className="material-symbols-outlined text-2xl">mark_email_unread</span>
+              </div>
+              <p className="text-white font-bold text-base mb-1">Check your email</p>
+              <p className="text-neutral-400 text-xs leading-relaxed mb-3">
+                We sent a confirmation link to <span className="text-white font-medium">{email}</span>.
+                Click the link in the email to activate your account.
               </p>
-              <button
-                type="button"
-                onClick={() => { setAwaitingConfirmation(false); setError(null); }}
-                className="mt-6 w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-sm"
-              >
-                Back to Sign In
-              </button>
+
+              {resendStatus && (
+                <div className="mb-3 p-2.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-emerald-300 text-xs text-left flex items-start space-x-2">
+                  <span className="material-symbols-outlined text-sm text-emerald-400 mt-0.5 flex-shrink-0">check_circle</span>
+                  <span>{resendStatus}</span>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-3 p-2.5 bg-red-950/30 border border-red-900/50 rounded-xl text-red-400 text-xs text-left flex items-start space-x-2">
+                  <span className="material-symbols-outlined text-sm text-red-400 mt-0.5 flex-shrink-0">error</span>
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <div className="space-y-2 mt-4">
+                <button
+                  type="button"
+                  onClick={handleCheckConfirmed}
+                  disabled={checkingSession}
+                  className="w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-xs flex items-center justify-center space-x-2 disabled:opacity-50"
+                >
+                  {checkingSession ? (
+                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">verified</span>
+                      <span>I've confirmed my email</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendLoading || resendCooldown > 0}
+                  className="w-full bg-neutral-850 hover:bg-neutral-800 text-white font-medium py-2.5 rounded-xl transition-colors text-xs flex items-center justify-center space-x-2 disabled:opacity-50 border border-neutral-700"
+                >
+                  {resendLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : resendCooldown > 0 ? (
+                    <span className="text-neutral-400">Resend email in {resendCooldown}s</span>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">send</span>
+                      <span>Resend confirmation email</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAwaitingConfirmation(false);
+                    setIsSignUp(false);
+                    setError(null);
+                    setResendStatus(null);
+                  }}
+                  className="w-full text-neutral-400 hover:text-white py-2 text-xs transition-colors"
+                >
+                  Back to Sign In
+                </button>
+              </div>
             </div>
           ) : (
             <>
