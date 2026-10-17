@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { mailTargetFor, GMAIL_APP_URL, GMAIL_WEB_URL } from '../src/utils/openMail.ts';
+import { mailTargetFor, GMAIL_APP_URL, GMAIL_WEB_URL, MAIL_FALLBACK_MS, shouldCancelMailFallback } from '../src/utils/openMail.ts';
 import { isUnconfirmedEmailError } from '../src/utils/authOutcome.ts';
 
 console.log('--- RUNNING EMAIL-CONFIRM UX TESTS ---');
@@ -45,6 +45,19 @@ for (const msg of ['Invalid login credentials', 'User already registered', '', '
 assert.strictEqual(isUnconfirmedEmailError(null), false, 'null is not a match');
 assert.strictEqual(isUnconfirmedEmailError(undefined), false, 'undefined is not a match');
 console.log('✓ Test 3 Passed: not-confirmed detected, other errors ignored');
+
+// ── Test 4: the app-open window is wide enough for a cold app switch ─────────
+console.log('\nTest 4: MAIL_FALLBACK_MS');
+assert.ok(MAIL_FALLBACK_MS >= 1200, `fallback window too short: ${MAIL_FALLBACK_MS}ms`);
+assert.ok(MAIL_FALLBACK_MS <= 3000, `fallback would strand the user: ${MAIL_FALLBACK_MS}ms`);
+console.log('✓ Test 4 Passed: fallback window is 1200–3000ms');
+
+// ── Test 5: only a hidden page (the app opened) cancels the fallback ─────────
+console.log('\nTest 5: shouldCancelMailFallback');
+assert.strictEqual(shouldCancelMailFallback('hidden'), true, 'a backgrounded page means the app opened');
+assert.strictEqual(shouldCancelMailFallback('visible'), false, 'a visible page must keep the fallback armed');
+assert.strictEqual(shouldCancelMailFallback(''), false, 'unknown state must keep the fallback armed');
+console.log('✓ Test 5 Passed: only hidden cancels the fallback');
 
 console.log('\n========================================');
 console.log('🎉 ALL EMAIL-CONFIRM UX TESTS PASSED! 🎉');

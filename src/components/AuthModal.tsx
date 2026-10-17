@@ -28,8 +28,15 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const onSuccessRef = useRef(onSuccess);
   useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
 
+  // Three paths can complete the same sign-in (form submit, the auth event, and
+  // the poll). Supabase notifies listeners before the sign-in promise resolves,
+  // so without this guard they can overlap and repeat the sync.
+  const completedRef = useRef(false);
+
   // Cache the freshly authenticated identity and hand control back to the app.
   const completeSignIn = useCallback(async (user: User) => {
+    if (completedRef.current) return;
+    completedRef.current = true;
     localStorage.setItem('dukan-auth-user', JSON.stringify({
       id: user.id,
       email: user.email,
