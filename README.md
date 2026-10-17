@@ -154,18 +154,48 @@ Every key lives in the root `.env`. The complete list with the reasoning for eac
 > [!WARNING]
 > Every `VITE_*` variable ends up inside the browser bundle, where anyone can read it. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
-### Email confirmation redirects
+### Email confirmation links
 
-If Confirm email is switched on in Supabase, the confirmation link has to come back to the app, or the session lands in the wrong browser. This is a dashboard setting, not a file in the repo.
+When **Confirm email** is on, signup sends a link that has to confirm the account
+**wherever it is opened** — a mail app's browser, Chrome, or a different device.
+That takes a dashboard setting, one migration and one deploy; none of it lives in
+repo config:
 
-1. Supabase dashboard, then Authentication, then URL Configuration.
-2. Site URL: the production app URL, for example `https://<app>.vercel.app`.
-3. Redirect URLs: add the app origin and the dev server, so the `emailRedirectTo` the app sends (`window.location.origin + pathname`) is allowed:
+1. Supabase dashboard → **Authentication → URL Configuration**.
+2. **Site URL** → the production app URL (e.g. `https://<app>.vercel.app`).
+3. **Redirect URLs** → allowlist the app origin and the dev server, so the
+   `emailRedirectTo` the app sends (`window.location.origin + pathname`) is allowed:
    - `https://<app>.vercel.app/**`
    - `http://localhost:3000/**`
-4. Save.
+4. **Authentication → Email Templates → Confirm signup** → replace the link with
+   `https://<app>.vercel.app/?token_hash={{ .TokenHash }}&type=signup`.
 
-Skip step 3 and Supabase ignores `emailRedirectTo`, falls back to the Site URL, and the link opens the wrong page. The confirmation modal itself offers Open Gmail and Resend, and signs the person in once the link is opened in the same browser.
+   The link must be **root-relative**: Vercel serves `dist/` as flat files, so
+   only `/` maps to `index.html` and any other path 404s before the app loads.
+   Vite's dev server hides this by serving an SPA fallback for every path, which
+   is why `scripts/test_repo_hygiene.js` asserts the documented link stays at the
+   root rather than trusting a local check.
+5. Apply `supabase_email_confirmation.sql` (SQL editor). It creates the
+   `is_email_confirmed` function the status endpoint calls.
+6. `supabase functions deploy email-confirmation-status`.
+
+Step 4 is the one that makes the link work anywhere. The app verifies
+`token_hash` with `verifyOtp`, which needs no PKCE `code_verifier`; the default
+`{{ .ConfirmationURL }}` does need one, and that verifier lives in the browser
+that *started* the signup — so a link opened in Gmail's browser could never sign
+that account in.
+
+With steps 4–6 in place the confirmation page confirms in whatever browser opened
+it, and the "Check your email" panel polls the status endpoint every 3 seconds —
+so a confirmation on one device finishes the sign-in on every device, with no
+manual refresh and no second tap. Where the link is opened in a mail app's
+browser, Android is offered a hand-off to Chrome; iOS is only advised, because no
+web page can launch another browser.
+
+`emailRedirectTo` is still sent on signup and resend. Before step 4 it is what
+decides where the confirmation link lands; after step 4 it no longer affects
+confirmation. Skip step 3 and Supabase ignores `emailRedirectTo`, falls back to
+the Site URL, and the link opens the wrong page.
 
 ## Deploying
 
