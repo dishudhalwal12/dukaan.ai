@@ -5,6 +5,7 @@ import { dukanCatalog, resolveCatalogItem, searchInCatalog } from './dukanCatalo
 import { dukanOrders } from './dukanOrders.js';
 import { matchNearestShop, loadShops } from './dukanShops.js';
 import { registryStatus, loadShopCatalog } from './dukanCloud.js';
+import { callLocalSlm } from './localSlm.js';
 import dotenv from 'dotenv';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,7 +15,10 @@ const __dirname = path.dirname(__filename);
 // shell export sets it, a platform injects it. With `override: true` a developer's
 // .env silently beat all three, which is how the test suite once inherited live
 // Supabase credentials and read the real registry.
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+//
+// The file is the repository-root .env, not one beside this file: there is ONE
+// place a human edits to change any key.
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 // In-memory conversation history: jid -> messages[]
 const conversationHistories = new Map();
@@ -1156,34 +1160,12 @@ async function callAiEngine(userText, customerName, customerPhone, jid, location
     }
   }
 
-  // FALLBACK: Local SLM (Port 8080)
+  // FALLBACK: Local SLM — only when a local model server is actually configured.
   if (!rawReply) {
-    try {
-      const localBaseUrl = process.env.LLM_BASE_URL || 'http://127.0.0.1:8080/v1/chat/completions';
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const res = await fetch(localBaseUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages,
-          max_tokens: 500,
-          temperature: 0.5
-        }),
-        signal: ctrl.signal
-      });
-      clearTimeout(timer);
-
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content;
-        if (content && content.trim()) {
-          console.log(`[AI Engine] Reply generated via Local SLM fallback`);
-          rawReply = content.trim();
-        }
-      }
-    } catch (e) {
-      console.warn(`[AI Engine] Local SLM fallback error (${e.message})`);
+    const local = await callLocalSlm(messages);
+    if (local) {
+      console.log(`[AI Engine] Reply generated via Local SLM fallback`);
+      rawReply = local;
     }
   }
 

@@ -170,7 +170,6 @@ const BusinessContextStep: React.FC<{
 
         const response = await withGeminiFailover((client) =>
           client.models.generateContent({
-            model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || 'liquid/lfm-2.5-2.6b:free',
             contents: prompt,
             config: {
               responseMimeType: 'application/json',
@@ -374,7 +373,6 @@ Return format:
 
       const response = await withGeminiFailover((client) =>
         client.models.generateContent({
-          model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || 'liquid/lfm-2.5-2.6b:free',
           contents: prompt,
           config: { responseMimeType: 'application/json' },
         })

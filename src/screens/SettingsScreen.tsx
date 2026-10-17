@@ -10,6 +10,7 @@ import ChangeLanguageScreen from './settings/ChangeLanguageScreen.tsx';
 import BrandGuideScreen from './settings/BrandGuideScreen.tsx';
 import PrivacyPolicyScreen from './settings/PrivacyPolicyScreen.tsx';
 import HelpCenterScreen from './settings/HelpCenterScreen.tsx';
+import { hasSupportWhatsApp, supportTelHref } from '../config/support.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 
 const SettingsHeader: React.FC = () => {
@@ -107,12 +108,14 @@ const ContactSupportModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
                     <p className="font-semibold text-sm">Email Us</p>
                 </a>
     
-                <a href="tel:9256487182" className="flex flex-col items-center gap-2 text-neutral-200 hover:text-white transition-colors">
+                {hasSupportWhatsApp && (
+                <a href={supportTelHref} className="flex flex-col items-center gap-2 text-neutral-200 hover:text-white transition-colors">
                     <div className="w-20 h-20 bg-[#2D2D2D] rounded-full flex items-center justify-center active:bg-neutral-600 transition-colors">
                         <span className="material-symbols-outlined text-4xl text-[#E6E6FA]">call</span>
                     </div>
                     <p className="font-semibold text-sm">Call Us</p>
                 </a>
+                )}
             </div>
           </div>
         </>

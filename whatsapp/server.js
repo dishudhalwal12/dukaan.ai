@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Readable } from 'node:stream';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import QRCode from 'qrcode';
@@ -9,9 +10,13 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
-import { dukanOrders, selectOrders } from './dukanOrders.js';
+import { dukanOrders, selectOrders, ordersQueryFor } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
+import { installPosRoutes } from './posStatic.js';
+import { createApiAuth } from './apiAuth.js';
+import { corsOptionsFor, parseOrigins } from './corsPolicy.js';
+import { buildUpstreamRequest, resolveModelConfig } from './aiProxy.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -30,19 +35,45 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Existing environment variables WIN over .env (dotenv's default) — see the note
-// in dukanBot.js. Precedence: process environment, then .env.
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// ONE environment file for the whole app, at the repository root rather than
+// beside this file, so every key the bot or the frontend needs lives in a single
+// place a human can edit. Existing environment variables WIN over .env (dotenv's
+// default) — see the note in dukanBot.js.
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 const AUTH_DIR = path.resolve(__dirname, process.env.AUTH_DIR || './auth_info');
+// The Vite build of the POS, served from this same origin (see posStatic.js).
+const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
-app.use(cors());
+// Only the origins this app is actually served from may call the API; a
+// wildcard let any website read a shopkeeper's orders.
+app.use(cors(corsOptionsFor({ allowedOrigins: parseOrigins(process.env.CORS_ORIGINS) })));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+// This API sits on a public tunnel, so every /api route passes the policy in
+// apiAuth.js before a handler can run. See that file for the route table.
+const apiAuth = createApiAuth({
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseKey: process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  operatorIds: new Set(
+    String(process.env.OPERATOR_USER_IDS || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+  ),
+});
+app.use('/api', apiAuth.run);
+
+// The legacy Baileys/n8n ops console can re-pair the WhatsApp session, so it is
+// NOT served by default. Set ENABLE_OPS_CONSOLE=1 to bring it back; the POS owns
+// `/` and its own settings screen already handles linking.
+if (process.env.ENABLE_OPS_CONSOLE === '1') {
+  app.use('/ops', express.static(path.join(__dirname, 'public')));
+}
 
 // Erase all previous chatbot memory & carts on server start/restart
 resetAllContext();
@@ -254,7 +285,7 @@ async function initWhatsApp() {
           console.log('\n================ WhatsApp QR Code ================');
           console.log('Scan this QR code with WhatsApp on your phone:');
           qrcodeTerminal.generate(qr, { small: true });
-          console.log('Or view the QR code in your browser at: http://localhost:' + PORT);
+          console.log('Or view the QR code in your browser at: http://localhost:' + PORT + '/ops');
           console.log('==================================================\n');
 
           broadcastSSE({
@@ -279,7 +310,10 @@ async function initWhatsApp() {
           broadcastSSE({
             type: 'status',
             status: connectionStatus,
-            user: userInfo,
+            // SSE is authenticated, so this may carry the linked account. Send
+            // the number explicitly rather than the JID: the UI wants the
+            // number, and a JID is a strange thing to publish.
+            user: { name: userInfo.name, phone: userInfo.phone },
           });
         }
 
@@ -453,16 +487,70 @@ async function initWhatsApp() {
 
 // ======================== REST API ROUTES ========================
 
-// Health & Status
+// Health & Status. This route is PUBLIC — the watchdog, ngrok and the deploy
+// script all use it as a health check — so it carries nothing about the shop.
+// `user.id` used to be returned here, and a WhatsApp id is a JID: that
+// published the shopkeeper's phone number to anyone who asked. The settings
+// screen reads the linked number from the authenticated SSE `init` payload.
 app.get('/api/status', (req, res) => {
   res.json({
     status: connectionStatus,
-    user: userInfo,
-    qr: currentQRDataUrl,
-    n8nWebhookUrl,
-    port: PORT,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Model calls are proxied through here so the provider key stays on the server
+// and never reaches the browser. Non-streaming and streamed (SSE) both pass.
+// The model and the data policy are the server's decisions (see aiProxy.js), so
+// a caller's own `model` is dropped and cannot spend the shop's credit on a
+// model it never chose.
+let aiConfigWarned = false;
+function aiConfig() {
+  const cfg = resolveModelConfig(process.env);
+  if (!aiConfigWarned && cfg.dataCollection === 'deny' && /:free$/.test(cfg.model)) {
+    aiConfigWarned = true;
+    console.warn(
+      `[AI Proxy] OPENROUTER_MODEL=${cfg.model} is a free model but AI_DATA_COLLECTION=deny. ` +
+        'OpenRouter serves free models only from endpoints that collect data, so every call ' +
+        'will fail with "No endpoints found matching your data policy". Either set ' +
+        'AI_DATA_COLLECTION=allow, or set OPENROUTER_MODEL to a paid model to keep the guarantee.'
+    );
+  }
+  return cfg;
+}
+
+app.post('/api/ai/chat/completions', async (req, res) => {
+  const apiKey = process.env.OPENROUTER_API_KEY || '';
+  if (!apiKey) {
+    return res.status(503).json({ error: 'ai_not_configured' });
+  }
+
+  try {
+    const { url, init } = buildUpstreamRequest({
+      body: req.body,
+      apiKey,
+      referer: `${req.protocol}://${req.get('host')}`,
+      title: 'Dukaan.AI',
+      ...aiConfig(),
+    });
+
+    const upstream = await fetch(url, init);
+    res.status(upstream.status);
+    const contentType = upstream.headers.get('content-type');
+    if (contentType) res.setHeader('Content-Type', contentType);
+
+    if (req.body && req.body.stream && upstream.ok && upstream.body) {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-Accel-Buffering', 'no');
+      Readable.fromWeb(upstream.body).pipe(res);
+      return;
+    }
+
+    res.send(await upstream.text());
+  } catch (err) {
+    console.error('[AI Proxy] upstream failed:', err?.message || err);
+    if (!res.headersSent) res.status(502).json({ error: 'ai_upstream_failed' });
+  }
 });
 
 // Current QR Code
@@ -920,7 +1008,7 @@ app.delete('/api/dukan/catalog/:id', (req, res) => {
 // Get Orders — scoped to the requesting account. `?scope=all` is the operator
 // console's explicit cross-shop view; an unowned/unidentified request gets all.
 app.get('/api/dukan/orders', (req, res) => {
-  res.json({ orders: selectOrders(req.query) });
+  res.json({ orders: selectOrders(ordersQueryFor(req)) });
 });
 
 // Latest Order webhook endpoint for polling & external order injection
@@ -959,7 +1047,7 @@ app.post(['/webhook/order', '/webhook/latest-order', '/orders'], async (req, res
 
 // Get Dukan Stats
 app.get('/api/dukan/stats', (req, res) => {
-  const all = selectOrders(req.query);
+  const all = selectOrders(ordersQueryFor(req));
   const pending = all.filter(o => o.status === 'PENDING').length;
   const accepted = all.filter(o => o.status === 'ACCEPTED' || o.status === 'PREPARING' || o.status === 'OUT_FOR_DELIVERY').length;
   const delivered = all.filter(o => o.status === 'DELIVERED').length;
@@ -1071,7 +1159,7 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
 });
 
 // Server-Sent Events (SSE) for Real-Time Updates
-app.get('/events', (req, res) => {
+app.get('/events', apiAuth.run, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1084,7 +1172,9 @@ app.get('/events', (req, res) => {
     `data: ${JSON.stringify({
       type: 'init',
       status: connectionStatus,
-      user: userInfo,
+      // Authenticated stream, so the linked account may be named here. The
+      // public /api/status deliberately carries none of this.
+      user: userInfo ? { name: userInfo.name, phone: userInfo.phone } : null,
       qr: currentQRDataUrl,
       n8nWebhookUrl,
     })}\n\n`
@@ -1105,11 +1195,15 @@ app.get('/events', (req, res) => {
   });
 });
 
+// The POS, served last so every /api route and /events above stay unshadowed.
+installPosRoutes(app, DIST_DIR);
+
 // Start Server & WhatsApp Socket
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 WhatsApp Baileys + n8n Bridge running!`);
-  console.log(`📱 Web UI:        http://localhost:${PORT}`);
+  console.log(`📱 POS app:       http://localhost:${PORT}`);
+  console.log(`🛠️  Ops console:   http://localhost:${PORT}/ops`);
   console.log(`⚡ API Send:      POST http://localhost:${PORT}/api/send`);
   console.log(`🔗 n8n Webhook:   ${n8nWebhookUrl || '(Not configured yet - set in UI)'}`);
   console.log(`======================================================\n`);

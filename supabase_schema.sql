@@ -27,8 +27,12 @@
 -- ==============================================================================
 -- 0. RESET (destructive)
 -- ==============================================================================
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
 DROP VIEW  IF EXISTS public.merchant_order_metrics CASCADE;
 DROP VIEW  IF EXISTS public.merchant_signin_stats CASCADE;
+DROP TABLE IF EXISTS public.suppliers CASCADE;
 DROP TABLE IF EXISTS public.device_sessions CASCADE;
 DROP TABLE IF EXISTS public.merchant_preferences CASCADE;
 DROP TABLE IF EXISTS public.user_roles CASCADE;
@@ -67,6 +71,10 @@ CREATE TABLE public.business_profiles (
         OR store_location_source IN ('gps', 'manual', 'ip_approximate')
     ),
     store_location_captured_at TIMESTAMPTZ,
+
+    -- Supplier / distributor contact details for stock replenishments
+    supplier_name              TEXT,
+    supplier_whatsapp          TEXT,
 
     created_at   TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
@@ -242,6 +250,9 @@ BEGIN
     VALUES (NEW.id, 'owner')
     ON CONFLICT (user_id) DO NOTHING;
     RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    -- Never abort auth.users signup if user_roles insert encounters an issue
+    RETURN NEW;
 END;
 $$;
 
@@ -251,7 +262,22 @@ CREATE TRIGGER on_auth_user_created_seed_role
     FOR EACH ROW EXECUTE FUNCTION public.seed_user_role();
 
 -- ==============================================================================
--- 7. INDEXES FOR PERFORMANCE
+-- 7. SUPPLIERS — owner-scoped supplier / distributor details
+-- ==============================================================================
+-- Stores supplier contact information per store owner for upstocking and low-stock replenishment.
+CREATE TABLE public.suppliers (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    supplier_name     TEXT NOT NULL,
+    supplier_whatsapp TEXT NOT NULL,
+    notes             TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT suppliers_user_id_key UNIQUE (user_id)
+);
+
+-- ==============================================================================
+-- 8. INDEXES FOR PERFORMANCE
 -- ==============================================================================
 CREATE INDEX idx_business_profiles_user_id ON public.business_profiles(user_id);
 CREATE INDEX idx_products_user_id ON public.products(user_id);
@@ -264,9 +290,10 @@ CREATE INDEX idx_device_sessions_user_started ON public.device_sessions(user_id,
 CREATE INDEX idx_device_sessions_install_id ON public.device_sessions(install_id);
 CREATE INDEX idx_merchant_preferences_user_id ON public.merchant_preferences(user_id);
 CREATE INDEX idx_user_roles_user_id ON public.user_roles(user_id);
+CREATE INDEX idx_suppliers_user_id ON public.suppliers(user_id);
 
 -- ==============================================================================
--- 8. ROW LEVEL SECURITY (RLS) POLICIES — owner only
+-- 9. ROW LEVEL SECURITY (RLS) POLICIES — owner only
 -- ==============================================================================
 -- Deliberately NO anon access and NO `user_id IS NULL` escape hatch. Those are
 -- what let any holder of the public anon key read every store's orders (customer
@@ -277,6 +304,17 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.merchant_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
+
+-- Suppliers:
+CREATE POLICY "owner selects own suppliers" ON public.suppliers
+    FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "owner inserts own suppliers" ON public.suppliers
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner updates own suppliers" ON public.suppliers
+    FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner deletes own suppliers" ON public.suppliers
+    FOR DELETE USING (auth.uid() = user_id);
 
 -- Business Profiles:
 CREATE POLICY "owner selects own profile" ON public.business_profiles
@@ -332,7 +370,7 @@ CREATE POLICY "owner deletes own preferences" ON public.merchant_preferences
 -- every client role is denied and only the service role can read or write it.
 
 -- ==============================================================================
--- 9. DERIVED METRICS — computed by Postgres, impossible to forge
+-- 10. DERIVED METRICS — computed by Postgres, impossible to forge
 -- ==============================================================================
 -- security_invoker = true is NOT optional here. A view defaults to running with
 -- its DEFINER's rights, which would let any signed-in shopkeeper read every
@@ -384,7 +422,7 @@ FROM public.device_sessions s
 GROUP BY s.user_id;
 
 -- ==============================================================================
--- 10. STORE LOCATION GUARD
+-- 11. STORE LOCATION GUARD
 -- ==============================================================================
 -- The catalog gate is enforced in the app, but an owner-writable table cannot
 -- enforce it, so this is a CONVENIENCE for reporting: shops that have not set a

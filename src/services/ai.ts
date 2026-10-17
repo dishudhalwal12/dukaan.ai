@@ -123,10 +123,8 @@ Generate a mix of insights tailored specifically for a ${category} business. At 
   let yieldedCount = 0;
 
   try {
-    const activeModel = (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free";
     const responseStream = await withGeminiStreamFailover((client) =>
       client.models.generateContentStream({
-        model: activeModel,
         contents: `Here is the current inventory data: ${JSON.stringify(simplifiedProducts)}. Generate 5 punchy insights. Remember: keep every description strictly under 3 lines (max 20 words).`,
         config: {
           systemInstruction

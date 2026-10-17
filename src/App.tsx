@@ -17,7 +17,7 @@ import { generateRandomPhoneNumber } from './utils/phone.ts';
 import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
-import { listenToAuthState, signOutUser, User } from './services/auth.ts';
+import { listenToAuthState, signOutUser, User, getAuthUrlError } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
@@ -88,6 +88,14 @@ const AppContent: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Surface any auth link errors (e.g. invalid or expired email confirmation link)
+  useEffect(() => {
+    const authError = getAuthUrlError();
+    if (authError) {
+      setError(authError);
+    }
+  }, []);
   
   // Auth state with local storage caching for immediate session persistence across page loads
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -437,7 +445,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     const myId = currentUserRef.current?.id || null;
 
-    whatsappService.fetchOrders(myId).then(res => {
+    whatsappService.fetchOrders().then(res => {
       if (res?.orders && res.orders.length > 0) {
         const backendOrders: Order[] = ownedOrdersOnly(
           res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
@@ -540,7 +548,7 @@ const AppContent: React.FC = () => {
     const pollInterval = setInterval(() => {
       const myId = currentUserRef.current?.id || null;
 
-      whatsappService.fetchOrders(myId).then(res => {
+      whatsappService.fetchOrders().then(res => {
         if (!res?.orders || !Array.isArray(res.orders)) return;
         const freshOrders: Order[] = ownedOrdersOnly(
           res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),

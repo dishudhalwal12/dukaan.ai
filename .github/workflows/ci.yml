@@ -1,0 +1,39 @@
+name: CI
+
+# Runs the real suites on every change, so a red branch never reaches main.
+on:
+  push:
+    branches: [main, 'deploy/**']
+  pull_request:
+
+jobs:
+  frontend:
+    name: POS app (Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+
+  backend:
+    name: WhatsApp bot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: whatsapp/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: whatsapp
+      # Hermetic by construction: no .env, no credentials, throwaway stores.
+      - run: npm test
+        working-directory: whatsapp
+      - run: npm run test:reliability
+        working-directory: whatsapp

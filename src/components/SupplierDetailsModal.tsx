@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { XIcon } from './Icons.tsx';
+import { saveSupplierToCloud } from '../services/cloudSync.ts';
 
 interface SupplierDetailsModalProps {
   isOpen: boolean;
@@ -36,6 +37,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     localStorage.setItem('dukan-supplier-name', name);
     localStorage.setItem('dukan-supplier-whatsapp', whatsappDigits);
     localStorage.setItem('dukan-supplier-whatsapp-display', whatsapp);
+    saveSupplierToCloud(name, whatsappDigits);
     onSave();
   };
 

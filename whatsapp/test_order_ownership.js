@@ -9,7 +9,7 @@ import path from 'path';
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dukan-orders-'));
 process.env.DUKAN_ORDERS_FILE = path.join(tmpDir, 'orders.json');
 
-const { dukanOrders, selectOrders } = await import('./dukanOrders.js');
+const { dukanOrders, selectOrders, ordersQueryFor } = await import('./dukanOrders.js');
 
 console.log('--- RUNNING ORDER OWNERSHIP (MULTI-TENANT) TESTS ---');
 
@@ -133,6 +133,35 @@ assert.ok(
   'operator scope is strictly wider than a single account'
 );
 console.log('✓ Test 7 Passed: anonymous → 0, account → its own, operator → all');
+
+// ── Test 8: the request → query boundary (the ?userId= hole) ──────────────────
+console.log('\nTest 8: ordersQueryFor takes the owner from the token, never the query');
+assert.deepStrictEqual(
+  ordersQueryFor({ query: { userId: 'store-2' }, auth: { userId: 'store-1', isOperator: false } }),
+  { scope: undefined, userId: 'store-1' },
+  'naming another account in the query must not change whose orders are served'
+);
+assert.deepStrictEqual(
+  ordersQueryFor({ query: { scope: 'all' }, auth: { userId: 'store-1', isOperator: false } }),
+  { scope: undefined, userId: 'store-1' },
+  'scope=all must not be honoured for a non-operator'
+);
+assert.deepStrictEqual(
+  ordersQueryFor({ query: { scope: 'all' }, auth: { userId: 'op', isOperator: true } }),
+  { scope: 'all', userId: 'op' },
+  'scope=all is honoured for an operator'
+);
+assert.deepStrictEqual(
+  ordersQueryFor({ auth: { userId: 'store-1' } }),
+  { scope: undefined, userId: 'store-1' },
+  'a token with no query still names its own account'
+);
+assert.deepStrictEqual(
+  ordersQueryFor({ query: { userId: 'store-2' } }),
+  { scope: undefined, userId: undefined },
+  'an anonymous request names nobody, so it is served nothing'
+);
+console.log('✓ Test 8 Passed: the owner comes from the token, not the query string');
 
 fs.rmSync(tmpDir, { recursive: true, force: true });
 

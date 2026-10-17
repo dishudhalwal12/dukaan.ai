@@ -151,3 +151,21 @@ export const dukanOrders = {
 export function selectOrders({ scope, userId } = {}) {
   return scope === 'all' ? dukanOrders.getAll() : dukanOrders.getByOwner(userId);
 }
+
+/**
+ * The selector a request is entitled to, derived ONLY from the verified token.
+ *
+ * `?userId=` used to be trusted outright, so any caller could name any shop and
+ * read its orders. The owner now comes from `req.auth` (set by apiAuth.js once
+ * Supabase has verified the access token), and `?scope=all` — the operator's
+ * cross-shop view — is honoured only for a requester who really is an operator.
+ * An anonymous request names nobody and is therefore served nothing.
+ */
+export function ordersQueryFor(req = {}) {
+  const auth = req.auth || {};
+  const wantsAll = Boolean(req.query && req.query.scope === 'all');
+  return {
+    scope: wantsAll && auth.isOperator ? 'all' : undefined,
+    userId: auth.userId,
+  };
+}

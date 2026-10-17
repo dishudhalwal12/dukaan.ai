@@ -57,7 +57,6 @@ Return ONLY a valid JSON array of objects. No markdown. Each object must have "n
 
   const fetchPromise = withGeminiFailover((client) =>
     client.models.generateContent({
-      model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
       contents: prompt,
       config: {
         systemInstruction,
@@ -92,7 +91,6 @@ Each object in the array must have ONLY these three keys:
 
     const fetchPromise = withGeminiFailover((client) =>
       client.models.generateContent({
-        model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
         contents: [
           {
             inlineData: {
@@ -130,7 +128,7 @@ Each object in the array must have ONLY these three keys:
 
 export const processPhotoBill = async (file: File): Promise<Order[]> => {
   try {
-    const parsedItems = await callGeminiVisionWithTimeout(file, 3000);
+    const parsedItems = await callGeminiVisionWithTimeout(file);
     
     if (parsedItems.length > 0) {
         return [createOrderFromItems(parsedItems)];
@@ -229,7 +227,6 @@ Each item within "items" MUST have "productId", "name" (string), "quantity" (num
 
             const fetchPromise = withGeminiFailover((client) =>
               client.models.generateContent({
-                model: (typeof process !== 'undefined' && process.env?.OPENROUTER_MODEL) || "liquid/lfm-2.5-2.6b:free",
                 contents: `Normalize these orders: ${rawJsonString}`,
                 config: {
                   systemInstruction,

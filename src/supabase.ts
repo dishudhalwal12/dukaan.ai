@@ -7,8 +7,10 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const PLACEHOLDER_SUPABASE_URL = 'https://placeholder-project.supabase.co';
 const PLACEHOLDER_SUPABASE_ANON_KEY = 'placeholder-anon-key';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || PLACEHOLDER_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || PLACEHOLDER_SUPABASE_ANON_KEY;
+// Optional chaining and a guard on window keep this module importable outside a
+// browser (the AI fallback gate test loads it under plain node).
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || PLACEHOLDER_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || PLACEHOLDER_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = (): boolean => {
   return (
@@ -25,7 +27,7 @@ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKe
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window.localStorage,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: 'dukan_supabase_auth_token',
     flowType: 'pkce',
   },

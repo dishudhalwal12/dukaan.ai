@@ -456,6 +456,111 @@ export const saveStoreLocationToCloud = async (
   }
 };
 
+/**
+ * Safely saves supplier / distributor details to Supabase.
+ */
+export const saveSupplierToCloud = async (
+  supplierName: string,
+  supplierWhatsapp: string,
+  explicitUserId?: string
+): Promise<void> => {
+  try {
+    if (!supplierName || !supplierWhatsapp || !isSupabaseConfigured()) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return;
+
+    // 1. Dedicated suppliers table
+    try {
+      const { error: supplierError } = await supabase
+        .from('suppliers')
+        .upsert({
+          user_id: userId,
+          supplier_name: supplierName,
+          supplier_whatsapp: supplierWhatsapp,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+
+      if (supplierError && !supplierError.message?.includes('schema cache')) {
+        console.warn('Supabase DB Error (saveSupplierToCloud - suppliers):', supplierError.message);
+      }
+    } catch (e) {}
+
+    // 2. Also update business_profiles for resilience
+    try {
+      await supabase
+        .from('business_profiles')
+        .update({
+          supplier_name: supplierName,
+          supplier_whatsapp: supplierWhatsapp,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId);
+    } catch (e) {}
+
+    console.log(`Supplier details saved to Supabase for user: ${userId}`);
+  } catch (error) {
+    console.warn('Failed to save supplier details to Supabase.', error);
+  }
+};
+
+/**
+ * Safely fetches supplier details from Supabase database.
+ */
+export const fetchSupplierFromCloud = async (explicitUserId?: string): Promise<{ supplierName: string; supplierWhatsapp: string } | null> => {
+  try {
+    if (!isSupabaseConfigured()) return null;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return null;
+
+    // 1. Dedicated suppliers table
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('supplier_name, supplier_whatsapp')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!error && data?.supplier_name && data?.supplier_whatsapp) {
+        return {
+          supplierName: data.supplier_name,
+          supplierWhatsapp: data.supplier_whatsapp,
+        };
+      }
+    } catch (e) {}
+
+    // 2. Fallback to business_profiles
+    try {
+      const { data, error } = await supabase
+        .from('business_profiles')
+        .select('supplier_name, supplier_whatsapp, profile_data')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!error) {
+        if (data?.supplier_name && data?.supplier_whatsapp) {
+          return {
+            supplierName: data.supplier_name,
+            supplierWhatsapp: data.supplier_whatsapp,
+          };
+        }
+        if (data?.profile_data?.supplier?.name && data?.profile_data?.supplier?.whatsapp) {
+          return {
+            supplierName: data.profile_data.supplier.name,
+            supplierWhatsapp: data.profile_data.supplier.whatsapp,
+          };
+        }
+      }
+    } catch (e) {}
+
+    return null;
+  } catch (error) {
+    console.warn('Failed to fetch supplier details from Supabase.', error);
+    return null;
+  }
+};
+
 // The boot path is not called once: React StrictMode runs effects twice, and the
 // auth listener fires separately for the restored session and the fresh sign-in.
 // Both telemetry writes are therefore once-per-load, guarded here rather than at
@@ -514,6 +619,20 @@ export const syncOnLogin = async (
       (cloudProducts && cloudProducts.length > 0) || 
       (cloudOrders && cloudOrders.length > 0)
     );
+
+    // Restore or sync supplier details
+    const cloudSupplier = await fetchSupplierFromCloud(userId);
+    if (cloudSupplier) {
+      localStorage.setItem('dukan-supplier-name', cloudSupplier.supplierName);
+      localStorage.setItem('dukan-supplier-whatsapp', cloudSupplier.supplierWhatsapp);
+      localStorage.setItem('dukan-supplier-whatsapp-display', cloudSupplier.supplierWhatsapp);
+    } else {
+      const localSupplierName = localStorage.getItem('dukan-supplier-name');
+      const localSupplierWhatsapp = localStorage.getItem('dukan-supplier-whatsapp');
+      if (localSupplierName && localSupplierWhatsapp) {
+        await saveSupplierToCloud(localSupplierName, localSupplierWhatsapp, userId);
+      }
+    }
 
     // If cloud records already exist in Supabase for this user, restore them into app state
     if (hasCloudData) {
