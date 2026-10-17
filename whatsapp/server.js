@@ -310,7 +310,10 @@ async function initWhatsApp() {
           broadcastSSE({
             type: 'status',
             status: connectionStatus,
-            user: { id: userInfo.id, name: userInfo.name },
+            // SSE is authenticated, so this may carry the linked account. Send
+            // the number explicitly rather than the JID: the UI wants the
+            // number, and a JID is a strange thing to publish.
+            user: { name: userInfo.name, phone: userInfo.phone },
           });
         }
 
@@ -484,12 +487,14 @@ async function initWhatsApp() {
 
 // ======================== REST API ROUTES ========================
 
-// Health & Status. This route is public, so it carries no session material:
-// no QR (a session-hijack vector), no linked phone number, no internals.
+// Health & Status. This route is PUBLIC — the watchdog, ngrok and the deploy
+// script all use it as a health check — so it carries nothing about the shop.
+// `user.id` used to be returned here, and a WhatsApp id is a JID: that
+// published the shopkeeper's phone number to anyone who asked. The settings
+// screen reads the linked number from the authenticated SSE `init` payload.
 app.get('/api/status', (req, res) => {
   res.json({
     status: connectionStatus,
-    user: userInfo ? { id: userInfo.id, name: userInfo.name } : null,
     timestamp: new Date().toISOString(),
   });
 });
@@ -1114,7 +1119,9 @@ app.get('/events', apiAuth.run, (req, res) => {
     `data: ${JSON.stringify({
       type: 'init',
       status: connectionStatus,
-      user: userInfo ? { id: userInfo.id, name: userInfo.name } : null,
+      // Authenticated stream, so the linked account may be named here. The
+      // public /api/status deliberately carries none of this.
+      user: userInfo ? { name: userInfo.name, phone: userInfo.phone } : null,
       qr: currentQRDataUrl,
       n8nWebhookUrl,
     })}\n\n`

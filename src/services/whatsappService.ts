@@ -5,7 +5,8 @@ import { apiUrl, authHeaders } from './apiSession.ts';
 export interface WhatsAppStatus {
   status: 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
   user: {
-    id: string;
+    /** Not sent by the server: a WhatsApp id is a JID carrying the number. */
+    id?: string;
     name?: string;
     phone?: string;
   } | null;

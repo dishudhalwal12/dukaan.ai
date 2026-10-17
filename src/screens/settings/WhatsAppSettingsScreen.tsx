@@ -30,7 +30,9 @@ const WhatsAppSettingsScreen: React.FC<WhatsAppSettingsScreenProps> = ({ onBack 
       setLoading(true);
       const data = await whatsappService.fetchStatus();
       setStatus(data.status);
-      setUserInfo(data.user);
+      // The public /api/status carries no account data; the linked number
+      // arrives on the authenticated SSE `init` event a moment later.
+      setUserInfo(data.user ?? null);
       if (data.qr) {
         setQrDataUrl(data.qr);
       } else if (data.status === 'qr_ready' || data.status === 'disconnected') {
