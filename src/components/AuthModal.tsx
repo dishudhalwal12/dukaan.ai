@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail } from '../services/auth.ts';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, User } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
-import { classifyAuthOutcome } from '../utils/authOutcome.ts';
+import { classifyAuthOutcome, isUnconfirmedEmailError } from '../utils/authOutcome.ts';
+import { openMailApp } from '../utils/openMail.ts';
 import { supabase } from '../supabase.ts';
 
 interface AuthModalProps {
@@ -21,30 +22,55 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(false);
 
-  // Auto-close modal if auth state changes to signed-in (e.g. user clicked confirmation link in this browser or another tab)
+  // Held in a ref so the effects below stay subscribed/polling across the
+  // frequent re-renders of the app shell instead of tearing down every render.
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => { onSuccessRef.current = onSuccess; }, [onSuccess]);
+
+  // Cache the freshly authenticated identity and hand control back to the app.
+  const completeSignIn = useCallback(async (user: User) => {
+    localStorage.setItem('dukan-auth-user', JSON.stringify({
+      id: user.id,
+      email: user.email,
+    }));
+    localStorage.removeItem('dukan-guest-mode');
+    try {
+      await syncOnLogin([], [], user);
+    } catch (err) {
+      console.warn('Post-email auth sync error:', err);
+    }
+    onSuccessRef.current();
+  }, []);
+
+  // Auto-close the moment the confirmation link is opened in this browser: a
+  // second tab on the same origin shares localStorage, so the session lands
+  // here too. The email link now redirects back to this page (see auth.ts).
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user && (event === 'SIGNED_IN' || event === 'USER_UPDATED')) {
-        localStorage.setItem('dukan-auth-user', JSON.stringify({
-          id: session.user.id,
-          email: session.user.email,
-        }));
-        localStorage.removeItem('dukan-guest-mode');
-        try {
-          await syncOnLogin([], [], session.user);
-        } catch (err) {
-          console.warn('Post-email auth sync error:', err);
-        }
-        onSuccess();
+        await completeSignIn(session.user);
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [onSuccess]);
+  }, [completeSignIn]);
+
+  // Safety net for when the auth event is not delivered to this tab: while the
+  // confirmation panel is open, poll for the session the link set up.
+  useEffect(() => {
+    if (!awaitingConfirmation) return;
+    const id = window.setInterval(async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        window.clearInterval(id);
+        await completeSignIn(session.user);
+      }
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [awaitingConfirmation, completeSignIn]);
 
   // Cooldown countdown for resending confirmation email
   useEffect(() => {
@@ -83,63 +109,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     }
   };
 
-  const handleCheckConfirmed = async () => {
-    setCheckingSession(true);
-    setError(null);
-    setResendStatus(null);
-
-    // 1. Check if Supabase session is already present (e.g. link was opened in this browser)
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      localStorage.setItem('dukan-auth-user', JSON.stringify({
-        id: session.user.id,
-        email: session.user.email,
-      }));
-      localStorage.removeItem('dukan-guest-mode');
-
-      try {
-        await syncOnLogin([], [], session.user);
-      } catch (err) {
-        console.warn('Post-email auth sync error:', err);
-      }
-      setCheckingSession(false);
-      onSuccess();
-      return;
-    }
-
-    // 2. Try signing in with existing password if present
-    if (password) {
-      const signInResult = await signInWithEmail(email, password);
-      if (signInResult.user && signInResult.session) {
-        localStorage.setItem('dukan-auth-user', JSON.stringify({
-          id: signInResult.user.id,
-          email: signInResult.user.email,
-        }));
-        localStorage.removeItem('dukan-guest-mode');
-        try {
-          await syncOnLogin([], [], signInResult.user);
-        } catch (err) {
-          console.warn('Post-email auth sync error:', err);
-        }
-        setCheckingSession(false);
-        onSuccess();
-        return;
-      } else if (signInResult.error) {
-        if (signInResult.error.toLowerCase().includes('not confirmed')) {
-          setCheckingSession(false);
-          setError('Email is not confirmed yet. Please click the link in your email.');
-          return;
-        }
-      }
-    }
-
-    // 3. Switch back to Sign In mode with prompt
-    setCheckingSession(false);
-    setAwaitingConfirmation(false);
-    setIsSignUp(false);
-    setError('Confirmed your email? Enter your password to complete sign in.');
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -166,30 +135,25 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     }
 
     if (outcome === 'signed-in' && result.user) {
-      // 1. Immediately cache user ID and email
-      localStorage.setItem('dukan-auth-user', JSON.stringify({
-        id: result.user.id,
-        email: result.user.email,
-      }));
-      localStorage.removeItem('dukan-guest-mode');
-
-      // 2. Sync under this user's UUID (no claiming — rows are owner-scoped now)
-      try {
-        await syncOnLogin([], [], result.user);
-      } catch (err) {
-        console.warn('Post-email auth sync error:', err);
-      }
-
-      onSuccess();
-    } else {
-      setError(
-        result.error ||
-        (isSignUp 
-          ? "Failed to create account. Please try again." 
-          : "Invalid email or password. Please try again.")
-      );
-      setLoading(false);
+      await completeSignIn(result.user);
+      return;
     }
+
+    // A pending account that has not confirmed yet is not a failure — show the
+    // confirmation panel instead of a raw "Email not confirmed" error.
+    if (isUnconfirmedEmailError(result.error)) {
+      setAwaitingConfirmation(true);
+      setLoading(false);
+      return;
+    }
+
+    setError(
+      result.error ||
+      (isSignUp
+        ? "Failed to create account. Please try again."
+        : "Invalid email or password. Please try again.")
+    );
+    setLoading(false);
   };
 
   return (
@@ -218,8 +182,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               </div>
               <p className="text-white font-bold text-base mb-1">Check your email</p>
               <p className="text-neutral-400 text-xs leading-relaxed mb-3">
-                We sent a confirmation link to <span className="text-white font-medium">{email}</span>.
-                Click the link in the email to activate your account.
+                We sent a confirmation email to <span className="text-white font-medium">{email}</span>.
+                Open it and tap the link — you'll be signed in here automatically.
               </p>
 
               {resendStatus && (
@@ -239,18 +203,11 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
               <div className="space-y-2 mt-4">
                 <button
                   type="button"
-                  onClick={handleCheckConfirmed}
-                  disabled={checkingSession}
-                  className="w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-xs flex items-center justify-center space-x-2 disabled:opacity-50"
+                  onClick={openMailApp}
+                  className="w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-xs flex items-center justify-center space-x-2"
                 >
-                  {checkingSession ? (
-                    <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-base">verified</span>
-                      <span>I've confirmed my email</span>
-                    </>
-                  )}
+                  <span className="material-symbols-outlined text-base">mail</span>
+                  <span>Open Gmail</span>
                 </button>
 
                 <button
