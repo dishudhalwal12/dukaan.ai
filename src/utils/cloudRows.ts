@@ -99,3 +99,25 @@ export const orderRowFromOrder = (
     notes: str(order?.notes),
   };
 };
+
+/** The columns written beside the JSONB, which an older deployed table may lack. */
+const OPTIONAL_ORDER_COLUMNS = ['customer_phone', 'customer_name', 'delivery_address', 'notes'] as const;
+
+type OptionalOrderColumn = (typeof OPTIONAL_ORDER_COLUMNS)[number];
+
+/**
+ * True only when PostgREST reported that one of the optional columns does not
+ * exist — `PGRST204`, or the "schema cache" message. Any other error is a real
+ * failure and must surface rather than trigger a silent retry.
+ */
+export const isMissingOptionalColumnError = (error: unknown): boolean => {
+  const { code, message } = (error || {}) as { code?: unknown; message?: unknown };
+  return code === 'PGRST204' || (typeof message === 'string' && message.includes('schema cache'));
+};
+
+/** The same rows with the optional columns removed, for a base-only `orders` table. */
+export const stripOptionalOrderColumns = <T extends object>(rows: T[]): Omit<T, OptionalOrderColumn>[] =>
+  (Array.isArray(rows) ? rows : []).map((row) => {
+    const { customer_phone, customer_name, delivery_address, notes, ...base } = row as Record<string, unknown>;
+    return base as Omit<T, OptionalOrderColumn>;
+  });

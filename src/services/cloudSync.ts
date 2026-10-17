@@ -3,7 +3,12 @@ import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
-import { ownerColumnsFromAuthUser, orderRowFromOrder } from '../utils/cloudRows.ts';
+import {
+  ownerColumnsFromAuthUser,
+  orderRowFromOrder,
+  isMissingOptionalColumnError,
+  stripOptionalOrderColumns,
+} from '../utils/cloudRows.ts';
 
 /**
  * Helper to resolve the active user ID from explicit argument, Supabase session,
@@ -278,9 +283,18 @@ export const syncOrdersToCloud = async (
     const now = new Date().toISOString();
     const rows = orders.map(order => orderRowFromOrder(order, userId, now));
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('orders')
       .upsert(rows, { onConflict: 'user_id,external_id' });
+
+    // An older deployed table may carry only the JSONB and the base columns; the
+    // optional flat columns then fail the whole upsert. Retry without them so the
+    // order is still saved rather than dropped.
+    if (isMissingOptionalColumnError(error)) {
+      ({ error } = await supabase
+        .from('orders')
+        .upsert(stripOptionalOrderColumns(rows), { onConflict: 'user_id,external_id' }));
+    }
 
     if (error) {
       console.warn('Supabase DB Error (syncOrdersToCloud):', error.message);
