@@ -24,6 +24,7 @@ import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { mergePolledOrders, electPopupCandidates } from './utils/orderPolling.ts';
+import { isNewOrder } from './utils/orderStatus.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
 import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
 import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboardingStatus.ts';
@@ -311,7 +312,7 @@ const AppContent: React.FC = () => {
   // No longer triggered by click — simulation starts explicitly after onboarding completes
   const handleFirstInteraction = useCallback(() => {}, []);
 
-  const newOrderCount = orders.filter(o => o.status === OrderStatus.NEW).length;
+  const newOrderCount = orders.filter(o => isNewOrder(o.status)).length;
 
   const handleNavigation = useCallback((screen: Screen) => {
     setActiveScreen(screen);
