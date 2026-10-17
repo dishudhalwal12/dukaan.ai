@@ -440,7 +440,7 @@ const AppContent: React.FC = () => {
     const myId = currentUserRef.current?.id;
     if (!myId) return; // No account → no backend orders (guests stay local).
 
-    whatsappService.fetchOrders(myId).then(res => {
+    whatsappService.fetchOrders().then(res => {
       if (res?.orders && res.orders.length > 0) {
         const backendOrders: Order[] = ownedOrdersOnly(
           res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
@@ -545,7 +545,7 @@ const AppContent: React.FC = () => {
       const myId = currentUserRef.current?.id;
       if (!myId) return; // No account → nothing to reconcile.
 
-      whatsappService.fetchOrders(myId).then(res => {
+      whatsappService.fetchOrders().then(res => {
         if (!res?.orders || !Array.isArray(res.orders)) return;
         const freshOrders: Order[] = ownedOrdersOnly(
           res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
