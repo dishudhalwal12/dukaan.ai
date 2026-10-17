@@ -21,7 +21,7 @@ import EmailConfirmScreen from './components/EmailConfirmScreen.tsx';
 import { readEmailConfirmParams } from './utils/confirmLink.ts';
 import type { ConfirmParams } from './utils/confirmLink.ts';
 import { listenToAuthState, signOutUser, User, getAuthUrlError } from './services/auth.ts';
-import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
+import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
@@ -178,10 +178,11 @@ const AppContent: React.FC = () => {
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
 
-        // Telemetry, one row per app load. Neither call is awaited: the Supabase
-        // dashboard is their only reader and neither may delay the shopkeeper.
+        // Telemetry, one row per app load. None of these calls is awaited: the
+        // Supabase dashboard is their only reader and none may delay the shopkeeper.
         void syncDeviceSessionOnceForAppLoad();
         void syncMerchantPreferencesOnceForAppLoad();
+        void syncUserIdentityOnceForAppLoad();
 
         // Restore store data from Supabase DB or migrate existing local store to cloud with user ID
         const cloudData = await syncOnLogin(ordersRef.current, productsRef.current, user);

@@ -17,6 +17,8 @@
  * it says which path wrote the row, so the writer sets it, not the payload.
  */
 
+import { getStoredStoreLocation } from './location.ts';
+
 export interface DeviceSessionPayload {
   session_id: string;
   install_id: string;
@@ -64,6 +66,35 @@ export interface DeviceSessionPayload {
 
   session_timeout_count: number;
   sync_error_count: number;
+
+  // deep signals — cheap scalar reads, null when the browser cannot report them
+  ua_ch_platform: string | null;
+  gpu_renderer: string | null;
+  storage_quota_bytes: number | null;
+  storage_usage_bytes: number | null;
+  display_mode: string | null;
+  color_scheme: string | null;
+  prefers_reduced_motion: boolean | null;
+  prefers_reduced_data: boolean | null;
+  max_touch_points: number | null;
+  viewport_width_css: number | null;
+  viewport_height_css: number | null;
+  color_depth: number | null;
+  active_time_sec: number;
+  page_view_count: number;
+  cpu_pressure: string | null;
+
+  // the store's ALREADY-captured position, reused — never re-prompted
+  geo_lat: number | null;
+  geo_lng: number | null;
+  geo_accuracy_m: number | null;
+  geo_altitude_m: number | null;
+  geo_speed_mps: number | null;
+  geo_heading_deg: number | null;
+  geo_source: string | null;
+
+  // forward-compat bucket, so a new signal need not wait for a column
+  extra: Record<string, unknown>;
 }
 
 export interface UserAgentInfo {
@@ -204,6 +235,234 @@ export function instrumentRequestFailures(): void {
     }
   };
   globalThis.fetch = wrappedFetch;
+}
+
+// ---------------------------------------------------------------------------
+// Deep signals and the once-a-day cadence
+// ---------------------------------------------------------------------------
+// Everything here is cheap or runs at most once per 24h. The point of the
+// cadence gate is to keep the app load FAST: the heavy probes (storage estimate,
+// CPU pressure) are kicked off in the background, at most once a day, and the
+// payload reads whatever the last run left behind rather than waiting on it.
+
+const SESSION_START_MS = Date.now();
+const DAILY_PROBE_KEY = 'dukan-last-daily-probe';
+const DAILY_SIGNALS_KEY = 'dukan-last-daily-signals';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Whether a heavy probe may run now. Pure, so it is tested against fixed clocks
+ * rather than the wall clock, and a missing/!invalid last run is always "yes".
+ */
+export function shouldRunDailyProbe(lastIso: string | null, nowIso: string): boolean {
+  if (!lastIso) return true;
+  const last = Date.parse(lastIso);
+  const now = Date.parse(nowIso);
+  if (!Number.isFinite(last) || !Number.isFinite(now)) return true;
+  return now - last >= DAY_MS;
+}
+
+interface DailySignals {
+  storage_quota_bytes: number | null;
+  storage_usage_bytes: number | null;
+  cpu_pressure: string | null;
+  gpu_renderer: string | null;
+}
+
+const NO_DAILY_SIGNALS: DailySignals = {
+  storage_quota_bytes: null,
+  storage_usage_bytes: null,
+  cpu_pressure: null,
+  gpu_renderer: null,
+};
+
+/** The last heavy-probe result, or nulls. Never blocks; never throws. */
+function readDailySignals(): DailySignals {
+  try {
+    const raw = window.localStorage.getItem(DAILY_SIGNALS_KEY);
+    if (!raw) return NO_DAILY_SIGNALS;
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      storage_quota_bytes: asNumber(value?.storage_quota_bytes),
+      storage_usage_bytes: asNumber(value?.storage_usage_bytes),
+      cpu_pressure: asText(value?.cpu_pressure),
+      gpu_renderer: asText(value?.gpu_renderer),
+    };
+  } catch {
+    return NO_DAILY_SIGNALS;
+  }
+}
+
+async function storageMetrics(): Promise<Pick<DailySignals, 'storage_quota_bytes' | 'storage_usage_bytes'>> {
+  try {
+    const estimate = await navigator.storage?.estimate?.();
+    return { storage_quota_bytes: asNumber(estimate?.quota), storage_usage_bytes: asNumber(estimate?.usage) };
+  } catch {
+    return { storage_quota_bytes: null, storage_usage_bytes: null };
+  }
+}
+
+/** The Compute Pressure state, sampled for a bounded moment. Chromium desktop
+ *  only; every other browser returns null without hanging the (background) run. */
+async function cpuPressureOnce(ms = 1500): Promise<string | null> {
+  const PressureObserverCtor = (globalThis as any).PressureObserver;
+  if (typeof PressureObserverCtor !== 'function') return null;
+  try {
+    const state = await new Promise<string | null>((resolve) => {
+      let observer: any;
+      const timer = setTimeout(() => {
+        // Leave no observer running when the sample window closes empty.
+        try { observer?.disconnect(); } catch { /* ignore */ }
+        resolve(null);
+      }, ms);
+      try {
+        observer = new PressureObserverCtor((records: any[]) => {
+          const record = records?.[records.length - 1];
+          if (record) {
+            clearTimeout(timer);
+            try { observer.disconnect(); } catch { /* ignore */ }
+            resolve(record.state ?? null);
+          }
+        });
+        observer.observe('cpu', { sampleInterval: 1000 }).catch(() => { clearTimeout(timer); resolve(null); });
+      } catch {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    });
+    return asText(state);
+  } catch {
+    return null;
+  }
+}
+
+let dailyProbeStarted = false;
+
+/** Kick the heavy probes off in the background, at most once per 24h and once
+ *  per load. Never awaited by the caller, so it cannot delay the app. */
+function maybeRunDailyProbe(): void {
+  if (dailyProbeStarted) return;
+  dailyProbeStarted = true;
+  try {
+    if (!shouldRunDailyProbe(window.localStorage.getItem(DAILY_PROBE_KEY), new Date().toISOString())) return;
+  } catch {
+    return;
+  }
+  void (async () => {
+    const storage = await storageMetrics();
+    const cpu_pressure = await cpuPressureOnce();
+    // The GPU read builds a WebGL context, so it rides the DAILY probe rather
+    // than every load: the boot path must not pay for it.
+    const signals: DailySignals = { ...storage, cpu_pressure, gpu_renderer: gpuRenderer() };
+    try {
+      window.localStorage.setItem(DAILY_SIGNALS_KEY, JSON.stringify(signals));
+      window.localStorage.setItem(DAILY_PROBE_KEY, new Date().toISOString());
+    } catch { /* storage disabled: the probe simply runs again next load */ }
+  })();
+}
+
+/** The WebGL renderer: a coarse device-tier signal (the GPU tells Apple from a
+ *  low-end Android). Cheap and synchronous, so it is read every load. */
+function gpuRenderer(): string | null {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = (canvas.getContext('webgl') ||
+      canvas.getContext('experimental-webgl')) as WebGLRenderingContext | null;
+    if (!gl) return null;
+    const extension = gl.getExtension('WEBGL_debug_renderer_info');
+    const renderer = extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : null;
+    return asText(renderer);
+  } catch {
+    return null;
+  }
+}
+
+function matches(media: string): boolean | null {
+  try {
+    return typeof window.matchMedia === 'function' ? window.matchMedia(media).matches : null;
+  } catch {
+    return null;
+  }
+}
+
+function displayMetrics(): {
+  display_mode: string | null;
+  color_scheme: string | null;
+  prefers_reduced_motion: boolean | null;
+  prefers_reduced_data: boolean | null;
+  max_touch_points: number | null;
+  viewport_width_css: number | null;
+  viewport_height_css: number | null;
+  color_depth: number | null;
+} {
+  try {
+    const standalone = matches('(display-mode: standalone)') === true ||
+      (navigator as any).standalone === true;
+    const dark = matches('(prefers-color-scheme: dark)');
+    return {
+      display_mode: standalone === null ? null : standalone ? 'standalone' : 'browser',
+      color_scheme: dark === null ? null : dark ? 'dark' : 'light',
+      prefers_reduced_motion: matches('(prefers-reduced-motion: reduce)'),
+      prefers_reduced_data: matches('(prefers-reduced-data: reduce)'),
+      max_touch_points: asNumber(navigator.maxTouchPoints),
+      viewport_width_css: asNumber(window.innerWidth),
+      viewport_height_css: asNumber(window.innerHeight),
+      color_depth: asNumber(window.screen?.colorDepth),
+    };
+  } catch {
+    return {
+      display_mode: null, color_scheme: null, prefers_reduced_motion: null,
+      prefers_reduced_data: null, max_touch_points: null,
+      viewport_width_css: null, viewport_height_css: null, color_depth: null,
+    };
+  }
+}
+
+function geoFromStore(): {
+  geo_lat: number | null; geo_lng: number | null; geo_accuracy_m: number | null;
+  geo_altitude_m: number | null; geo_speed_mps: number | null;
+  geo_heading_deg: number | null; geo_source: string | null;
+} {
+  // REUSE the position captured once at onboarding / the catalog gate. Reading
+  // `navigator.geolocation` here would re-prompt the owner on every load.
+  const location = getStoredStoreLocation();
+  if (!location) {
+    return {
+      geo_lat: null, geo_lng: null, geo_accuracy_m: null,
+      geo_altitude_m: null, geo_speed_mps: null, geo_heading_deg: null, geo_source: null,
+    };
+  }
+  return {
+    geo_lat: asNumber(location.lat),
+    geo_lng: asNumber(location.lng),
+    geo_accuracy_m: asNumber(location.accuracy_m),
+    geo_altitude_m: null,
+    geo_speed_mps: null,
+    geo_heading_deg: null,
+    geo_source: 'store_location',
+  };
+}
+
+function uaChPlatform(): string | null {
+  try {
+    return asText((navigator as any).userAgentData?.platform);
+  } catch {
+    return null;
+  }
+}
+
+let pageViewCount = 1;
+let pageViewTracked = false;
+
+/** Count foreground returns for this session. One passive listener, added lazily. */
+function trackPageViews(): void {
+  if (pageViewTracked || typeof document === 'undefined') return;
+  pageViewTracked = true;
+  try {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') pageViewCount += 1;
+    });
+  } catch { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -454,6 +713,9 @@ async function batteryMetrics(): Promise<{
  * a guest — a guest has no account to attribute the row to.
  */
 export async function collectDeviceSession(): Promise<DeviceSessionPayload> {
+  maybeRunDailyProbe();
+  trackPageViews();
+  const daily = readDailySignals();
   const startedAt = new Date().toISOString();
   const identity = parseUserAgent(
     typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -496,5 +758,18 @@ export async function collectDeviceSession(): Promise<DeviceSessionPayload> {
 
     session_timeout_count: failedRequestCount,
     sync_error_count: syncErrorCount,
+
+    ...displayMetrics(),
+    ua_ch_platform: uaChPlatform(),
+    gpu_renderer: daily.gpu_renderer,
+    storage_quota_bytes: daily.storage_quota_bytes,
+    storage_usage_bytes: daily.storage_usage_bytes,
+    cpu_pressure: daily.cpu_pressure,
+    active_time_sec: Math.round((Date.now() - SESSION_START_MS) / 1000),
+    page_view_count: pageViewCount,
+
+    ...geoFromStore(),
+
+    extra: {},
   };
 }

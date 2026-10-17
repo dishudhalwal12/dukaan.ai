@@ -5,6 +5,7 @@ import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
 import {
   ownerColumnsFromAuthUser,
+  identityRowFromAuthUser,
   orderRowFromOrder,
   isMissingOptionalColumnError,
   stripOptionalOrderColumns,
@@ -53,6 +54,18 @@ const currentAuthUser = async (): Promise<User | null> => {
 };
 
 /**
+ * Drop null/undefined values so an upsert can never blank a column that already
+ * holds a real value (an older session with empty metadata, say).
+ */
+const nonNullColumns = (columns: Record<string, unknown>): Record<string, unknown> => {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(columns)) {
+    if (value !== null && value !== undefined) kept[key] = value;
+  }
+  return kept;
+};
+
+/**
  * Safely saves the business profile to Supabase database without blocking the UI.
  * Associates record with user_id if user is logged in or cached.
  */
@@ -90,7 +103,7 @@ export const saveBusinessProfileToCloud = async (
         // Owner identity, mirrored from the auth session: first/last name, picture,
         // provider and language. Without this the dashboard has only the raw
         // profile_data blob and these columns stay NULL.
-        ...ownerColumnsFromAuthUser(await currentAuthUser()),
+        ...nonNullColumns(ownerColumnsFromAuthUser(await currentAuthUser())),
         ...(storeLocation ? {
           store_lat: storeLocation.lat,
           store_lng: storeLocation.lng,
@@ -418,6 +431,46 @@ export const saveMerchantPreferencesToCloud = async (explicitUserId?: string): P
 };
 
 /**
+ * Writes the account's identity row: email, name, picture and provider.
+ *
+ * The database seeds this row from auth.users at signup, so this is a refresh
+ * that stamps the sign-in time rather than the first write. Only non-null fields
+ * are sent, so a session that lacks a value cannot blank one the trigger already
+ * filled; guests write nothing.
+ */
+export const saveUserIdentityToCloud = async (explicitUserId?: string): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured()) return;
+
+    const user = await currentAuthUser();
+    const userId = explicitUserId || user?.id || (await resolveActiveUserId());
+    // Guests never write to the shared cloud tables — an ownerless identity row
+    // would be adopted by whichever account signs in next.
+    if (!userId) return;
+
+    const identity = identityRowFromAuthUser(user);
+    const row = {
+      user_id: userId,
+      last_sign_in_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...nonNullColumns(identity),
+    };
+
+    const { error } = await supabase
+      .from('user_identities')
+      .upsert(row, { onConflict: 'user_id' });
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (saveUserIdentityToCloud):', error.message);
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save the user identity to Supabase.', error);
+  }
+};
+
+/**
  * Push just the store's position to the owner's profile row.
  *
  * Separate from saveBusinessProfileToCloud because the catalog gate can capture
@@ -470,6 +523,7 @@ export const saveStoreLocationToCloud = async (
 // less than an app that keeps retrying one.
 let deviceSessionRecorded = false;
 let merchantPreferencesRecorded = false;
+let userIdentityRecorded = false;
 
 /** One device session row per app load. */
 export const syncDeviceSessionOnceForAppLoad = async (): Promise<void> => {
@@ -483,6 +537,13 @@ export const syncMerchantPreferencesOnceForAppLoad = async (): Promise<void> => 
   if (merchantPreferencesRecorded) return;
   merchantPreferencesRecorded = true;
   await saveMerchantPreferencesToCloud();
+};
+
+/** One identity row per app load. */
+export const syncUserIdentityOnceForAppLoad = async (): Promise<void> => {
+  if (userIdentityRecorded) return;
+  userIdentityRecorded = true;
+  await saveUserIdentityToCloud();
 };
 
 /**
