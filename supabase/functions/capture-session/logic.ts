@@ -62,6 +62,36 @@ export const SESSION_COLUMNS = [
   'ssl_handshake_duration_ms',
   'session_timeout_count',
   'sync_error_count',
+  // deep signals the client can observe (null when the browser cannot report)
+  'ua_ch_platform',
+  'ua_ch_model',
+  'gpu_renderer',
+  'storage_quota_bytes',
+  'storage_usage_bytes',
+  'display_mode',
+  'color_scheme',
+  'prefers_reduced_motion',
+  'prefers_reduced_data',
+  'max_touch_points',
+  'viewport_width_css',
+  'viewport_height_css',
+  'color_depth',
+  'active_time_sec',
+  'page_view_count',
+  'cpu_pressure',
+  // the store's captured position (reused, never re-prompted) and its locality
+  'geo_lat',
+  'geo_lng',
+  'geo_accuracy_m',
+  'geo_altitude_m',
+  'geo_speed_mps',
+  'geo_heading_deg',
+  'geo_source',
+  'geo_city',
+  'geo_region',
+  'geo_country',
+  // forward-compat bucket
+  'extra',
 ] as const;
 
 /**
@@ -235,4 +265,44 @@ export async function buildServerFields(
     ip_derived_city: geo?.city ?? null,
     ip_derived_postal_code: geo?.postal_code ?? null,
   };
+}
+
+export interface ReverseGeo {
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  postcode: string | null;
+}
+
+/**
+ * Map a BigDataCloud reverse-geocode response onto the geo columns.
+ *
+ * That response has no status field, so "success" is defined as "carries a
+ * locality": an error object or an empty body is NO DATA, never a row of nulls
+ * that would read as a real place. `locality` is the fallback for `city`, which
+ * the service omits for small places.
+ */
+export function parseReverseGeocode(payload: unknown): ReverseGeo | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const data = payload as Record<string, unknown>;
+  if (data.error) return null;
+
+  const text = (value: unknown) =>
+    typeof value === 'string' && value.length > 0 ? value : null;
+
+  const city = text(data.city) ?? text(data.locality);
+  const region = text(data.principalSubdivision);
+  const country = text(data.countryName);
+  const postcode = text(data.postcode);
+
+  if (!city && !region && !country && !postcode) return null;
+  return { city, region, country, postcode };
+}
+
+/** Latitude in [-90, 90] and longitude in [-180, 180], both real numbers. */
+export function isValidCoordinatePair(lat: unknown, lng: unknown): boolean {
+  return (
+    typeof lat === 'number' && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+    typeof lng === 'number' && Number.isFinite(lng) && lng >= -180 && lng <= 180
+  );
 }
