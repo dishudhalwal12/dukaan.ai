@@ -1,6 +1,7 @@
 import assert from 'assert';
 import {
   ownerColumnsFromAuthUser,
+  identityRowFromAuthUser,
   orderRowFromOrder,
   isMissingOptionalColumnError,
   stripOptionalOrderColumns,
@@ -54,6 +55,56 @@ assert.deepStrictEqual(ownerColumnsFromAuthUser(null), {}, 'no session → write
 const spaced = ownerColumnsFromAuthUser({ user_metadata: { full_name: '  Divyarth   Saini  ' } });
 assert.strictEqual(spaced.owner_first_name, 'Divyarth');
 assert.strictEqual(spaced.owner_last_name, 'Saini');
+
+// ── Test 1b: the email is mirrored for every provider, and the identity row ──
+// The email lives on the auth user, not in user_metadata, so an OAuth session
+// that fills a name still left email NULL — and an email/password session, whose
+// metadata is empty, left EVERY identity column NULL.
+console.log('\nTest 1b: owner email + identityRowFromAuthUser');
+const googleEmail = ownerColumnsFromAuthUser({
+  email: 'divyanshu@gmail.com',
+  user_metadata: { full_name: 'Divyanshu Saini', picture: 'https://lh3.googleusercontent.com/a/x.png', locale: 'en-IN' },
+  app_metadata: { provider: 'google' },
+});
+assert.strictEqual(googleEmail.owner_email, 'divyanshu@gmail.com', 'the Google email is mirrored');
+
+const emailUser = ownerColumnsFromAuthUser({
+  email: 'owner@shop.com',
+  user_metadata: {},
+  app_metadata: { provider: 'email' },
+});
+assert.strictEqual(emailUser.owner_email, 'owner@shop.com', 'the email/password email is mirrored');
+assert.strictEqual(emailUser.auth_provider, 'email');
+assert.strictEqual(emailUser.owner_first_name, null, 'a name is never invented from the email local-part');
+assert.strictEqual(emailUser.owner_last_name, null);
+
+assert.strictEqual(
+  ownerColumnsFromAuthUser({ user_metadata: {}, app_metadata: {} }).owner_email,
+  null,
+  'a session with no email mirrors no email',
+);
+
+// The identity row for the new user_identities table.
+const idRow = identityRowFromAuthUser({
+  email: 'owner@shop.com',
+  email_confirmed_at: '2026-10-17T00:00:00Z',
+  user_metadata: { full_name: 'Divyarth Saini', avatar_url: 'https://example.com/a.png' },
+  app_metadata: { provider: 'email' },
+});
+assert.strictEqual(idRow.email, 'owner@shop.com');
+assert.strictEqual(idRow.email_verified, true);
+assert.strictEqual(idRow.owner_first_name, 'Divyarth');
+assert.strictEqual(idRow.owner_last_name, 'Saini');
+assert.strictEqual(idRow.display_name, 'Divyarth Saini');
+assert.strictEqual(idRow.avatar_url, 'https://example.com/a.png');
+assert.strictEqual(idRow.auth_provider, 'email');
+
+const idBlank = identityRowFromAuthUser({ email: null, user_metadata: {}, app_metadata: {} });
+assert.strictEqual(idBlank.email, null);
+assert.strictEqual(idBlank.email_verified, null, 'an unconfirmed signup is null, not false');
+assert.strictEqual(idBlank.display_name, null);
+assert.strictEqual(idBlank.avatar_url, null);
+assert.deepStrictEqual(identityRowFromAuthUser(null), {}, 'no session -> write nothing at all');
 
 // ── Test 2: an order row carries the flat columns the dashboard reads ────────
 console.log('\nTest 2: orderRowFromOrder');
