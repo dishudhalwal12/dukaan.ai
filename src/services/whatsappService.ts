@@ -1,6 +1,6 @@
 import { Product } from '../types.ts';
-import { supabase, isSupabaseConfigured } from '../supabase.ts';
-import { resolveApiUrl, buildAuthHeaders, parseSseBuffer } from './apiClient.ts';
+import { parseSseBuffer } from './apiClient.ts';
+import { apiUrl, authHeaders } from './apiSession.ts';
 
 export interface WhatsAppStatus {
   status: 'disconnected' | 'connecting' | 'qr_ready' | 'connected';
@@ -27,37 +27,13 @@ export interface WhatsAppEvent {
   [key: string]: any;
 }
 
-const getApiUrl = (endpoint: string): string => {
-  const base = import.meta.env?.VITE_API_BASE as string | undefined;
-  return resolveApiUrl(base, endpoint, typeof window !== 'undefined' ? window.location : null);
-};
-
-/**
- * The bot is on a public tunnel and authenticates every /api call, so each
- * request carries the current Supabase access token. No session means no header:
- * the server refuses, and the UI shows the disconnected state rather than
- * quietly serving stale or local data.
- */
-const getAuthToken = async (): Promise<string | null> => {
-  try {
-    if (!isSupabaseConfigured()) return null;
-    const { data } = await supabase.auth.getSession();
-    return data?.session?.access_token ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const authHeaders = async (extra: Record<string, string> = {}): Promise<Record<string, string>> =>
-  buildAuthHeaders(await getAuthToken(), extra);
-
 export const whatsappService = {
   /**
    * Fetches the current connection status and linked user info
    */
   async fetchStatus(): Promise<WhatsAppStatus> {
     try {
-      const res = await fetch(getApiUrl('/api/status'), { headers: await authHeaders() });
+      const res = await fetch(apiUrl('/api/status'), { headers: await authHeaders() });
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
@@ -72,7 +48,7 @@ export const whatsappService = {
    * Fetches the current live QR code data URL
    */
   async fetchQR(): Promise<{ status: string; qr: string | null; raw: string | null }> {
-    const res = await fetch(getApiUrl('/api/qr'), { headers: await authHeaders() });
+    const res = await fetch(apiUrl('/api/qr'), { headers: await authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -81,7 +57,7 @@ export const whatsappService = {
    * Requests a fresh QR code from Baileys
    */
   async refreshQR(): Promise<{ success: boolean; message?: string }> {
-    const res = await fetch(getApiUrl('/api/refresh-qr'), { method: 'POST', headers: await authHeaders() });
+    const res = await fetch(apiUrl('/api/refresh-qr'), { method: 'POST', headers: await authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -91,7 +67,7 @@ export const whatsappService = {
    */
   async requestPairingCode(phoneNumber: string): Promise<{ success: boolean; code?: string; error?: string }> {
     const cleanNumber = phoneNumber.replace(/\D/g, '');
-    const res = await fetch(getApiUrl('/api/pairing-code'), {
+    const res = await fetch(apiUrl('/api/pairing-code'), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ phoneNumber: cleanNumber }),
@@ -107,7 +83,7 @@ export const whatsappService = {
    * Logs out / unlinks the current WhatsApp session
    */
   async logout(): Promise<{ success: boolean }> {
-    const res = await fetch(getApiUrl('/api/logout'), { method: 'POST', headers: await authHeaders() });
+    const res = await fetch(apiUrl('/api/logout'), { method: 'POST', headers: await authHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   },
@@ -116,7 +92,7 @@ export const whatsappService = {
    * Accepts a pending customer order and sends a WhatsApp confirmation message
    */
   async acceptOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/accept`), {
+    const res = await fetch(apiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/accept`), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
     });
@@ -131,7 +107,7 @@ export const whatsappService = {
    * Rejects a pending customer order and sends a WhatsApp rejection message
    */
   async rejectOrder(orderId: string, reason?: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/reject`), {
+    const res = await fetch(apiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/reject`), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ reason }),
@@ -147,7 +123,7 @@ export const whatsappService = {
    * Notifies customer that delivery partner is at doorstep / order is ready at pickup
    */
   async readyOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/ready`), {
+    const res = await fetch(apiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/ready`), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
     });
@@ -162,7 +138,7 @@ export const whatsappService = {
    * Marks order delivered/completed and notifies customer
    */
   async deliverOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
-    const res = await fetch(getApiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/delivered`), {
+    const res = await fetch(apiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/delivered`), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
     });
@@ -177,7 +153,7 @@ export const whatsappService = {
    * Synchronizes Dukaan POS products into the Baileys catalog
    */
   async syncCatalog(products: Product[]): Promise<{ success: boolean; count?: number }> {
-    const res = await fetch(getApiUrl('/api/dukan/catalog/sync'), {
+    const res = await fetch(apiUrl('/api/dukan/catalog/sync'), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ products }),
@@ -197,7 +173,7 @@ export const whatsappService = {
    */
   async fetchOrders(): Promise<{ orders: any[] }> {
     try {
-      const res = await fetch(getApiUrl('/api/dukan/orders'), { headers: await authHeaders() });
+      const res = await fetch(apiUrl('/api/dukan/orders'), { headers: await authHeaders() });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {
@@ -228,7 +204,7 @@ export const whatsappService = {
       if (disposed) return;
       controller = new AbortController();
       try {
-        const res = await fetch(getApiUrl('/events'), {
+        const res = await fetch(apiUrl('/events'), {
           headers: await authHeaders(),
           signal: controller.signal,
         });

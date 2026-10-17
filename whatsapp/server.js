@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { Readable } from 'node:stream';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import QRCode from 'qrcode';
@@ -15,6 +16,7 @@ import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
 import { createApiAuth } from './apiAuth.js';
 import { corsOptionsFor, parseOrigins } from './corsPolicy.js';
+import { buildUpstreamRequest } from './aiProxy.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -488,6 +490,41 @@ app.get('/api/status', (req, res) => {
     user: userInfo ? { id: userInfo.id, name: userInfo.name } : null,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Model calls are proxied through here so the provider key stays on the server
+// and never reaches the browser. Non-streaming and streamed (SSE) both pass.
+app.post('/api/ai/chat/completions', async (req, res) => {
+  const apiKey = process.env.OPENROUTER_API_KEY || '';
+  if (!apiKey) {
+    return res.status(503).json({ error: 'ai_not_configured' });
+  }
+
+  try {
+    const { url, init } = buildUpstreamRequest({
+      body: req.body,
+      apiKey,
+      referer: `${req.protocol}://${req.get('host')}`,
+      title: 'Dukaan.AI',
+    });
+
+    const upstream = await fetch(url, init);
+    res.status(upstream.status);
+    const contentType = upstream.headers.get('content-type');
+    if (contentType) res.setHeader('Content-Type', contentType);
+
+    if (req.body && req.body.stream && upstream.ok && upstream.body) {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('X-Accel-Buffering', 'no');
+      Readable.fromWeb(upstream.body).pipe(res);
+      return;
+    }
+
+    res.send(await upstream.text());
+  } catch (err) {
+    console.error('[AI Proxy] upstream failed:', err?.message || err);
+    if (!res.headersSent) res.status(502).json({ error: 'ai_upstream_failed' });
+  }
 });
 
 // Current QR Code

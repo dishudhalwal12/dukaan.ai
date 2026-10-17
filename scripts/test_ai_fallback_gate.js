@@ -2,16 +2,19 @@ import assert from 'assert';
 
 console.log('--- RUNNING AI FALLBACK GATE TESTS ---');
 
-// The local-SLM fallback in openrouterClient must fire ONLY when a local model
-// server is actually configured. It used to fall through to a hardcoded
-// 'http://127.0.0.1:8080/v1/chat/completions': with no local model running, every
-// production browser dialled its OWN loopback, hung for the full 10s timeout, then
-// threw. Vite also baked that literal into the shipped bundle.
+// Two shipped bugs are guarded here:
+//   * the client used to dial OpenRouter directly with a key injected at build
+//     time — the live key ended up in the public bundle. The client must now
+//     dial the bot's own proxy, which holds the key server-side;
+//   * the local-SLM fallback used to fall through to a hardcoded
+//     'http://127.0.0.1:8080/v1/chat/completions'. With no local model running,
+//     every production browser dialled its OWN loopback, hung for the full 10 s
+//     timeout, then threw, and Vite baked that literal into the bundle.
 process.env.OPENROUTER_API_KEY = '';
 process.env.LLM_BASE_URL = '';
 delete process.env.VITE_LLM_BASE_URL;
 
-const { callOpenRouter, resolveOpenRouterKeys } = await import('../src/utils/openrouterClient.ts');
+const { callOpenRouter, AI_CHAT_ENDPOINT } = await import('../src/utils/openrouterClient.ts');
 
 const calls = [];
 const realFetch = globalThis.fetch;
@@ -21,10 +24,8 @@ globalThis.fetch = async (url) => {
 };
 
 try {
-  // ── Test 1: nothing configured → nothing dialled ───────────────────────────
-  console.log('\nTest 1: no keys and no local URL → no local fallback attempt');
-  assert.deepStrictEqual(resolveOpenRouterKeys(), [], 'this test must run with zero OpenRouter keys');
-
+  // ── Test 1: no local URL → only the bot proxy is dialled ───────────────────
+  console.log('\nTest 1: no local URL → only the bot proxy is dialled, never a loopback');
   let threw = null;
   try {
     await callOpenRouter({ prompt: 'hello' });
@@ -32,7 +33,15 @@ try {
     threw = err;
   }
   assert.ok(threw, 'callOpenRouter must reject when every path is unavailable');
-  assert.deepStrictEqual(calls, [], 'nothing may be dialled when no local server is configured');
+  assert.deepStrictEqual(
+    calls,
+    [AI_CHAT_ENDPOINT],
+    'the only call the client may make is to the bot proxy'
+  );
+  assert.ok(
+    !calls.some((u) => u.includes('127.0.0.1')),
+    'nothing may dial a hardcoded loopback when no local server is configured'
+  );
   assert.ok(
     !String(threw.message).includes('127.0.0.1'),
     'the failure must not be about an unconfigured local hop'
@@ -49,8 +58,8 @@ try {
   }
   assert.deepStrictEqual(
     calls,
-    ['http://127.0.0.1:9/v1/chat/completions'],
-    'an explicitly configured local server must still be used'
+    [AI_CHAT_ENDPOINT, 'http://127.0.0.1:9/v1/chat/completions'],
+    'an explicitly configured local server must still be used as the fallback'
   );
 
   console.log('\n========================================');
