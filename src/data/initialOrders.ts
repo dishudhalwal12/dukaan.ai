@@ -5,7 +5,7 @@ export const initialOrders: Order[] = [
     id: 'B2C-8375',
     customer: {
       name: 'Rohan Sharma',
-      whatsappNumber: '+919876543210',
+      whatsappNumber: '+919000000001',
       address: 'A-101, Rose Apartments, Malviya Nagar, New Delhi',
     },
     items: [
@@ -21,7 +21,7 @@ export const initialOrders: Order[] = [
     id: 'B2C-8374',
     customer: {
       name: 'Priya Patel',
-      whatsappNumber: '+919123456789',
+      whatsappNumber: '+919000000002',
       address: 'B-20, Greenfield Colony, Saket, New Delhi',
     },
     items: [
@@ -36,7 +36,7 @@ export const initialOrders: Order[] = [
     id: 'B2C-8372',
     customer: {
       name: 'Anjali Verma',
-      whatsappNumber: '+919988776655',
+      whatsappNumber: '+919000000003',
       address: 'House No. 5, Sector 15, Gurugram, Haryana',
     },
     items: [
@@ -51,7 +51,7 @@ export const initialOrders: Order[] = [
     id: 'B2C-8370',
     customer: {
       name: 'Vikram Singh',
-      whatsappNumber: '+919234567890',
+      whatsappNumber: '+919000000004',
       address: 'C-404, Sun City, Vasant Kunj, New Delhi',
     },
     items: [

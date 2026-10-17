@@ -9,7 +9,7 @@
     "build": "vite build",
     "postbuild": "node scripts/check-secrets.mjs",
     "preview": "vite preview",
-    "test": "node scripts/test_order_ownership_client.js && node scripts/test_cloud_rows.js && node scripts/test_ai_fallback_gate.js && node scripts/test_api_client_auth.js && node scripts/test_no_key_in_bundle.js && node scripts/test_env_contract.js",
+    "test": "node scripts/test_order_ownership_client.js && node scripts/test_cloud_rows.js && node scripts/test_ai_fallback_gate.js && node scripts/test_api_client_auth.js && node scripts/test_no_key_in_bundle.js && node scripts/test_env_contract.js && node scripts/test_no_hardcoded_phone.js",
     "terminal-chat": "node scripts/terminal_chat.js",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"

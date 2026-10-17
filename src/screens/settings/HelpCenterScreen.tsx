@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
+import { hasSupportWhatsApp, supportTelHref, SUPPORT_WHATSAPP_LABEL } from '../../config/support.ts';
 
 interface FAQItem {
   question: string;
@@ -147,8 +148,9 @@ const HelpCenterScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               </div>
               <span className="material-symbols-outlined text-neutral-600 ml-auto">chevron_right</span>
             </a>
+            {hasSupportWhatsApp && (
             <a
-              href="tel:9256487182"
+              href={supportTelHref}
               className="flex items-center gap-4 p-3 bg-black rounded-xl active:bg-neutral-900 transition-colors"
             >
               <div className="w-10 h-10 bg-[#E6E6FA]/10 rounded-full flex items-center justify-center">
@@ -156,10 +158,11 @@ const HelpCenterScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               </div>
               <div>
                 <p className="font-semibold text-white text-sm">Call Us</p>
-                <p className="text-xs text-neutral-400">+91 92564 87182</p>
+                <p className="text-xs text-neutral-400">{SUPPORT_WHATSAPP_LABEL}</p>
               </div>
               <span className="material-symbols-outlined text-neutral-600 ml-auto">chevron_right</span>
             </a>
+            )}
           </div>
         </section>
 
