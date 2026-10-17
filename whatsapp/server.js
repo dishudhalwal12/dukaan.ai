@@ -35,9 +35,11 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Existing environment variables WIN over .env (dotenv's default) — see the note
-// in dukanBot.js. Precedence: process environment, then .env.
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+// ONE environment file for the whole app, at the repository root rather than
+// beside this file, so every key the bot or the frontend needs lives in a single
+// place a human can edit. Existing environment variables WIN over .env (dotenv's
+// default) — see the note in dukanBot.js.
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5001;

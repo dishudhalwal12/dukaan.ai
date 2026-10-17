@@ -15,7 +15,10 @@ const __dirname = path.dirname(__filename);
 // shell export sets it, a platform injects it. With `override: true` a developer's
 // .env silently beat all three, which is how the test suite once inherited live
 // Supabase credentials and read the real registry.
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+//
+// The file is the repository-root .env, not one beside this file: there is ONE
+// place a human edits to change any key.
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
 // In-memory conversation history: jid -> messages[]
 const conversationHistories = new Map();
