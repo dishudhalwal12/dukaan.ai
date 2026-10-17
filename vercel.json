@@ -6,11 +6,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "http://78.154.103.13:16232/api/:path*"
+      "destination": "https://aurelio-chasmy-dorsiventrally.ngrok-free.dev/api/:path*"
     },
     {
       "source": "/events",
-      "destination": "http://78.154.103.13:16232/events"
+      "destination": "https://aurelio-chasmy-dorsiventrally.ngrok-free.dev/events"
     }
   ],
   "headers": [
