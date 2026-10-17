@@ -12,6 +12,7 @@ import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders, selectOrders } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
+import { installPosRoutes } from './posStatic.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -37,12 +38,16 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 const app = express();
 const PORT = process.env.PORT || 5001;
 const AUTH_DIR = path.resolve(__dirname, process.env.AUTH_DIR || './auth_info');
+// The Vite build of the POS, served from this same origin (see posStatic.js).
+const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public')));
+// The legacy Baileys/n8n ops console. It used to own `/`; the POS owns `/` now,
+// so it moves to /ops (its own assets are relative, so the move is transparent).
+app.use('/ops', express.static(path.join(__dirname, 'public')));
 
 // Erase all previous chatbot memory & carts on server start/restart
 resetAllContext();
@@ -1071,11 +1076,15 @@ app.get('/events', (req, res) => {
   });
 });
 
+// The POS, served last so every /api route and /events above stay unshadowed.
+installPosRoutes(app, DIST_DIR);
+
 // Start Server & WhatsApp Socket
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
   console.log(`🚀 WhatsApp Baileys + n8n Bridge running!`);
-  console.log(`📱 Web UI:        http://localhost:${PORT}`);
+  console.log(`📱 POS app:       http://localhost:${PORT}`);
+  console.log(`🛠️  Ops console:   http://localhost:${PORT}/ops`);
   console.log(`⚡ API Send:      POST http://localhost:${PORT}/api/send`);
   console.log(`🔗 n8n Webhook:   ${n8nWebhookUrl || '(Not configured yet - set in UI)'}`);
   console.log(`======================================================\n`);
