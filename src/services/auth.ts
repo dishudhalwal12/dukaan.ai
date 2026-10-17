@@ -227,27 +227,41 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       }
     };
 
-    // 1. Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
+    // The last identity handed to the callback. A foreground re-check compares
+    // against it so it can report a real change without re-running the caller's
+    // sign-in sync on every app switch.
+    let lastUserId: string | null = null;
+
+    /** Caches the identity, reports it, and remembers it. */
+    const deliver = (user: User | null) => {
+      lastUserId = user?.id ?? null;
+      if (user) {
         localStorage.setItem('dukan-auth-user', JSON.stringify({
-          id: session.user.id,
-          email: session.user.email,
+          id: user.id,
+          email: user.email,
         }));
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
         cleanOAuthUrl();
-        callback(session.user);
+      } else {
+        localStorage.removeItem('dukan-auth-user');
+      }
+      callback(user);
+    };
+
+    // 1. Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        deliver(session.user);
       } else {
         // If no active session and not in the middle of OAuth redirect, notify null
         const isOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
         if (!isOAuth) {
-          localStorage.removeItem('dukan-auth-user');
-          callback(null);
+          deliver(null);
         }
       }
     }).catch(() => {
-      callback(null);
+      deliver(null);
     });
 
     // 2. Realtime auth state listener
@@ -255,21 +269,30 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       console.log('Supabase Auth Event:', event, session?.user?.email);
 
       if (session?.user) {
-        localStorage.setItem('dukan-auth-user', JSON.stringify({
-          id: session.user.id,
-          email: session.user.email,
-        }));
-        localStorage.removeItem('dukan-guest-mode');
-        localStorage.removeItem('dukan-oauth-in-progress');
-        cleanOAuthUrl();
-        callback(session.user);
+        deliver(session.user);
       } else if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('dukan-auth-user');
-        callback(null);
+        deliver(null);
       }
     });
 
+    // 3. Re-check on the way back into the app. A backgrounded phone misses
+    // token refreshes and sign-outs while it sleeps, and a confirmation finished
+    // elsewhere lands on the server, not here — so the page that was painted
+    // hours ago has to ask again. Only a real change is reported.
+    const onForeground = () => {
+      if (document.visibilityState !== 'visible') return;
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const user = session?.user ?? null;
+        if ((user?.id ?? null) === lastUserId) return;
+        deliver(user);
+      }).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onForeground);
+    window.addEventListener('focus', onForeground);
+
     return () => {
+      document.removeEventListener('visibilitychange', onForeground);
+      window.removeEventListener('focus', onForeground);
       subscription.unsubscribe();
     };
   } catch (error) {
