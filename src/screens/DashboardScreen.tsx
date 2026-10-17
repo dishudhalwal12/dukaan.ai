@@ -4,7 +4,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import Card from '../components/Card.tsx';
 import UploadMenu from '../components/UploadMenu.tsx';
 import { useInsights } from '../contexts/ProductContext.tsx';
-import { Order, OrderStatus } from '../types.ts';
+import { Order } from '../types.ts';
+import { isAcceptedSale, isCancelledOrRejected } from '../utils/orderStatus.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 
 const InsightCard: React.FC<{
@@ -70,19 +71,20 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
         const today = { sales: 0, orders: 0 };
         const thisMonth = { sales: 0, orders: 0 };
 
-        // We consider an order a "sale" once it has been accepted (i.e., not NEW or REJECTED)
-        const relevantOrders = orders.filter(o => 
-            o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED
-        );
+        orders.forEach(order => {
+            // A rejected or cancelled order was never an order. Anything else is
+            // counted; only an accepted, never-killed one carries its total into
+            // sales — a NEW/PENDING order is an order but not yet a sale.
+            if (isCancelledOrRejected(order.status)) return;
+            const sale = isAcceptedSale(order.status) ? Number(order.total ?? 0) || 0 : 0;
 
-        relevantOrders.forEach(order => {
             const orderDate = new Date(order.timestamp);
             if (isToday(orderDate)) {
-                today.sales += Number(order.total ?? 0) || 0;
+                today.sales += sale;
                 today.orders += 1;
             }
             if (isThisMonth(orderDate)) {
-                thisMonth.sales += Number(order.total ?? 0) || 0;
+                thisMonth.sales += sale;
                 thisMonth.orders += 1;
             }
         });
