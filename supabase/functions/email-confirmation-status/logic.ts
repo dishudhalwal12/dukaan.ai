@@ -38,3 +38,17 @@ export const isLikelyEmail = (value: unknown): boolean => {
 
 /** The RPC returns a boolean; anything else is not a confirmation. */
 export const parseConfirmedFlag = (data: unknown): boolean => data === true;
+
+/**
+ * The throttle key: the hop the platform appended to `x-forwarded-for`.
+ *
+ * That header is client-supplied and a caller can prepend anything to it, so only
+ * the LAST entry — the one the platform added — names the caller honestly.
+ * Everything before it is discarded, for the same reason `capture-session`
+ * discards it.
+ */
+export const callerKey = (forwardedFor: unknown): string => {
+  if (typeof forwardedFor !== 'string') return 'unknown';
+  const hops = forwardedFor.split(',').map((hop) => hop.trim()).filter(Boolean);
+  return hops.length > 0 ? hops[hops.length - 1]! : 'unknown';
+};

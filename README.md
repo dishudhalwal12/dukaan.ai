@@ -196,7 +196,13 @@ repo config:
    - `https://<app>.vercel.app/**`
    - `http://localhost:3000/**`
 4. **Authentication → Email Templates → Confirm signup** → replace the link with
-   `https://<app>.vercel.app/confirm?token_hash={{ .TokenHash }}&type=signup`.
+   `https://<app>.vercel.app/?token_hash={{ .TokenHash }}&type=signup`.
+
+   The link must be **root-relative**: Vercel serves `dist/` as flat files, so
+   only `/` maps to `index.html` and any other path 404s before the app loads.
+   Vite's dev server hides this by serving an SPA fallback for every path, which
+   is why `scripts/test_repo_hygiene.js` asserts the documented link stays at the
+   root rather than trusting a local check.
 5. Apply `supabase_email_confirmation.sql` (SQL editor). It creates the
    `is_email_confirmed` function the status endpoint calls.
 6. `supabase functions deploy email-confirmation-status`.

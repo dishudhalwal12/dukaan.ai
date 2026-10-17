@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { confirmEmail } from '../services/auth.ts';
-import { ConfirmParams } from '../utils/confirmLink.ts';
+import { confirmTokenOnce } from '../utils/confirmLink.ts';
+import type { ConfirmParams } from '../utils/confirmLink.ts';
 import { browserHandoffUrl, isInAppWebView, isIos } from '../utils/openInBrowser.ts';
 
 interface EmailConfirmScreenProps {
@@ -30,29 +31,39 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
   const [state, setState] = useState<ConfirmState>(authError ? 'failed' : 'verifying');
   const [message, setMessage] = useState<string | null>(authError ?? null);
 
-  // Guard against verifying the same token twice. React StrictMode re-runs
-  // effects in development, and a token is single-use: the second call would
-  // report "invalid link" over a confirmation that actually succeeded.
-  const attempted = useRef(false);
-
+  // A confirmation token is single-use and StrictMode runs this effect twice, so
+  // the spend goes through `confirmTokenOnce`: one `verifyOtp`, and every mount
+  // sees its outcome. Awaiting the shared promise is also what keeps the second
+  // StrictMode pass from stranding the spinner — the first pass's `alive` flag is
+  // already false by then, so only the second pass writes state.
   useEffect(() => {
-    if (authError || attempted.current) return;
-    attempted.current = true;
+    if (authError) return;
 
-    let cancelled = false;
+    let alive = true;
+
     (async () => {
-      const result = await confirmEmail(params.tokenHash, params.type);
-      if (cancelled) return;
+      const result = await confirmTokenOnce(params.tokenHash, params.type, () =>
+        confirmEmail(params.tokenHash, params.type)
+      );
+      if (!alive) return;
+
       if (result.error) {
         setMessage(result.error);
         setState('failed');
-      } else {
-        setState('confirmed');
+        return;
       }
+
+      // Drop the spent token before anything can replay it. A reload now lands on
+      // the app itself rather than re-verifying — which a single-use token would
+      // answer with "invalid link", over a confirmation that succeeded.
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+      }
+      setState('confirmed');
     })();
 
     return () => {
-      cancelled = true;
+      alive = false;
     };
   }, [authError, params.tokenHash, params.type]);
 

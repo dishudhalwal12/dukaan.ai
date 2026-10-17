@@ -77,6 +77,18 @@ assert.strictEqual(
 assert.ok(!withFragment.includes('section'), 'the app fragment is dropped, not smuggled into the intent');
 ok('a target fragment is dropped rather than truncating the intent');
 
+// ── Test 8: an auth param delivered in the fragment still reaches Chrome ────
+console.log('\nTest 8: fragment-carried token survives the hand-off');
+const fragIntent = browserHandoffUrl('https://app.example/#token_hash=abc&type=signup');
+assert.ok(fragIntent.includes('token_hash=abc'), 'a fragment-delivered token must not be dropped by the hand-off');
+assert.ok(fragIntent.includes('type=signup'), 'nor its type');
+const fragFallback = fragIntent.match(/S\.browser_fallback_url=([^;]+);/)[1];
+assert.ok(
+  decodeURIComponent(fragFallback).includes('token_hash=abc'),
+  'the fallback link must confirm too, not land on an empty screen'
+);
+ok('hash-delivered auth params are carried into the intent target');
+
 console.log('\n========================================');
 console.log('🎉 ALL IN-APP BROWSER TESTS PASSED! 🎉');
 console.log('========================================');

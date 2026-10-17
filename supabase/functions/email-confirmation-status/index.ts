@@ -16,12 +16,23 @@
  *
  * ## What bounds the exposure
  *
- * The response is a single boolean and nothing else, so a caller learns at most
- * what they already knew: whether an address has a confirmed account here. The
- * body is untrusted and is only ever used as a parameter to a
- * `SECURITY DEFINER` function, never interpolated into a query. A malformed
- * address is rejected before the database is touched, and the caller's IP is
- * rate-limited so the endpoint cannot be walked as a list.
+ * The response is one bit and nothing else — no user id, no timestamp — but the
+ * bit is real: a caller holding the public anon key can ask whether any given
+ * address has a confirmed account here. That is an email enumeration oracle in
+ * the technical sense, just a weak one. Three things keep it weak rather than
+ * absent:
+ *
+ *   * the body is untrusted and is only ever passed as a parameter to a
+ *     `SECURITY DEFINER` function, never interpolated into a query;
+ *   * a malformed address is rejected before the database is touched;
+ *   * callers are throttled by the hop the platform appended to
+ *     `x-forwarded-for` (see `callerKey`), not by anything the caller supplies.
+ *
+ * The throttle is best-effort: it lives in one warm instance's memory and is
+ * reset by a cold start, so it bounds a burst and does not prevent enumeration.
+ * If enumeration ever matters, the fix is not a bigger limit — it is to stop
+ * keying the answer on an arbitrary address, e.g. hand the waiting device a
+ * nonce at signup that the server can look up instead.
  *
  * Deploy:  supabase functions deploy email-confirmation-status
  * Needs:   supabase_email_confirmation.sql applied (the RPC it calls).
@@ -31,7 +42,7 @@
  */
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { isLikelyEmail, normalizeEmail, parseConfirmedFlag } from './logic.ts';
+import { callerKey, isLikelyEmail, normalizeEmail, parseConfirmedFlag } from './logic.ts';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -46,9 +57,9 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// Best-effort throttle. An instance is short-lived and there may be several, so
-// this bounds a single caller's burst rather than guaranteeing a global limit —
-// which is all the one-bit answer warrants.
+// Best-effort throttle, keyed on the hop the platform appended (see callerKey).
+// One instance's memory, reset by a cold start: it bounds a burst, it does not
+// prevent enumeration.
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 30;
 const hits = new Map<string, number[]>();
@@ -69,8 +80,8 @@ Deno.serve(async (request: Request): Promise<Response> => {
     return json({ error: 'method not allowed' }, 405);
   }
 
-  const callerIp = (request.headers.get('x-forwarded-for') ?? '').split(',')[0]!.trim() || 'unknown';
-  if (rateLimited(callerIp)) {
+  const caller = callerKey(request.headers.get('x-forwarded-for'));
+  if (rateLimited(caller)) {
     return json({ error: 'too many requests' }, 429);
   }
 

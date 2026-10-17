@@ -28,3 +28,10 @@ $$;
 revoke all on function public.is_email_confirmed(text) from public;
 revoke all on function public.is_email_confirmed(text) from anon;
 revoke all on function public.is_email_confirmed(text) from authenticated;
+
+-- The REVOKE from PUBLIC above also strips the implicit grant every role holds,
+-- so the caller is granted back explicitly. Projects on the older default ACLs
+-- would still work without this, but on the newer no-auto-grant defaults the Edge
+-- Function would get "permission denied", return a 500, and the waiting device
+-- would poll "not confirmed" forever with nothing reporting an error.
+grant execute on function public.is_email_confirmed(text) to service_role;

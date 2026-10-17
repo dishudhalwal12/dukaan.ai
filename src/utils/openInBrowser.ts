@@ -44,15 +44,33 @@ export const isInAppWebView = (userAgent: string): boolean => {
 };
 
 /**
+ * Auth parameters that must survive the hand-off when the link delivered them in
+ * the fragment instead of the query string.
+ */
+const FRAGMENT_CARRIED_PARAMS = ['token_hash', 'type'];
+
+/**
  * An Android `intent://` URL that opens `url` in Chrome, falling back to `url`
  * itself when Chrome is not installed.
  *
  * The target's own fragment is dropped: a `#` before `#Intent;` would end the
- * intent target early and lose the token.
+ * intent target early and lose the token. Auth parameters that were IN that
+ * fragment are moved into the query first, so a fragment-delivered token still
+ * reaches Chrome instead of navigating to a confirmation page with nothing to
+ * confirm.
  */
 export const browserHandoffUrl = (url: string): string => {
   try {
     const target = new URL(url);
+
+    if (target.hash) {
+      const hashParams = new URLSearchParams(target.hash.replace(/^#/, ''));
+      for (const key of FRAGMENT_CARRIED_PARAMS) {
+        const value = hashParams.get(key);
+        if (value && !target.searchParams.has(key)) target.searchParams.set(key, value);
+      }
+    }
+
     const scheme = target.protocol.replace(':', '');
     target.hash = '';
     const fallback = encodeURIComponent(target.toString());

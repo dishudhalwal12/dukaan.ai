@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { CONFIRM_TYPES, readEmailConfirmParams, parseConfirmationStatus } from '../src/utils/confirmLink.ts';
+import { CONFIRM_TYPES, readEmailConfirmParams, parseConfirmationStatus, confirmTokenOnce } from '../src/utils/confirmLink.ts';
 
 console.log('--- RUNNING EMAIL-CONFIRM LINK TESTS ---');
 
@@ -75,6 +75,23 @@ for (const body of [
   assert.strictEqual(parseConfirmationStatus(body), false, `not a confirmation: ${JSON.stringify(body)}`);
 }
 ok('only an explicit boolean true is a confirmation');
+
+// ── Test 7: a token is spent exactly once, and everyone sees the outcome ────
+console.log('\nTest 7: confirmTokenOnce');
+let runs = 0;
+const run = async () => ({ ok: true, run: ++runs });
+const first = await confirmTokenOnce('hash-1', 'signup', run);
+const second = await confirmTokenOnce('hash-1', 'signup', run);
+assert.strictEqual(runs, 1, 'React StrictMode re-runs the effect, but the token must only be spent once');
+assert.strictEqual(second.run, 1, 'the second caller waits on the same attempt instead of starting a new one');
+assert.deepStrictEqual(first, second, 'both callers see the same outcome');
+const third = await confirmTokenOnce('hash-1', 'signup', run);
+assert.strictEqual(third.run, 1, 'replaying the same token reuses the settled outcome');
+assert.strictEqual(runs, 1, 'and still only spends it once');
+const other = await confirmTokenOnce('hash-2', 'signup', run);
+assert.strictEqual(other.run, 2, 'a different token gets its own attempt');
+assert.strictEqual(runs, 2, 'two tokens, two attempts');
+ok('a token is spent once and its outcome is shared');
 
 console.log('\n========================================');
 console.log('🎉 ALL CONFIRM-LINK TESTS PASSED! 🎉');

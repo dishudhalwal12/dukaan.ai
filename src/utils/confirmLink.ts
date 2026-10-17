@@ -70,3 +70,33 @@ export const parseConfirmationStatus = (body: unknown): boolean =>
   typeof body === 'object' &&
   body !== null &&
   (body as { confirmed?: unknown }).confirmed === true;
+
+/** One verification per token, shared by every caller. */
+const attempts = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs a token's verification at most once, and gives every caller that same
+ * outcome.
+ *
+ * React StrictMode runs an effect twice in development, and a confirmation token
+ * is single-use: the second `verifyOtp` would be answered "invalid link" and
+ * would paint a failure over a confirmation that had actually succeeded. Sharing
+ * the in-flight promise — rather than refusing the second call — also means a
+ * re-render or a re-mount shows the settled outcome instead of restarting the
+ * flow and stranding the spinner.
+ */
+export const confirmTokenOnce = <T>(
+  tokenHash: string,
+  type: string,
+  run: () => Promise<T>,
+): Promise<T> => {
+  const key = `${type}:${tokenHash}`;
+  const existing = attempts.get(key);
+  if (existing) return existing as Promise<T>;
+
+  // Promise.resolve().then() so a synchronous throw becomes a rejection that
+  // every caller of this token observes, instead of escaping the first one.
+  const attempt = Promise.resolve().then(run);
+  attempts.set(key, attempt);
+  return attempt;
+};

@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { normalizeEmail, isLikelyEmail, parseConfirmedFlag } from '../supabase/functions/email-confirmation-status/logic.ts';
+import { normalizeEmail, isLikelyEmail, parseConfirmedFlag, callerKey } from '../supabase/functions/email-confirmation-status/logic.ts';
 
 console.log('--- RUNNING EMAIL-CONFIRMATION STATUS TESTS ---');
 
@@ -35,6 +35,20 @@ for (const value of [false, 'true', 1, 0, null, undefined, {}, []]) {
   assert.strictEqual(parseConfirmedFlag(value), false, `not a confirmation: ${JSON.stringify(value)}`);
 }
 ok('only a boolean true confirms');
+
+// ── Test 5: the throttle key is not something the caller chooses ────────────
+console.log('\nTest 5: callerKey');
+assert.strictEqual(
+  callerKey('1.2.3.4, 5.6.7.8'),
+  '5.6.7.8',
+  'only the hop the platform appended may key the throttle — a client can prepend anything to x-forwarded-for'
+);
+assert.strictEqual(callerKey('5.6.7.8'), '5.6.7.8', 'a single hop is its own key');
+assert.strictEqual(callerKey('1.2.3.4, 5.6.7.8, '), '5.6.7.8', 'trailing padding is ignored');
+for (const value of ['', '   ', null, undefined]) {
+  assert.strictEqual(callerKey(value), 'unknown', `unusable header: ${JSON.stringify(value)}`);
+}
+ok('the throttle keys on the platform-appended hop, not a client-supplied one');
 
 console.log('\n========================================');
 console.log('🎉 ALL EMAIL-CONFIRMATION STATUS TESTS PASSED! 🎉');
