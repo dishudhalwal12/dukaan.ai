@@ -38,12 +38,9 @@ export interface StreamChunk {
  */
 export const AI_CHAT_ENDPOINT = '/api/ai/chat/completions';
 
-export const DEFAULT_MODEL = 'liquid/lfm-2.5-2.6b:free';
-export const FREE_MODELS_POOL = [
-  'liquid/lfm-2.5-2.6b:free',
-  'nvidia/nemotron-3-super-120b-a12b:free',
-  'cohere/north-mini-code:free'
-];
+// There is deliberately no model list here. The model is an operational choice
+// (`OPENROUTER_MODEL`) that the bot makes server-side, so it can be changed
+// without a redeploy and a caller cannot ask for a model the shop cannot afford.
 
 /**
  * Strips reasoning tokens (<think>...</think>) and markdown wrappers from model response.
@@ -117,10 +114,9 @@ function buildMessages(options: GenerateContentOptions): OpenRouterMessage[] {
 export async function callOpenRouter(options: GenerateContentOptions): Promise<{ text: string }> {
   const messages = buildMessages(options);
   let lastError: any = null;
-  const targetModel = options.model || DEFAULT_MODEL;
-  const modelsList = Array.from(new Set([targetModel, ...FREE_MODELS_POOL])).slice(0, 3);
 
-  // 1. PRIMARY: the bot's AI proxy, which holds the provider key server-side.
+  // 1. PRIMARY: the bot's AI proxy, which holds the provider key server-side and
+  // names the model itself (see OPENROUTER_MODEL).
   {
     const controller = new AbortController();
     const timeoutMs = options.timeoutMs || 25000;
@@ -130,11 +126,7 @@ export async function callOpenRouter(options: GenerateContentOptions): Promise<{
       const response = await fetch(apiUrl(AI_CHAT_ENDPOINT), {
         method: 'POST',
         headers: await authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          model: targetModel,
-          models: modelsList,
-          messages
-        }),
+        body: JSON.stringify({ messages }),
         signal: controller.signal
       });
 
@@ -206,8 +198,6 @@ export async function callOpenRouter(options: GenerateContentOptions): Promise<{
  */
 export async function* streamOpenRouter(options: GenerateContentOptions): AsyncGenerator<StreamChunk> {
   const messages = buildMessages(options);
-  const targetModel = options.model || DEFAULT_MODEL;
-  const modelsList = Array.from(new Set([targetModel, ...FREE_MODELS_POOL])).slice(0, 3);
 
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs || 45000;
@@ -218,12 +208,7 @@ export async function* streamOpenRouter(options: GenerateContentOptions): AsyncG
     streamResponse = await fetch(apiUrl(AI_CHAT_ENDPOINT), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({
-        model: targetModel,
-        models: modelsList,
-        stream: true,
-        messages
-      }),
+      body: JSON.stringify({ stream: true, messages }),
       signal: controller.signal
     });
     // Clear the connection timeout as soon as headers arrive, so the streaming

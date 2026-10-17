@@ -16,7 +16,7 @@ import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
 import { createApiAuth } from './apiAuth.js';
 import { corsOptionsFor, parseOrigins } from './corsPolicy.js';
-import { buildUpstreamRequest } from './aiProxy.js';
+import { buildUpstreamRequest, resolveModelConfig } from './aiProxy.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -501,6 +501,24 @@ app.get('/api/status', (req, res) => {
 
 // Model calls are proxied through here so the provider key stays on the server
 // and never reaches the browser. Non-streaming and streamed (SSE) both pass.
+// The model and the data policy are the server's decisions (see aiProxy.js), so
+// a caller's own `model` is dropped and cannot spend the shop's credit on a
+// model it never chose.
+let aiConfigWarned = false;
+function aiConfig() {
+  const cfg = resolveModelConfig(process.env);
+  if (!aiConfigWarned && cfg.dataCollection === 'deny' && /:free$/.test(cfg.model)) {
+    aiConfigWarned = true;
+    console.warn(
+      `[AI Proxy] OPENROUTER_MODEL=${cfg.model} is a free model but AI_DATA_COLLECTION=deny. ` +
+        'OpenRouter serves free models only from endpoints that collect data, so every call ' +
+        'will fail with "No endpoints found matching your data policy". Either set ' +
+        'AI_DATA_COLLECTION=allow, or set OPENROUTER_MODEL to a paid model to keep the guarantee.'
+    );
+  }
+  return cfg;
+}
+
 app.post('/api/ai/chat/completions', async (req, res) => {
   const apiKey = process.env.OPENROUTER_API_KEY || '';
   if (!apiKey) {
@@ -513,6 +531,7 @@ app.post('/api/ai/chat/completions', async (req, res) => {
       apiKey,
       referer: `${req.protocol}://${req.get('host')}`,
       title: 'Dukaan.AI',
+      ...aiConfig(),
     });
 
     const upstream = await fetch(url, init);

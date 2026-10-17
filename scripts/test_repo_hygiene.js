@@ -83,11 +83,20 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const deleteLines = update.split('\n').filter((line) => line.includes('--delete'));
   assert.ok(deleteLines.length > 0, 'the deploy is expected to sync with --delete');
   for (const line of deleteLines) {
+    // A remote line needs the string (the remote shell strips its quotes); a
+    // local line must use the array, because bash does NOT re-interpret quotes
+    // after expansion — the string form reached a local rsync as the literal
+    // pattern "'.venv*'", matched nothing, and mirrored 763 MB of virtualenvs on
+    // every deploy.
     assert.ok(
-      line.includes('EXCLUDES_STR'),
+      line.includes('EXCLUDES_STR') || line.includes('EXCLUDES[@]'),
       `a --delete sync must carry the exclude list, but this line does not: ${line.trim()}`
     );
   }
+  assert.ok(
+    deleteLines.some((line) => line.includes('EXCLUDES[@]')),
+    'the local rsyncs must use the array form: the string form passes literal quotes and excludes nothing'
+  );
   ok('the deploy preserves live orders, the WhatsApp session and the box\'s own .env');
 }
 

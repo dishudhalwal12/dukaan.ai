@@ -70,13 +70,24 @@ const walk = (dir) => {
 // ── 4. the server holds the key and reads it from env ────────────────────────
 {
   const proxy = read('whatsapp/aiProxy.js');
-  assert.ok(proxy.includes("data_collection: 'deny'"), 'provider data collection must be denied');
+  assert.ok(
+    proxy.includes("data_collection: resolveDataCollection(dataCollection)"),
+    'provider data collection must be a server decision, not the caller\'s'
+  );
+  assert.ok(
+    proxy.includes("=== 'allow' ? 'allow' : 'deny'"),
+    'anything other than an explicit allow must fail closed to deny'
+  );
   const server = read('whatsapp/server.js');
   assert.ok(
     server.includes('process.env.OPENROUTER_API_KEY'),
     'the bot, not the browser, must read the provider key'
   );
   assert.ok(server.includes("app.post('/api/ai/chat/completions'"), 'the bot must expose the AI proxy route');
+  assert.ok(
+    server.includes('resolveModelConfig(process.env)'),
+    'the model must be chosen by the bot from .env, never named by the caller'
+  );
   ok('the provider key is read by the bot and used only in the proxy route');
 }
 

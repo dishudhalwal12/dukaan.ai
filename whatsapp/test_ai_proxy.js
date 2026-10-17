@@ -1,6 +1,11 @@
 import './test_setup_orders_file.js'; // pin the stores, blank the live credentials
 import assert from 'assert';
-import { buildUpstreamRequest, OPENROUTER_ENDPOINT } from './aiProxy.js';
+import {
+  buildUpstreamRequest,
+  OPENROUTER_ENDPOINT,
+  DEFAULT_UPSTREAM_MODEL,
+  resolveModelConfig,
+} from './aiProxy.js';
 
 console.log('--- RUNNING AI PROXY TESTS ---');
 let n = 0;
@@ -37,7 +42,7 @@ const base = {
   const sent = JSON.parse(init.body);
   assert.strictEqual(sent.provider.data_collection, 'deny',
     'shop data must not be retained or trained on by the provider');
-  ok('provider.data_collection is forced to deny');
+  ok('provider.data_collection defaults to deny');
 }
 
 {
@@ -51,22 +56,60 @@ const base = {
   ok('a caller asking for data collection is overruled, but its other options survive');
 }
 
+{
+  const { init } = buildUpstreamRequest({ ...base, dataCollection: 'allow' });
+  assert.strictEqual(JSON.parse(init.body).provider.data_collection, 'allow',
+    'the operator can opt into data collection for a free model, explicitly');
+  ok('AI_DATA_COLLECTION=allow is honoured when the operator sets it');
+}
+
+// ── the model ────────────────────────────────────────────────────────────────
+{
+  const { init } = buildUpstreamRequest({
+    ...base,
+    body: { ...base.body, model: 'expensive/model', models: ['a', 'b'] },
+    model: 'server/chosen-model',
+    models: ['server/fallback'],
+  });
+  const sent = JSON.parse(init.body);
+  assert.strictEqual(sent.model, 'server/chosen-model',
+    'the model comes from the server env, never from the caller');
+  assert.deepStrictEqual(sent.models, ['server/fallback']);
+  ok("a caller's model and fallback list are discarded in favour of the server's");
+}
+
+{
+  const { init } = buildUpstreamRequest({ ...base, models: [] });
+  assert.strictEqual(JSON.parse(init.body).models, undefined,
+    'an empty fallback list must not send a bogus models field');
+  ok('no fallback list means no models field at all');
+}
+
+{
+  const cfg = resolveModelConfig({});
+  assert.strictEqual(cfg.model, DEFAULT_UPSTREAM_MODEL, 'an unconfigured model falls back to a paid one');
+  assert.strictEqual(cfg.dataCollection, 'deny', 'so the default privacy guarantee holds');
+  assert.strictEqual(resolveModelConfig({ AI_DATA_COLLECTION: 'ALLOW' }).dataCollection, 'allow');
+  assert.strictEqual(resolveModelConfig({ AI_DATA_COLLECTION: 'yes' }).dataCollection, 'deny');
+  assert.deepStrictEqual(resolveModelConfig({ AI_MODEL_FALLBACKS: ' a , b , ' }).models, ['a', 'b']);
+  assert.strictEqual(resolveModelConfig({ OPENROUTER_MODEL: ' x/y ' }).model, 'x/y');
+  ok('the env contract resolves exactly: model, fallbacks, and a fail-closed data policy');
+}
+
 // ── the payload ──────────────────────────────────────────────────────────────
 {
   const { url, init } = buildUpstreamRequest({
     ...base,
-    body: { ...base.body, models: ['a', 'b'], stream: true },
+    body: { ...base.body, stream: true },
   });
   assert.strictEqual(url, OPENROUTER_ENDPOINT);
   assert.ok(url.startsWith('https://'), 'the upstream is called over TLS');
   const sent = JSON.parse(init.body);
-  assert.strictEqual(sent.model, 'm');
-  assert.deepStrictEqual(sent.models, ['a', 'b']);
   assert.deepStrictEqual(sent.messages, base.body.messages);
   assert.strictEqual(sent.stream, true, 'the stream flag is preserved so SSE passes through');
   assert.strictEqual(init.method, 'POST');
   assert.strictEqual(init.headers['Content-Type'], 'application/json');
-  ok('model, fallback list, messages and the stream flag all reach the provider');
+  ok('messages and the stream flag reach the provider, with the server-chosen model');
 }
 
 {
