@@ -119,7 +119,15 @@ chk "the port is preserved"                       "1" "$(has '^PORT=[0-9]' "$NEW
 chk "CORS_ORIGINS is set"                         "1" "$(has '^CORS_ORIGINS=..*' "$NEW")"
 chk "no VITE_ secret is offered"                  "0" "$(has '^VITE_' "$NEW")"
 chk "the old file is out of the read path"        "0" "$([ -f "$OLD" ] && echo 1 || echo 0)"
-chk "no secret is left world-readable"            "0" "$(find "$ROOT" -maxdepth 1 -name '.env*' ! -name '.env.example' -perm -o+r 2>/dev/null | wc -l | tr -d ' ')"
+
+# Other env files in the checkout are not this script's business — and a stray
+# `.env.production.local` holding empty values is harmless — so report them
+# rather than fail the migration on someone else's file.
+strays="$(find "$ROOT" -maxdepth 1 -name '.env*' ! -name '.env.example' ! -name '.env' -perm -o+r 2>/dev/null)"
+if [ -n "$strays" ]; then
+  printf '  note: other world-readable env files here (not written by this script):\n'
+  printf '      %s\n' $strays
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo

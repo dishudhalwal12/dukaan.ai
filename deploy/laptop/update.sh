@@ -48,7 +48,11 @@ RSYNC_SSH="ssh -i $KEY -o BatchMode=yes"
 # Kept twice on purpose: `EXCLUDES` for the local rsync, `EXCLUDES_STR` for
 # commands that run on the remote. The string form keeps its quotes, so the
 # remote shell cannot glob `.venv*` against its own working directory.
+#
+# Order matters to rsync — the first matching pattern wins — so the tracked
+# template is included *before* the catch-all that protects every real env file.
 EXCLUDES=(
+  --include=.env.example
   --exclude=node_modules
   --exclude=models
   --exclude='.venv*'
@@ -58,9 +62,9 @@ EXCLUDES=(
   --exclude=whatsapp/auth_info
   --exclude=whatsapp/store
   --exclude=.env
-  --exclude=whatsapp/.env
+  --exclude='.env.*'
 )
-EXCLUDES_STR="--exclude=node_modules --exclude=models --exclude='.venv*' --exclude=adapters --exclude=.worktrees --exclude=.git --exclude=whatsapp/auth_info --exclude=whatsapp/store --exclude=.env --exclude=whatsapp/.env"
+EXCLUDES_STR="--include=.env.example --exclude=node_modules --exclude=models --exclude='.venv*' --exclude=adapters --exclude=.worktrees --exclude=.git --exclude=whatsapp/auth_info --exclude=whatsapp/store --exclude=.env --exclude='.env.*'"
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -137,7 +141,7 @@ note "✓ built dist/ ($(du -sh dist | cut -f1)) with no key and no loopback URL
 
 say "1. would this sync delete anything on the box?"
 "${SSH[@]}" "test -d \$HOME/$REMOTE_DIR" || { echo "  ✗ $HOST:\$HOME/$REMOTE_DIR does not exist"; exit 1; }
-DELETIONS="$(rsync -az --delete --dry-run --itemize-changes $EXCLUDES_STR -e "$RSYNC_SSH" ./ "$HOST:$REMOTE_DIR/" \
+DELETIONS="$(rsync -az --delete --dry-run --itemize-changes "${EXCLUDES[@]}" -e "$RSYNC_SSH" ./ "$HOST:$REMOTE_DIR/" \
   | awk '/^\*deleting/ {print $2}')"
 if [ -n "$DELETIONS" ]; then
   note "the sync wants to delete these on the box:"
@@ -158,23 +162,36 @@ say "2. snapshot the box (a rollback is then a sync, not a reconstruction)"
 "${SSH[@]}" "rsync -a --delete $EXCLUDES_STR \$HOME/$REMOTE_DIR/ \$HOME/$SNAPSHOT/ && printf '  ✓ snapshot: %s\n' \"\$(du -sh \$HOME/$SNAPSHOT | cut -f1)\""
 
 say "3. sync the code"
-rsync -az --delete $EXCLUDES_STR -e "$RSYNC_SSH" ./ "$HOST:$REMOTE_DIR/" && note "✓ synced"
+LOCK_BEFORE="$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "md5sum \$HOME/$REMOTE_DIR/whatsapp/package-lock.json 2>/dev/null | cut -d' ' -f1" || true)"
+rsync -az --delete "${EXCLUDES[@]}" -e "$RSYNC_SSH" ./ "$HOST:$REMOTE_DIR/" && note "✓ synced"
 
 say "4. the single root .env"
 if "${SSH[@]}" "grep -q '^SUPABASE_SERVICE_KEY=..*' \$HOME/$REMOTE_DIR/.env" 2>/dev/null; then
   note "✓ already in place (the bot no longer reads whatsapp/.env)"
 else
   note "migrating — this box still keeps its secrets in two files"
-  "${SSH[@]}" "ROOT=\$HOME/$REMOTE_DIR bash \$HOME/$REMOTE_DIR/deploy/laptop/migrate-env.sh 2>&1 | sed 's/^/  /'" \
-    || { echo "  ✗ the env migration failed — not restarting" >&2; exit 1; }
+  # Capture the output and the exit status separately: piping straight into `sed`
+  # would report sed's status, so a failed migration would look like a success
+  # and the bot would be restarted with no configuration at all.
+  MIG_RC=0
+  MIG_OUT="$("${SSH[@]}" "ROOT=\$HOME/$REMOTE_DIR bash \$HOME/$REMOTE_DIR/deploy/laptop/migrate-env.sh" 2>&1)" || MIG_RC=$?
+  printf '%s\n' "$MIG_OUT" | sed 's/^/  /'
+  [ "$MIG_RC" -eq 0 ] || { echo "  ✗ the env migration failed (exit $MIG_RC) — not restarting" >&2; exit 1; }
+  note "✓ migrated to the root .env"
 fi
 
 say "5. reconcile bot dependencies, only if the lockfile moved"
-BEFORE="$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "md5sum \$HOME/$REMOTE_DIR/whatsapp/package-lock.json 2>/dev/null | cut -d' ' -f1" || true)"
-"${SSH[@]}" "test -d \$HOME/$REMOTE_DIR/whatsapp/node_modules" || note "! no whatsapp/node_modules on the box"
-"${SSH[@]}" "cd \$HOME/$REMOTE_DIR/whatsapp && (npm ci --omit=dev || npm install --omit=dev) >/tmp/.dukaan-npm.log 2>&1"
-AFTER="$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "md5sum \$HOME/$REMOTE_DIR/whatsapp/package-lock.json 2>/dev/null | cut -d' ' -f1" || true)"
-if [ "$BEFORE" = "$AFTER" ]; then note "✓ dependencies reconciled"; else note "✓ lockfile changed ($BEFORE -> $AFTER), dependencies reinstalled"; fi
+LOCK_AFTER="$(ssh -i "$KEY" -o BatchMode=yes "$HOST" "md5sum \$HOME/$REMOTE_DIR/whatsapp/package-lock.json 2>/dev/null | cut -d' ' -f1" || true)"
+if [ "$LOCK_BEFORE" = "$LOCK_AFTER" ]; then
+  note "✓ the bot's lockfile is unchanged — nothing to install"
+else
+  note "the lockfile changed; installing on the box"
+  if "${SSH[@]}" "cd \$HOME/$REMOTE_DIR/whatsapp && (npm ci --omit=dev || npm install --omit=dev) >/tmp/.dukaan-npm.log 2>&1"; then
+    note "✓ dependencies installed"
+  else
+    note "! install failed (see /tmp/.dukaan-npm.log) — the health check will judge"
+  fi
+fi
 
 say "6. restart"
 "${SSH[@]}" "sudo systemctl restart dukaan-bot" && note "✓ restarted"
