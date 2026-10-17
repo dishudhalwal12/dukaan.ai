@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Order, OrderStatus } from '../types.ts';
+import { isNewOrder, isPreparingGroup, isHistoryGroup } from '../utils/orderStatus.ts';
 import OrderDetailsModal from '../components/OrderDetailsModal.tsx';
 import Card from '../components/Card.tsx';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
@@ -49,16 +50,23 @@ const TimeAgo: React.FC<{ timestamp: string }> = ({ timestamp }) => {
 };
 
 const OrderStatusChip: React.FC<{ status: OrderStatus }> = ({ status }) => {
-    const styles = {
+    // The engine also emits PENDING/ACCEPTED/OUT_FOR_DELIVERY/DELIVERED, so the
+    // map carries both vocabularies and falls back for anything unknown.
+    const styles: Record<string, string> = {
         [OrderStatus.NEW]: 'bg-blue-500/20 text-blue-300',
         [OrderStatus.PREPARING]: 'bg-yellow-500/20 text-yellow-300',
         [OrderStatus.READY_FOR_PICKUP]: 'bg-purple-500/20 text-purple-300',
         [OrderStatus.COMPLETED]: 'bg-green-500/20 text-green-300',
         [OrderStatus.REJECTED]: 'bg-red-500/20 text-red-300',
+        [OrderStatus.CANCELLED]: 'bg-rose-500/20 text-rose-300',
+        PENDING: 'bg-blue-500/20 text-blue-300',
+        ACCEPTED: 'bg-cyan-500/20 text-cyan-300',
+        OUT_FOR_DELIVERY: 'bg-indigo-500/20 text-indigo-300',
+        DELIVERED: 'bg-green-500/20 text-green-300',
     };
     return (
-        <div className={`px-2 py-0.5 text-xs font-semibold rounded-full ${styles[status]}`}>
-            {status.replace('_', ' ')}
+        <div className={`px-2 py-0.5 text-xs font-semibold rounded-full ${styles[status] || 'bg-neutral-600/30 text-neutral-300'}`}>
+            {String(status).replace(/_/g, ' ')}
         </div>
     );
 };
@@ -111,9 +119,16 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
   };
 
   const filteredOrders = useMemo(() => {
+      // A tab groups both vocabularies: New = NEW|PENDING, Preparing covers the
+      // whole accepted-to-pickup span, History = completed/delivered/rejected/cancelled.
+      if (activeFilter === OrderStatus.NEW) {
+          return orders.filter(o => isNewOrder(o.status));
+      }
+      if (activeFilter === OrderStatus.PREPARING) {
+          return orders.filter(o => isPreparingGroup(o.status));
+      }
       if (activeFilter === OrderStatus.COMPLETED) {
-          // A more general "Completed" tab
-          return orders.filter(o => o.status === OrderStatus.COMPLETED || o.status === OrderStatus.REJECTED);
+          return orders.filter(o => isHistoryGroup(o.status));
       }
       return orders.filter(o => o.status === activeFilter);
   }, [orders, activeFilter]);
@@ -127,8 +142,10 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
         <div className="flex items-center justify-center bg-[#1A1A1A] p-1 rounded-full">
             {filters.map(filter => {
                 const count = orders.filter(o => {
-                    if (filter === OrderStatus.COMPLETED) return o.status === OrderStatus.COMPLETED || o.status === OrderStatus.REJECTED;
-                    return o.status === filter
+                    if (filter === OrderStatus.NEW) return isNewOrder(o.status);
+                    if (filter === OrderStatus.PREPARING) return isPreparingGroup(o.status);
+                    if (filter === OrderStatus.COMPLETED) return isHistoryGroup(o.status);
+                    return o.status === filter;
                 }).length;
                 const filterKey = filter === OrderStatus.COMPLETED ? 'orders_filter_history' : `orders_filter_${filter.toLowerCase()}`;
                 const label = t(filterKey);
