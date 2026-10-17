@@ -75,12 +75,26 @@ export const signUpWithEmail = async (
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
     });
 
     if (error) {
       console.warn('Supabase Auth Error (SignUp):', error.message);
       clearFreshSignIn();
       return { user: null, error: error.message };
+    }
+
+    // Supabase anti-enumeration protection: if user already exists, Supabase returns
+    // a dummy user with an empty identities array [] and null session, sending NO email.
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      clearFreshSignIn();
+      return {
+        user: null,
+        session: null,
+        error: 'An account with this email already exists. Please sign in or use Continue with Google.',
+      };
     }
 
     // Only a session means the user is actually signed in. Without one the
@@ -205,7 +219,8 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
     const cleanOAuthUrl = () => {
       const hasCode = window.location.search.includes('code=');
       const hasHash = window.location.hash.includes('access_token=');
-      if (hasCode || hasHash) {
+      const hasError = window.location.search.includes('error=') || window.location.hash.includes('error=');
+      if (hasCode || hasHash || hasError) {
         const cleanUrl = window.location.origin + window.location.pathname;
         window.history.replaceState({}, document.title, cleanUrl);
       }
@@ -259,5 +274,65 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
   } catch (error) {
     console.warn('Supabase Auth Error (Listen):', error);
     return () => {};
+  }
+};
+
+/**
+ * Resends the signup confirmation email for a pending user account.
+ */
+export const resendConfirmationEmail = async (
+  email: string
+): Promise<{ success: boolean; error?: string | null }> => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return {
+        success: false,
+        error: 'Supabase credentials are not configured in your environment.',
+      };
+    }
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        emailRedirectTo: window.location.origin + window.location.pathname,
+      },
+    });
+
+    if (error) {
+      console.warn('Supabase Auth Resend Error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (error: any) {
+    console.warn('Supabase Auth Resend Exception:', error);
+    return { success: false, error: error?.message || 'Failed to resend confirmation email.' };
+  }
+};
+
+/**
+ * Reads any error parameters left in the URL hash or query string after an auth callback (e.g. expired link).
+ */
+export const getAuthUrlError = (): string | null => {
+  try {
+    if (typeof window === 'undefined') return null;
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashString = window.location.hash.startsWith('#')
+      ? window.location.hash.substring(1)
+      : window.location.hash;
+    const hashParams = new URLSearchParams(hashString);
+
+    const errorDesc = searchParams.get('error_description') || hashParams.get('error_description');
+    if (errorDesc) {
+      return decodeURIComponent(errorDesc.replace(/\+/g, ' '));
+    }
+    const errorMsg = searchParams.get('error') || hashParams.get('error');
+    if (errorMsg) {
+      return decodeURIComponent(errorMsg.replace(/\+/g, ' '));
+    }
+    return null;
+  } catch {
+    return null;
   }
 };
