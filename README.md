@@ -183,25 +183,39 @@ npm run dev
 > [!WARNING]
 > Every `VITE_*` variable is inlined into the browser bundle and is therefore **public**. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
-### Email confirmation redirects
+### Email confirmation links
 
-When **Confirm email** is on, the confirmation link must return the user to the
-app so the session lands in the same browser. This is a Supabase dashboard
-setting, not repo config:
+When **Confirm email** is on, signup sends a link that has to confirm the account
+**wherever it is opened** — a mail app's browser, Chrome, or a different device.
+That takes a dashboard setting, one migration and one deploy; none of it lives in
+repo config:
 
 1. Supabase dashboard → **Authentication → URL Configuration**.
 2. **Site URL** → the production app URL (e.g. `https://<app>.vercel.app`).
-3. **Redirect URLs** → add the app origin and the dev server, so the
-   `emailRedirectTo` the app sends (`window.location.origin + pathname`) is
-   allowlisted:
+3. **Redirect URLs** → allowlist the app origin and the dev server:
    - `https://<app>.vercel.app/**`
    - `http://localhost:3000/**`
-4. Save.
+4. **Authentication → Email Templates → Confirm signup** → replace the link with
+   `https://<app>.vercel.app/confirm?token_hash={{ .TokenHash }}&type=signup`.
+5. Apply `supabase_email_confirmation.sql` (SQL editor). It creates the
+   `is_email_confirmed` function the status endpoint calls.
+6. `supabase functions deploy email-confirmation-status`.
 
-Without step 3 Supabase ignores `emailRedirectTo` and falls back to the Site
-URL, so the confirmation link lands on the wrong page. The confirmation modal
-then offers **Open Gmail** (device deep link, web Gmail fallback) and **Resend**,
-and signs the user in automatically once the link is opened in the same browser.
+Step 4 is the one that makes the link work anywhere. The app verifies
+`token_hash` with `verifyOtp`, which needs no PKCE `code_verifier`; the default
+`{{ .ConfirmationURL }}` does need one, and that verifier lives in the browser
+that *started* the signup — so a link opened in Gmail's browser could never sign
+that account in.
+
+With steps 4–6 in place the confirmation page confirms in whatever browser opened
+it, and the "Check your email" panel polls the status endpoint every 3 seconds —
+so a confirmation on one device finishes the sign-in on every device, with no
+manual refresh and no second tap. Where the link is opened in a mail app's
+browser, Android is offered a hand-off to Chrome; iOS is only advised, because no
+web page can launch another browser.
+
+`emailRedirectTo` is still sent on signup and resend. Once step 4 is applied it no
+longer affects confirmation.
 
 ---
 
