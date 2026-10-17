@@ -18,7 +18,7 @@ import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import { listenToAuthState, signOutUser, User, getAuthUrlError } from './services/auth.ts';
-import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad } from './services/cloudSync.ts';
+import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
@@ -168,6 +168,7 @@ const AppContent: React.FC = () => {
         // dashboard is their only reader and neither may delay the shopkeeper.
         void syncDeviceSessionOnceForAppLoad();
         void syncMerchantPreferencesOnceForAppLoad();
+        void syncUserIdentityOnceForAppLoad();
 
         // Restore store data from Supabase DB or migrate existing local store to cloud with user ID
         const cloudData = await syncOnLogin(ordersRef.current, productsRef.current, user);
