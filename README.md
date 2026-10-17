@@ -35,7 +35,7 @@ A customer sends a message to the shop on WhatsApp, by text or by voice note, in
 
 Inside the shop, a screen chimes and shows the new order. The shopkeeper swipes to accept it and the customer gets a confirmation on WhatsApp without anyone typing one. Orders are confirmed in under 15 minutes, which is the point when milk is needed right now.
 
-The shopkeeper gets a live dashboard, a starter catalog for a kirana, stock that can be switched off with one tap, and sales numbers without a spreadsheet. When something runs low the app highlights it and drafts a reorder message for the distributor. Buying a bill photo also works: send the bill and the stock updates.
+The shopkeeper gets a live dashboard, a starter catalog for a kirana, stock that can be switched off with one tap, and sales numbers without a spreadsheet. When something runs low the app highlights it and drafts a reorder message for the distributor. The bill photo button works too: send a photo of the bill and the stock updates.
 
 The screen and the bot both work in English, Hindi, Tamil, Punjabi, Kannada, Gujarati and Urdu.
 
