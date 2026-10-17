@@ -1,6 +1,6 @@
 import assert from 'assert';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, basename } from 'node:path';
+import path, { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -102,6 +102,32 @@ ok(`the app reads ${appVars.length} configuration variables`);
     assert.ok(!new RegExp(`^${bad}=`, 'm').test(example), `${bad} must not be settable — it would ship in the bundle`);
   }
   ok('the template never invites a secret into a VITE_ variable');
+}
+
+// ── 5. AUTH_DIR still points at the paired WhatsApp session ──────────────────
+{
+  // server.js does `path.resolve(__dirname, process.env.AUTH_DIR || './auth_info')`,
+  // so AUTH_DIR is relative to whatsapp/. A typo like `./whatsapp/auth_info`
+  // resolves to whatsapp/whatsapp/auth_info: the bot then starts with no
+  // session, silently, and every shopkeeper has to re-scan the QR. Caught here
+  // because nothing else would fail loudly.
+  const example = readFileSync(join(root, '.env.example'), 'utf8');
+  const declared = /^AUTH_DIR=(.*)$/m.exec(example);
+  assert.ok(declared, '.env.example must document AUTH_DIR');
+
+  const resolved = path.resolve(join(root, 'whatsapp'), declared[1].trim());
+  assert.strictEqual(
+    resolved,
+    join(root, 'whatsapp', 'auth_info'),
+    `AUTH_DIR must resolve to whatsapp/auth_info, but ${declared[1].trim()} resolves to ${resolved}`
+  );
+
+  const server = readFileSync(join(root, 'whatsapp/server.js'), 'utf8');
+  assert.ok(
+    /path\.resolve\(__dirname, process\.env\.AUTH_DIR \|\| '\.\/auth_info'\)/.test(server),
+    'server.js resolves AUTH_DIR against its own directory — this test assumes that'
+  );
+  ok('AUTH_DIR resolves to the paired WhatsApp session, whatever cwd the bot starts in');
 }
 
 console.log('\n========================================');

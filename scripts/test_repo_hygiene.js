@@ -48,6 +48,24 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   ok('vercel.json serves the static build and proxies nothing');
 }
 
+// ── 4. the deployed bundle knows where the API lives ─────────────────────────
+{
+  const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'));
+  const base = vercel.build && vercel.build.env && vercel.build.env.VITE_API_BASE;
+
+  // Without this the browser calls /api on Vercel itself, which serves only
+  // static files, so every request would fail against the deployed site — the
+  // exact 502 the user saw. It is set here rather than in the dashboard so the
+  // deploy cannot depend on a setting nobody can inspect from the repo.
+  assert.ok(base, 'vercel.json must pin VITE_API_BASE so the deployed site can reach the API');
+  assert.ok(/^https:\/\//.test(base), `VITE_API_BASE must be https, got ${base}`);
+  assert.ok(
+    !/\.vercel\.app/.test(base),
+    'VITE_API_BASE must not point at Vercel itself — that origin serves no API'
+  );
+  ok('the deployed frontend is pinned to a real API origin');
+}
+
 console.log('\n========================================');
 console.log(`🎉 ALL ${n} REPO HYGIENE TESTS PASSED 🎉`);
 console.log('========================================');
