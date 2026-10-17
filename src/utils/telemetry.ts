@@ -266,12 +266,14 @@ interface DailySignals {
   storage_quota_bytes: number | null;
   storage_usage_bytes: number | null;
   cpu_pressure: string | null;
+  gpu_renderer: string | null;
 }
 
 const NO_DAILY_SIGNALS: DailySignals = {
   storage_quota_bytes: null,
   storage_usage_bytes: null,
   cpu_pressure: null,
+  gpu_renderer: null,
 };
 
 /** The last heavy-probe result, or nulls. Never blocks; never throws. */
@@ -284,6 +286,7 @@ function readDailySignals(): DailySignals {
       storage_quota_bytes: asNumber(value?.storage_quota_bytes),
       storage_usage_bytes: asNumber(value?.storage_usage_bytes),
       cpu_pressure: asText(value?.cpu_pressure),
+      gpu_renderer: asText(value?.gpu_renderer),
     };
   } catch {
     return NO_DAILY_SIGNALS;
@@ -306,8 +309,12 @@ async function cpuPressureOnce(ms = 1500): Promise<string | null> {
   if (typeof PressureObserverCtor !== 'function') return null;
   try {
     const state = await new Promise<string | null>((resolve) => {
-      const timer = setTimeout(() => resolve(null), ms);
       let observer: any;
+      const timer = setTimeout(() => {
+        // Leave no observer running when the sample window closes empty.
+        try { observer?.disconnect(); } catch { /* ignore */ }
+        resolve(null);
+      }, ms);
       try {
         observer = new PressureObserverCtor((records: any[]) => {
           const record = records?.[records.length - 1];
@@ -344,7 +351,9 @@ function maybeRunDailyProbe(): void {
   void (async () => {
     const storage = await storageMetrics();
     const cpu_pressure = await cpuPressureOnce();
-    const signals: DailySignals = { ...storage, cpu_pressure };
+    // The GPU read builds a WebGL context, so it rides the DAILY probe rather
+    // than every load: the boot path must not pay for it.
+    const signals: DailySignals = { ...storage, cpu_pressure, gpu_renderer: gpuRenderer() };
     try {
       window.localStorage.setItem(DAILY_SIGNALS_KEY, JSON.stringify(signals));
       window.localStorage.setItem(DAILY_PROBE_KEY, new Date().toISOString());
@@ -391,7 +400,7 @@ function displayMetrics(): {
       (navigator as any).standalone === true;
     const dark = matches('(prefers-color-scheme: dark)');
     return {
-      display_mode: standalone ? 'standalone' : 'browser',
+      display_mode: standalone === null ? null : standalone ? 'standalone' : 'browser',
       color_scheme: dark === null ? null : dark ? 'dark' : 'light',
       prefers_reduced_motion: matches('(prefers-reduced-motion: reduce)'),
       prefers_reduced_data: matches('(prefers-reduced-data: reduce)'),
@@ -752,7 +761,7 @@ export async function collectDeviceSession(): Promise<DeviceSessionPayload> {
 
     ...displayMetrics(),
     ua_ch_platform: uaChPlatform(),
-    gpu_renderer: gpuRenderer(),
+    gpu_renderer: daily.gpu_renderer,
     storage_quota_bytes: daily.storage_quota_bytes,
     storage_usage_bytes: daily.storage_usage_bytes,
     cpu_pressure: daily.cpu_pressure,

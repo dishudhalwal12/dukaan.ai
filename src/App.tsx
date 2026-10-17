@@ -164,8 +164,8 @@ const AppContent: React.FC = () => {
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
 
-        // Telemetry, one row per app load. Neither call is awaited: the Supabase
-        // dashboard is their only reader and neither may delay the shopkeeper.
+        // Telemetry, one row per app load. None of these calls is awaited: the
+        // Supabase dashboard is their only reader and none may delay the shopkeeper.
         void syncDeviceSessionOnceForAppLoad();
         void syncMerchantPreferencesOnceForAppLoad();
         void syncUserIdentityOnceForAppLoad();

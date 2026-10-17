@@ -54,6 +54,18 @@ const currentAuthUser = async (): Promise<User | null> => {
 };
 
 /**
+ * Drop null/undefined values so an upsert can never blank a column that already
+ * holds a real value (an older session with empty metadata, say).
+ */
+const nonNullColumns = (columns: Record<string, unknown>): Record<string, unknown> => {
+  const kept: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(columns)) {
+    if (value !== null && value !== undefined) kept[key] = value;
+  }
+  return kept;
+};
+
+/**
  * Safely saves the business profile to Supabase database without blocking the UI.
  * Associates record with user_id if user is logged in or cached.
  */
@@ -91,7 +103,7 @@ export const saveBusinessProfileToCloud = async (
         // Owner identity, mirrored from the auth session: first/last name, picture,
         // provider and language. Without this the dashboard has only the raw
         // profile_data blob and these columns stay NULL.
-        ...ownerColumnsFromAuthUser(await currentAuthUser()),
+        ...nonNullColumns(ownerColumnsFromAuthUser(await currentAuthUser())),
         ...(storeLocation ? {
           store_lat: storeLocation.lat,
           store_lng: storeLocation.lng,
@@ -437,14 +449,12 @@ export const saveUserIdentityToCloud = async (explicitUserId?: string): Promise<
     if (!userId) return;
 
     const identity = identityRowFromAuthUser(user);
-    const row: Record<string, any> = {
+    const row = {
       user_id: userId,
       last_sign_in_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      ...nonNullColumns(identity),
     };
-    for (const [key, value] of Object.entries(identity)) {
-      if (value !== null && value !== undefined) row[key] = value;
-    }
 
     const { error } = await supabase
       .from('user_identities')

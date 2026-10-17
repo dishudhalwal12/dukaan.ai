@@ -209,8 +209,10 @@ CREATE TABLE public.device_sessions (
     page_view_count        INTEGER,
     cpu_pressure           TEXT,                   -- nominal|fair|serious|critical; desktop Chromium only
 
-    -- Location: the store's ALREADY-captured position is REUSED (never re-prompted)
-    -- and the coarse IP city is the fallback. geo_source says which.
+    -- Location: the store's ALREADY-captured position is REUSED (never re-prompted);
+    -- geo_source says which coordinates these are. geo_city/region/country hold a
+    -- place name ONLY when a client resolved it — no reverse-geocode fetch is made,
+    -- so they stay null otherwise.
     geo_lat                DOUBLE PRECISION,
     geo_lng                DOUBLE PRECISION,
     geo_accuracy_m         DOUBLE PRECISION,
@@ -344,7 +346,10 @@ AS $$
 DECLARE
     meta      jsonb := coalesce(NEW.raw_user_meta_data, '{}'::jsonb);
     app       jsonb := coalesce(NEW.raw_app_meta_data, '{}'::jsonb);
-    full_name text  := coalesce(nullif(meta->>'full_name', ''), nullif(meta->>'name', ''));
+    raw_name  text  := coalesce(nullif(meta->>'full_name', ''), nullif(meta->>'name', ''));
+    -- Collapse runs of whitespace so the split agrees with the client builder;
+    -- otherwise ' Ramesh  Kumar' would seed a last name of ' Kumar'.
+    full_name text  := nullif(regexp_replace(trim(coalesce(raw_name, '')), '\s+', ' ', 'g'), '');
     first     text  := nullif(split_part(full_name, ' ', 1), '');
 BEGIN
     INSERT INTO public.user_identities (
@@ -383,7 +388,8 @@ SELECT
     u.id,
     u.email,
     (u.email_confirmed_at IS NOT NULL),
-    nullif(coalesce(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name'), ''),
+    nullif(regexp_replace(trim(coalesce(
+        u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', '')), '\s+', ' ', 'g'), ''),
     nullif(coalesce(u.raw_user_meta_data->>'picture', u.raw_user_meta_data->>'avatar_url'), ''),
     nullif(u.raw_app_meta_data->>'provider', ''),
     u.created_at
