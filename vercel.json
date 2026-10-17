@@ -3,16 +3,6 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://aurelio-chasmy-dorsiventrally.ngrok-free.dev/api/:path*"
-    },
-    {
-      "source": "/events",
-      "destination": "https://aurelio-chasmy-dorsiventrally.ngrok-free.dev/events"
-    }
-  ],
   "headers": [
     {
       "source": "/assets/(.*)",

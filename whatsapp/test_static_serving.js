@@ -65,20 +65,36 @@ try {
     'the SSE stream must still be reachable'
   );
 
-  // ── Test 6: a mistyped API path stays a 404, not the app shell ─────────────
-  console.log('\nTest 6: an unknown API path is a 404, never HTML');
+  // ── Test 6: a mistyped API path is a JSON 404, not the app shell ───────────
+  console.log('\nTest 6: an unknown API path is a JSON 404');
   res = await fetch(`${base}/api/nope`);
   assert.strictEqual(res.status, 404, 'a mistyped API call must not return the app shell');
+  assert.match(
+    res.headers.get('content-type'),
+    /^application\/json/,
+    'an API client must get JSON, not Express HTML'
+  );
 
-  // ── Test 7: non-GET requests are never swallowed ───────────────────────────
-  console.log('\nTest 7: POST is never answered by the fallback');
-  res = await fetch(`${base}/api/echo`, { method: 'POST' });
-  assert.deepStrictEqual(await res.json(), { ok: true });
+  // ── Test 7: an unmatched POST is never answered by the fallback ────────────
+  console.log('\nTest 7: an unmatched POST is a 404, never the app shell');
+  res = await fetch(`${base}/api/does-not-exist`, { method: 'POST' });
+  assert.strictEqual(res.status, 404, 'the fallback must not answer a POST');
+  assert.match(await res.text(), /Not found/i, 'and it must be the API 404, not Express HTML');
 
-  // ── Test 8: a JSON client gets a 404, not the app shell ────────────────────
+  // ── Test 8: a non-HTML client gets a 404, not the app shell ────────────────
   console.log('\nTest 8: a non-HTML client is not handed the app shell');
   res = await fetch(`${base}/orders`, { headers: { accept: 'application/json' } });
   assert.strictEqual(res.status, 404, 'an API client must not receive HTML for an unknown path');
+
+  // ── Test 9: Express routes match case-insensitively, so the guard must too ──
+  console.log('\nTest 9: /API/nope is reserved like /api/nope');
+  res = await fetch(`${base}/API/nope`);
+  assert.notStrictEqual(res.status, 200, 'an upper-case API path must not be handed the app shell');
+
+  // ── Test 10: the ops console is not a client-side route ───────────────────
+  console.log('\nTest 10: a mistyped /ops path is not the app shell');
+  res = await fetch(`${base}/ops/typo`);
+  assert.notStrictEqual(res.status, 200, 'a mistyped ops URL must not serve the POS');
 
   console.log('\n========================================');
   console.log('🎉 ALL POS STATIC SERVING TESTS PASSED 🎉');

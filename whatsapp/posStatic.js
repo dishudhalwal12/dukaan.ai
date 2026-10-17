@@ -2,15 +2,20 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 
-// Paths the POS mount must never answer. Without this, the SPA fallback would
-// return index.html for a mistyped API call, and a fetch() that expected JSON
-// would fail with a parse error instead of a clean 404.
-const RESERVED_PREFIXES = ['/api'];
+// Paths the POS mount must never answer. Without this the SPA fallback would
+// return index.html with a 200 for a mistyped API call, and a client that parses
+// the body would see an HTML parse error instead of a status it can act on.
+// Express matches routes case-insensitively, so the comparison below must be too.
+const RESERVED_PREFIXES = ['/api', '/ops'];
 const RESERVED_EXACT = ['/events'];
 
-const isReserved = (p) =>
-  RESERVED_EXACT.includes(p) ||
-  RESERVED_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
+const isReserved = (p) => {
+  const lower = p.toLowerCase();
+  return (
+    RESERVED_EXACT.includes(lower) ||
+    RESERVED_PREFIXES.some((prefix) => lower === prefix || lower.startsWith(`${prefix}/`))
+  );
+};
 
 /**
  * Serves the built POS from the bot's own origin, so the browser talks to a
@@ -25,6 +30,19 @@ const isReserved = (p) =>
  * @param {string} distDir absolute path to the Vite build (repo-root/dist)
  */
 export function installPosRoutes(app, distDir) {
+  // An unmatched API path answers JSON. Reserved paths never reach the SPA
+  // fallback below, so without this they would fall to Express's default HTML
+  // 404 and a client parsing the body would see a parse error instead of a
+  // status it can act on.
+  app.use('/api', (req, res) => {
+    res.status(404).json({ error: 'Not found', path: req.originalUrl });
+  });
+
+  // A mistyped ops URL must not be handed the POS shell either.
+  app.use('/ops', (req, res) => {
+    res.status(404).send('Not found');
+  });
+
   if (!fs.existsSync(path.join(distDir, 'index.html'))) {
     console.warn(
       `\n⚠️  POS build not found at ${distDir}/index.html — the app will NOT be served.\n` +

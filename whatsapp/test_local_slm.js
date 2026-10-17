@@ -10,6 +10,7 @@ const { callLocalSlm } = await import('./localSlm.js');
 
 const calls = [];
 const realFetch = globalThis.fetch;
+const savedBaseUrl = process.env.LLM_BASE_URL;
 const ok = (content) =>
   new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
     status: 200,
@@ -46,7 +47,7 @@ try {
   assert.deepStrictEqual(calls[0].body.messages, messages, 'the conversation is forwarded');
 
   // ── Test 3: a refused connection fails fast ───────────────────────────────
-  console.log('\nTest 3: an unreachable configured server is a fast null, not an 8s wait');
+  console.log('\nTest 3: an unreachable configured server is a fast null');
   process.env.LLM_BASE_URL = 'http://127.0.0.1:9/v1/chat/completions';
   const t1 = Date.now();
   assert.strictEqual(await callLocalSlm(messages), null);
@@ -58,9 +59,25 @@ try {
   globalThis.fetch = async () => ok('   ');
   assert.strictEqual(await callLocalSlm(messages), null, 'a blank completion is not a reply');
 
+  // ── Test 5: a server that never answers is cut off at the timeout ─────────
+  // The point of the AbortController: a hung local model must not hold the
+  // customer's message open. This also proves the timer is disarmed afterwards.
+  console.log('\nTest 5: a hung local server is aborted at the timeout');
+  globalThis.fetch = (url, opts) =>
+    new Promise((_, reject) => {
+      opts.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    });
+  const t2 = Date.now();
+  assert.strictEqual(await callLocalSlm(messages, { timeoutMs: 50 }), null);
+  const hung = Date.now() - t2;
+  assert.ok(hung >= 40 && hung < 1000, `aborted near its timeout (took ${hung}ms)`);
+
   console.log('\n========================================');
   console.log('🎉 ALL LOCAL SLM FALLBACK TESTS PASSED 🎉');
   console.log('========================================');
 } finally {
   globalThis.fetch = realFetch;
+  // Never leak a configured local model into the rest of the suite.
+  if (savedBaseUrl === undefined) delete process.env.LLM_BASE_URL;
+  else process.env.LLM_BASE_URL = savedBaseUrl;
 }

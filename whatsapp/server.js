@@ -259,7 +259,7 @@ async function initWhatsApp() {
           console.log('\n================ WhatsApp QR Code ================');
           console.log('Scan this QR code with WhatsApp on your phone:');
           qrcodeTerminal.generate(qr, { small: true });
-          console.log('Or view the QR code in your browser at: http://localhost:' + PORT);
+          console.log('Or view the QR code in your browser at: http://localhost:' + PORT + '/ops');
           console.log('==================================================\n');
 
           broadcastSSE({

@@ -122,12 +122,18 @@ but the demo should sign in.
    `?code=`. In practice the click-through happens on first load, before sign-in.
    The tunnel's own API/SSE calls are unaffected for non-browser clients.
    A custom domain on ngrok, or a Cloudflare tunnel, removes this.
-2. **The OpenRouter key ships to the browser.** `VITE_OPENROUTER_API_KEY` is baked
+2. **There is no Vercel front door any more.** `vercel.json` no longer rewrites
+   `/api` and `/events`: a Vercel rewrite proxies the browser's own headers to
+   ngrok, so the interstitial would answer `/api/*` with HTML and the app would
+   parse-fail. The single origin below is the supported entry point. If the Vercel
+   project is still connected, disconnect it rather than leaving a half-working
+   second URL.
+3. **The OpenRouter key ships to the browser.** `VITE_OPENROUTER_API_KEY` is baked
    into `dist/assets/*.js` (2 occurrences) because the POS calls OpenRouter
    directly. The Groq key and the Supabase `service_role` key are **not** in the
    bundle. Moving the POS's AI calls behind `/api/ai/*` is the fix; until then
    treat that key as public.
-3. **Do not reboot into Windows.** `/` is a loop-mounted ext4 image on the NTFS
+4. **Do not reboot into Windows.** `/` is a loop-mounted ext4 image on the NTFS
    Windows partition (`root=/dev/loop0 loop=/Linux64/Debian12_S001/disks/root.disk`).
    If the machine reboots and picks Windows, the bot stays down until someone
    selects Linux at the boot menu.
