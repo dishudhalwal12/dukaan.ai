@@ -92,6 +92,11 @@ const base = {
   assert.strictEqual(resolveModelConfig({ AI_DATA_COLLECTION: 'ALLOW' }).dataCollection, 'allow');
   assert.strictEqual(resolveModelConfig({ AI_DATA_COLLECTION: 'yes' }).dataCollection, 'deny');
   assert.deepStrictEqual(resolveModelConfig({ AI_MODEL_FALLBACKS: ' a , b , ' }).models, ['a', 'b']);
+  assert.deepStrictEqual(
+    resolveModelConfig({ AI_MODEL_FALLBACKS: 'a,b,c,d,e' }).models,
+    ['a', 'b', 'c'],
+    'more than three fallbacks must be truncated, not forwarded — OpenRouter 400s the whole call'
+  );
   assert.strictEqual(resolveModelConfig({ OPENROUTER_MODEL: ' x/y ' }).model, 'x/y');
   ok('the env contract resolves exactly: model, fallbacks, and a fail-closed data policy');
 }

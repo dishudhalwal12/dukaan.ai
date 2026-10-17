@@ -32,12 +32,21 @@ export function resolveDataCollection(raw) {
   return String(raw == null ? '' : raw).trim().toLowerCase() === 'allow' ? 'allow' : 'deny';
 }
 
-/** "a, b ,c" -> ["a","b","c"] */
+/**
+ * OpenRouter rejects a longer `models` array with
+ * "'models' array must have 3 items or fewer." — a hard 400 on EVERY call,
+ * text included, so an over-long list would take the whole AI down rather
+ * than merely the extra entries. Truncate instead of forwarding the failure.
+ */
+export const MAX_FALLBACK_MODELS = 3;
+
+/** "a, b ,c" -> ["a","b","c"], never longer than OpenRouter accepts. */
 export function resolveFallbackModels(raw) {
   return String(raw == null ? '' : raw)
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, MAX_FALLBACK_MODELS);
 }
 
 /** The model set a shop actually runs, from .env alone. */
