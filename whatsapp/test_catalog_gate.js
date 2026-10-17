@@ -10,6 +10,10 @@ process.env.DUKAN_CATALOG_FILE = path.join(tmpDir, 'catalog.json');
 process.env.DUKAN_DEFAULT_OWNER_ID = 'owner-gate';
 
 const { dukanCatalog, searchInCatalog, resolveCatalogItem } = await import('./dukanCatalog.js');
+// Pin the phrasing picker: these assertions compare exact wording, so the reply
+// must be the same every run. Randomisation itself is covered by test_messages.js.
+const { setMessageRandom } = await import('./messages.js');
+setMessageRandom(() => 0);
 const {
   resolveAndPriceItems,
   executeModelActions,

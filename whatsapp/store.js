@@ -70,7 +70,14 @@ export const store = {
     // Check if message already exists by id
     const existingIndex = messages[jid].findIndex((m) => m.id === msg.id);
     if (existingIndex >= 0) {
-      messages[jid][existingIndex] = { ...messages[jid][existingIndex], ...msg };
+      const merged = { ...messages[jid][existingIndex], ...msg };
+      // WhatsApp echoes our own sent messages back through the socket, and that
+      // echo carries source:'human'. Never let it overwrite a reply the bot
+      // recorded itself, or training exports would lose every bot turn.
+      if (messages[jid][existingIndex].source === 'bot' || msg.source === 'bot') {
+        merged.source = 'bot';
+      }
+      messages[jid][existingIndex] = merged;
     } else {
       messages[jid].push(msg);
       // Preserve all precious customer message history (no truncation)

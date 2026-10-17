@@ -1,6 +1,11 @@
 import './test_setup_orders_file.js'; // isolate store files + use the default catalog
 import assert from 'assert';
 
+// Pin the phrasing picker: the assertions below compare exact wording.
+// Randomisation itself is covered by test_messages.js.
+const { setMessageRandom } = await import('./messages.js');
+setMessageRandom(() => 0);
+
 // Dev-mode owner: with no Supabase registry wired, the single local fallback
 // shop is owned by this account. Without it, a pin would (correctly) match no
 // shop and the bot would refuse to order.

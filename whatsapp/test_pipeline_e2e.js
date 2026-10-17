@@ -9,6 +9,10 @@ process.env.DUKAN_ORDERS_FILE = path.join(tmpDir, 'orders.json');
 process.env.DUKAN_CATALOG_FILE = path.join(tmpDir, 'catalog.json');
 
 const { dukanOrders } = await import('./dukanOrders.js');
+// Pin the phrasing picker so the exact-text assertions below are stable.
+// Randomisation itself is covered by test_messages.js.
+const { setMessageRandom } = await import('./messages.js');
+setMessageRandom(() => 0);
 const {
   dukanBot,
   activeShops,

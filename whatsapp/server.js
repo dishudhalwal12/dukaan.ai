@@ -12,6 +12,7 @@ import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
 import { dukanOrders, selectOrders, ordersQueryFor } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
+import { notifyCustomer } from './orderNotifications.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
 import { createApiAuth } from './apiAuth.js';
@@ -411,6 +412,13 @@ async function initWhatsApp() {
             timestamp,
             isGroup,
             status: fromMe ? 'SENT' : 'RECEIVED',
+            // Why this field exists: the bot shares the shopkeeper's own number, so
+            // anything typed on that phone also arrives as fromMe:true. Without a
+            // source, a human's private chat is indistinguishable from a bot reply
+            // in the log (that is exactly how a dev conversation once landed in the
+            // customer record). 'customer' = they wrote to us, 'human' = the phone
+            // owner wrote it themselves.
+            source: fromMe ? 'human' : 'customer',
           };
 
           // Save to store
@@ -447,6 +455,7 @@ async function initWhatsApp() {
                       timestamp: Date.now(),
                       isGroup: false,
                       status: 'SENT',
+                      source: 'bot',
                     };
                     store.addMessage(botReplyRecord);
                     broadcastSSE({ type: 'new_message', message: botReplyRecord });
@@ -1037,14 +1046,10 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   // Notify customer on WhatsApp
-  if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} accepted\n\nThe shopkeeper is packing it now — usually 15-20 minutes.\nAmount: ₹${order.totalAmount} (cash or UPI on delivery).`;
-
-    try {
-      await sock.sendMessage(order.customerJid, { text: notifyText });
-    } catch (e) {
-      console.error('Failed to notify customer of acceptance:', e.message);
-    }
+  try {
+    await notifyCustomer(sock, order, 'accepted');
+  } catch (e) {
+    console.error('Failed to notify customer of acceptance:', e.message);
   }
 
   await mirrorOrderQuietly(order);
@@ -1059,10 +1064,8 @@ app.post('/api/dukan/orders/:id/ready', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} is at your door\n\nPlease collect it. Amount: ₹${order.totalAmount} (cash or UPI).`;
-
     try {
-      await sock.sendMessage(order.customerJid, { text: notifyText });
+      await notifyCustomer(sock, order, 'atPickup');
       console.log(`[Dukan] Sent doorstep notification for Order #${order.id} to ${order.customerJid}`);
     } catch (e) {
       console.error('Failed to notify customer of delivery partner at doorstep:', e.message);
@@ -1084,10 +1087,8 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} delivered\n\nAmount paid: ₹${order.totalAmount}. Thanks for ordering with Dukaan.`;
-
     try {
-      await sock.sendMessage(order.customerJid, { text: notifyText });
+      await notifyCustomer(sock, order, 'delivered');
       console.log(`[Dukan] Sent delivered notification for Order #${order.id} to ${order.customerJid}`);
     } catch (e) {
       console.error('Failed to notify customer of delivery completion:', e.message);
@@ -1108,10 +1109,8 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   if (sock && order.customerJid) {
-    const notifyText = `Order #${order.id} could not be accepted (${reason || 'item temporarily unavailable'}).\n\nNothing was charged. Message us again if you want to retry.`;
-
     try {
-      await sock.sendMessage(order.customerJid, { text: notifyText });
+      await notifyCustomer(sock, order, 'rejected', { reason });
     } catch (e) {
       console.error('Failed to notify customer of rejection:', e.message);
     }

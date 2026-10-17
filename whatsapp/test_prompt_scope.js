@@ -13,6 +13,11 @@ import './test_setup_orders_file.js';
 import assert from 'assert';
 import { dukanCatalog } from './dukanCatalog.js';
 
+// Pin the phrasing picker: the reply wording is asserted below.
+// Randomisation itself is covered by test_messages.js.
+const { setMessageRandom } = await import('./messages.js');
+setMessageRandom(() => 0);
+
 const bot = await import('./dukanBot.js');
 
 console.log('--- RUNNING PROMPT SCOPE TESTS (T9) ---');
