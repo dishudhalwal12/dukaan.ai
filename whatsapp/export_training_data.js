@@ -162,7 +162,7 @@ const arg = (name, dflt) => {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : dflt;
 };
 
-const inFile = arg('--in', process.env.DUKAN_MESSAGES_FILE || path.join(__dirname, 'store', 'messages.json'));
+const inFile = arg('--in', path.join(__dirname, 'store', 'messages.json'));
 const outFile = arg('--out', '');
 
 if (!fs.existsSync(inFile)) {
