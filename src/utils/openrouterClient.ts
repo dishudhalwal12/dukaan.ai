@@ -201,36 +201,46 @@ export async function callOpenRouter(options: GenerateContentOptions): Promise<{
     }
   }
 
-  // 2. FALLBACK: Attempt Local Edge SLM
-  try {
-    const localUrl = (typeof process !== 'undefined' && process.env?.LLM_BASE_URL) || 
-                      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_LLM_BASE_URL) || 
-                      'http://127.0.0.1:8080/v1/chat/completions';
+  // 2. FALLBACK: Attempt Local Edge SLM — only when one is actually configured.
+  // There is deliberately no default URL. A hardcoded 127.0.0.1:8080 made every
+  // browser with no local model dial its OWN loopback, hang for the full 10s
+  // timeout and then throw; Vite also baked that literal into the bundle.
+  const localUrl =
+    (typeof process !== 'undefined' && process.env?.LLM_BASE_URL) ||
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_LLM_BASE_URL) ||
+    '';
+
+  if (localUrl) {
     const localModel = (typeof process !== 'undefined' && process.env?.LLM_MODEL_NAME) || 
                        'models/dukaan-qwen-1.5b-fused-4bit';
 
     const localCtrl = new AbortController();
     const localTimer = setTimeout(() => localCtrl.abort(), 10000);
-    const localRes = await fetch(localUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: localModel,
-        messages
-      }),
-      signal: localCtrl.signal
-    });
-    clearTimeout(localTimer);
+    try {
+      const localRes = await fetch(localUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: localModel,
+          messages
+        }),
+        signal: localCtrl.signal
+      });
 
-    if (localRes.ok) {
-      const data = await localRes.json();
-      const rawContent = data.choices?.[0]?.message?.content || '';
-      if (rawContent) {
-        return { text: cleanModelOutput(rawContent) };
+      if (localRes.ok) {
+        const data = await localRes.json();
+        const rawContent = data.choices?.[0]?.message?.content || '';
+        if (rawContent) {
+          return { text: cleanModelOutput(rawContent) };
+        }
       }
+    } catch (localErr: any) {
+      console.warn(`[Local SLM Fallback Failed]: ${localErr?.message || localErr}`);
+    } finally {
+      // Also on the error path: a leaked timer kept the process alive 10s and
+      // aborted an already-settled request.
+      clearTimeout(localTimer);
     }
-  } catch (localErr: any) {
-    console.warn(`[Local SLM Fallback Failed]: ${localErr?.message || localErr}`);
   }
 
   throw lastError || new Error('All OpenRouter keys and Local SLM fallback failed');
