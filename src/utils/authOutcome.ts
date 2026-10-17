@@ -14,6 +14,14 @@ export const classifyAuthOutcome = ({ user, session }: { user?: unknown; session
   return session ? 'signed-in' : 'confirm-email';
 };
 
+/**
+ * Supabase rejects sign-in for an account that exists but has not confirmed
+ * its email. The modal turns that into the confirmation panel rather than a
+ * raw error string.
+ */
+export const isUnconfirmedEmailError = (message?: string | null): boolean =>
+  typeof message === 'string' && message.toLowerCase().includes('not confirmed');
+
 export const FRESH_SIGNIN_KEY = 'dukan-fresh-signin';
 
 /** Records that the current auth came from an interactive sign-in. */

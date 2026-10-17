@@ -1,5 +1,6 @@
 import assert from 'assert';
 import { mailTargetFor, GMAIL_APP_URL, GMAIL_WEB_URL } from '../src/utils/openMail.ts';
+import { isUnconfirmedEmailError } from '../src/utils/authOutcome.ts';
 
 console.log('--- RUNNING EMAIL-CONFIRM UX TESTS ---');
 
@@ -32,6 +33,18 @@ assert.strictEqual(GMAIL_APP_URL, 'googlegmail://', 'app target is the Gmail sch
 assert.ok(GMAIL_WEB_URL.startsWith('https://mail.google.com/'), 'web target is Gmail over https');
 assert.notStrictEqual(GMAIL_APP_URL, GMAIL_WEB_URL, 'app and web targets must differ');
 console.log('✓ Test 2 Passed: distinct app/web URLs');
+
+// ── Test 3: "email not confirmed" is recognised however Supabase cases it ────
+console.log('\nTest 3: isUnconfirmedEmailError');
+for (const msg of ['Email not confirmed', 'email not confirmed', 'Email Not Confirmed', 'Not confirmed']) {
+  assert.strictEqual(isUnconfirmedEmailError(msg), true, `should match: ${msg}`);
+}
+for (const msg of ['Invalid login credentials', 'User already registered', '', '  ']) {
+  assert.strictEqual(isUnconfirmedEmailError(msg), false, `should not match: "${msg}"`);
+}
+assert.strictEqual(isUnconfirmedEmailError(null), false, 'null is not a match');
+assert.strictEqual(isUnconfirmedEmailError(undefined), false, 'undefined is not a match');
+console.log('✓ Test 3 Passed: not-confirmed detected, other errors ignored');
 
 console.log('\n========================================');
 console.log('🎉 ALL EMAIL-CONFIRM UX TESTS PASSED! 🎉');
