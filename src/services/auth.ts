@@ -1,6 +1,7 @@
-import { User } from '@supabase/supabase-js';
+import type { User, EmailOtpType } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { clearFreshSignIn, markFreshSignIn } from '../utils/authOutcome.ts';
+import { CONFIRM_TYPES, parseConfirmationStatus } from '../utils/confirmLink.ts';
 
 export type { User };
 
@@ -308,6 +309,99 @@ export const resendConfirmationEmail = async (
   } catch (error: any) {
     console.warn('Supabase Auth Resend Exception:', error);
     return { success: false, error: error?.message || 'Failed to resend confirmation email.' };
+  }
+};
+
+/**
+ * Verifies an email-confirmation link, whichever browser or device opened it.
+ *
+ * The email points at our own route with `token_hash`, and `verifyOtp` needs no
+ * PKCE `code_verifier` for it — unlike the default ConfirmationURL, whose
+ * verifier lives in the browser that STARTED the signup. That is the whole
+ * reason a link tapped inside Gmail's in-app webview (or on another device) can
+ * complete here.
+ *
+ * A link type this app does not own (recovery, invite) is refused by name rather
+ * than handed to Supabase, so a recovery link can never be spent as a signup
+ * confirmation.
+ */
+export const confirmEmail = async (
+  tokenHash: string,
+  type: string
+): Promise<{ user: User | null; error: string | null }> => {
+  if (!(CONFIRM_TYPES as readonly string[]).includes(type)) {
+    return {
+      user: null,
+      error: `This is a "${type || 'unknown'}" link, which this app does not handle.`,
+    };
+  }
+
+  if (!tokenHash) {
+    return { user: null, error: 'This confirmation link is missing its token.' };
+  }
+
+  try {
+    if (!isSupabaseConfigured()) {
+      return {
+        user: null,
+        error: 'Supabase credentials are not configured in your environment. You can continue as Guest.',
+      };
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      type: type as EmailOtpType,
+      token_hash: tokenHash,
+    });
+
+    if (error) {
+      console.warn('Supabase Auth Error (ConfirmEmail):', error.message);
+      return { user: null, error: error.message };
+    }
+
+    // The link landed here, so this browser now holds the session. Caching the
+    // identity lets the shell pick the sign-in up without another round trip.
+    if (data.user) {
+      localStorage.setItem('dukan-auth-user', JSON.stringify({
+        id: data.user.id,
+        email: data.user.email,
+      }));
+      localStorage.removeItem('dukan-guest-mode');
+    }
+
+    return { user: data.user, error: null };
+  } catch (error: any) {
+    console.warn('Supabase Auth Exception (ConfirmEmail):', error);
+    return { user: null, error: error?.message || 'Failed to confirm this email link.' };
+  }
+};
+
+/**
+ * Whether the account for `email` has confirmed, asked of the server rather than
+ * of local storage.
+ *
+ * This is what makes a confirmation on one device visible on another: the
+ * session the link created lives only in the browser that opened it, so a device
+ * still waiting has to ask. A failure to ask is reported as "not confirmed yet"
+ * and simply polled again — it is never surfaced as an error.
+ */
+export const getEmailConfirmationStatus = async (email: string): Promise<boolean> => {
+  try {
+    if (!isSupabaseConfigured()) return false;
+    if (!email || !email.trim()) return false;
+
+    const { data, error } = await supabase.functions.invoke('email-confirmation-status', {
+      body: { email: email.trim().toLowerCase() },
+    });
+
+    if (error) {
+      console.warn('Supabase Status Error (email-confirmation-status):', error.message);
+      return false;
+    }
+
+    return parseConfirmationStatus(data);
+  } catch (error) {
+    console.warn('Failed to read the email confirmation status.', error);
+    return false;
   }
 };
 
