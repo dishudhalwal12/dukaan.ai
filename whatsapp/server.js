@@ -9,10 +9,11 @@ import qrcodeTerminal from 'qrcode-terminal';
 import pino from 'pino';
 import { store } from './store.js';
 import { dukanCatalog } from './dukanCatalog.js';
-import { dukanOrders, selectOrders } from './dukanOrders.js';
+import { dukanOrders, selectOrders, ordersQueryFor } from './dukanOrders.js';
 import { dukanBot, resolvePhoneNumber, resetAllContext } from './dukanBot.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
+import { createApiAuth } from './apiAuth.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
 
@@ -45,9 +46,27 @@ let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-// The legacy Baileys/n8n ops console. It used to own `/`; the POS owns `/` now,
-// so it moves to /ops (its own assets are relative, so the move is transparent).
-app.use('/ops', express.static(path.join(__dirname, 'public')));
+
+// This API sits on a public tunnel, so every /api route passes the policy in
+// apiAuth.js before a handler can run. See that file for the route table.
+const apiAuth = createApiAuth({
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseKey: process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  operatorIds: new Set(
+    String(process.env.OPERATOR_USER_IDS || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+  ),
+});
+app.use('/api', apiAuth.run);
+
+// The legacy Baileys/n8n ops console can re-pair the WhatsApp session, so it is
+// NOT served by default. Set ENABLE_OPS_CONSOLE=1 to bring it back; the POS owns
+// `/` and its own settings screen already handles linking.
+if (process.env.ENABLE_OPS_CONSOLE === '1') {
+  app.use('/ops', express.static(path.join(__dirname, 'public')));
+}
 
 // Erase all previous chatbot memory & carts on server start/restart
 resetAllContext();
@@ -284,7 +303,7 @@ async function initWhatsApp() {
           broadcastSSE({
             type: 'status',
             status: connectionStatus,
-            user: userInfo,
+            user: { id: userInfo.id, name: userInfo.name },
           });
         }
 
@@ -458,14 +477,12 @@ async function initWhatsApp() {
 
 // ======================== REST API ROUTES ========================
 
-// Health & Status
+// Health & Status. This route is public, so it carries no session material:
+// no QR (a session-hijack vector), no linked phone number, no internals.
 app.get('/api/status', (req, res) => {
   res.json({
     status: connectionStatus,
-    user: userInfo,
-    qr: currentQRDataUrl,
-    n8nWebhookUrl,
-    port: PORT,
+    user: userInfo ? { id: userInfo.id, name: userInfo.name } : null,
     timestamp: new Date().toISOString(),
   });
 });
@@ -925,12 +942,12 @@ app.delete('/api/dukan/catalog/:id', (req, res) => {
 // Get Orders — scoped to the requesting account. `?scope=all` is the operator
 // console's explicit cross-shop view; an unowned/unidentified request gets [].
 app.get('/api/dukan/orders', (req, res) => {
-  res.json({ orders: selectOrders(req.query) });
+  res.json({ orders: selectOrders(ordersQueryFor(req)) });
 });
 
 // Get Dukan Stats
 app.get('/api/dukan/stats', (req, res) => {
-  const all = selectOrders(req.query);
+  const all = selectOrders(ordersQueryFor(req));
   const pending = all.filter(o => o.status === 'PENDING').length;
   const accepted = all.filter(o => o.status === 'ACCEPTED' || o.status === 'PREPARING' || o.status === 'OUT_FOR_DELIVERY').length;
   const delivered = all.filter(o => o.status === 'DELIVERED').length;
@@ -1042,7 +1059,7 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
 });
 
 // Server-Sent Events (SSE) for Real-Time Updates
-app.get('/events', (req, res) => {
+app.get('/events', apiAuth.run, (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -1055,7 +1072,7 @@ app.get('/events', (req, res) => {
     `data: ${JSON.stringify({
       type: 'init',
       status: connectionStatus,
-      user: userInfo,
+      user: userInfo ? { id: userInfo.id, name: userInfo.name } : null,
       qr: currentQRDataUrl,
       n8nWebhookUrl,
     })}\n\n`
