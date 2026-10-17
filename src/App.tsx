@@ -17,6 +17,9 @@ import { generateRandomPhoneNumber } from './utils/phone.ts';
 import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
+import EmailConfirmScreen from './components/EmailConfirmScreen.tsx';
+import { readEmailConfirmParams } from './utils/confirmLink.ts';
+import type { ConfirmParams } from './utils/confirmLink.ts';
 import { listenToAuthState, signOutUser, User, getAuthUrlError } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
@@ -93,6 +96,17 @@ const AppContent: React.FC = () => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Read once at boot. When a confirmation link is the reason this page loaded,
+  // the shell is replaced by EmailConfirmScreen — the token is single-use, so
+  // reading it in a lazy initializer is also what keeps a re-render from
+  // re-reading it.
+  const [emailConfirmParams, setEmailConfirmParams] = useState<ConfirmParams | null>(() =>
+    typeof window === 'undefined' ? null : readEmailConfirmParams(window.location.href)
+  );
+  const [authUrlError] = useState<string | null>(() =>
+    typeof window === 'undefined' ? null : getAuthUrlError()
+  );
 
   // Surface any auth link errors (e.g. invalid or expired email confirmation link)
   useEffect(() => {
@@ -664,6 +678,22 @@ const AppContent: React.FC = () => {
     currentUserRef.current = null;
     setShowAuthModal(true);
   }, []);
+
+  // A confirmation link owns the page it landed on: render the confirmation
+  // screen instead of the app, so no "Sync Your Store" modal appears over it.
+  if (emailConfirmParams) {
+    return (
+      <EmailConfirmScreen
+        params={emailConfirmParams}
+        authError={authUrlError}
+        onContinue={() => {
+          // Drop the spent token from the URL so a reload cannot replay it.
+          window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
+          setEmailConfirmParams(null);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black flex justify-center">

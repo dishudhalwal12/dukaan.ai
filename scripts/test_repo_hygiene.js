@@ -100,6 +100,24 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   ok('the deploy preserves live orders, the WhatsApp session and the box\'s own .env');
 }
 
+// ── 6. the documented confirmation link lands on a path the deploy serves ────
+{
+  // Vercel serves dist/ as flat files: `/` maps to index.html and nothing else
+  // does. A link to /confirm 404s before the SPA is ever loaded, which loses the
+  // token — and it is invisible in dev, where Vite serves an SPA fallback for
+  // every path. The rewrite that would fix it is forbidden by check 3 above, so
+  // the documented link has to stay root-relative.
+  const readme = readFileSync(join(root, 'README.md'), 'utf8');
+  const link = readme.match(/https:\/\/<app>\.vercel\.app(\/[^\s?]*)\?token_hash=/);
+  assert.ok(link, 'README must document the Confirm-signup link carrying token_hash');
+  assert.strictEqual(
+    link[1],
+    '/',
+    `the confirmation link must be root-relative, because a static deploy serves only "/" — got "${link[1]}"`
+  );
+  ok('the documented confirmation link lands on a path the static deploy serves');
+}
+
 console.log('\n========================================');
 console.log(`🎉 ALL ${n} REPO HYGIENE TESTS PASSED 🎉`);
 console.log('========================================');
