@@ -45,7 +45,9 @@ const FORBIDDEN_SHAPES = [
   { label: 'Groq key', re: /gsk_[A-Za-z0-9]{20,}/ },
   { label: 'private key block', re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   // The hardcoded loopback backend that made every browser dial its own machine.
-  { label: 'hardcoded loopback backend', re: /127\.0\.0\.1:8080/ },
+  // Both spellings: `localhost:8080` is the same failure as `127.0.0.1:8080`, and
+  // a shopkeeper's browser has no model server to reach either way.
+  { label: 'hardcoded loopback backend', re: /(?:127\.0\.0\.1|localhost):8080/ },
 ];
 
 // In tracked files only the credential shapes matter. A local model server

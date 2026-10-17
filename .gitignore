@@ -22,7 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Every env file, so a stray backup or a per-mode file can never be committed.
+# The template is the one exception, and it must stay tracked.
 .env
+.env.*
+!.env.example
 
 # Worktrees
 .worktrees

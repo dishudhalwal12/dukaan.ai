@@ -66,6 +66,31 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   ok('the deployed frontend is pinned to a real API origin');
 }
 
+// ── 5. the deploy cannot destroy live state ──────────────────────────────────
+{
+  // The dev machine also has `whatsapp/store/orders.json`, with older contents.
+  // If the sync ever loses this exclude, deploying replaces the shop's real orders
+  // with whatever the developer last saw, and nothing anywhere reports an error.
+  // `whatsapp/auth_info` is the paired WhatsApp session: losing it means a QR scan
+  // and a phone in the room. Neither can be re-created by re-running a deploy.
+  const update = readFileSync(join(root, 'deploy/laptop/update.sh'), 'utf8');
+  for (const protectedPath of ['whatsapp/store', 'whatsapp/auth_info', '.env']) {
+    assert.ok(
+      update.includes(`--exclude=${protectedPath}`),
+      `deploy/laptop/update.sh must exclude ${protectedPath} — it holds live state, not a deploy artifact`
+    );
+  }
+  const deleteLines = update.split('\n').filter((line) => line.includes('--delete'));
+  assert.ok(deleteLines.length > 0, 'the deploy is expected to sync with --delete');
+  for (const line of deleteLines) {
+    assert.ok(
+      line.includes('EXCLUDES_STR'),
+      `a --delete sync must carry the exclude list, but this line does not: ${line.trim()}`
+    );
+  }
+  ok('the deploy preserves live orders, the WhatsApp session and the box\'s own .env');
+}
+
 console.log('\n========================================');
 console.log(`🎉 ALL ${n} REPO HYGIENE TESTS PASSED 🎉`);
 console.log('========================================');
