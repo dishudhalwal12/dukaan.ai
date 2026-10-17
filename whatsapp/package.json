@@ -1,0 +1,26 @@
+{
+  "name": "dukaan-whatsapp",
+  "version": "1.0.0",
+  "description": "WhatsApp AI Ordering Engine & Shopkeeper POS for Dukaan.ai",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "terminal": "node ../scripts/terminal_chat.js",
+    "test": "node test_suite_hermeticity.js && node test_order_ownership.js && node test_shop_owner_stamping.js && node test_shop_matching.js && node test_location_memory.js && node test_catalog_gate.js && node test_prompt_scope.js && node test_dukan_cloud.js && node test_pipeline_e2e.js && node test_order_engine.js && node test_trigger_gate.js",
+    "test:reliability": "node test_pipeline_reliability.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "pino": "^10.4.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

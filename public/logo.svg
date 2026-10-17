@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" fill="none">
+  <!-- Background Container -->
+  <rect width="120" height="120" rx="28" fill="#090D16"/>
+  <rect x="1" y="1" width="118" height="118" rx="27" stroke="#1E293B" stroke-width="2"/>
+  
+  <!-- Subtle Ambient Glow -->
+  <circle cx="60" cy="60" r="40" fill="#E6E6FA" fill-opacity="0.08" filter="blur(16px)"/>
+  
+  <!-- Storefront Awning -->
+  <path d="M26 44C26 42.8954 26.8954 42 28 42H92C93.1046 42 94 42.8954 94 44V52C94 56.4183 90.4183 60 86 60C81.5817 60 78 56.4183 78 52C78 56.4183 74.4183 60 70 60C65.5817 60 62 56.4183 62 52C62 56.4183 58.4183 60 54 60C49.5817 60 46 56.4183 46 52C46 56.4183 42.4183 60 38 60C33.5817 60 30 56.4183 30 52V44C30 42.8954 29.1046 42 28 42Z" fill="#1E293B"/>
+  
+  <!-- Awning Stripes in Brand Palette -->
+  <path d="M30 42H46V52C46 56.4183 42.4183 60 38 60C33.5817 60 30 56.4183 30 52V42Z" fill="#E6E6FA"/>
+  <path d="M62 42H78V52C78 56.4183 74.4183 60 70 60C65.5817 60 62 56.4183 62 52V42Z" fill="#E6E6FA"/>
+  <path d="M46 42H62V52C62 56.4183 58.4183 60 54 60C49.5817 60 46 56.4183 46 52V42Z" fill="#2D3748"/>
+  <path d="M78 42H94V52C94 56.4183 90.4183 60 86 60C81.5817 60 78 56.4183 78 52V42Z" fill="#2D3748"/>
+  
+  <!-- Store Base & Entrance -->
+  <rect x="34" y="60" width="52" height="32" rx="4" fill="#0F172A" stroke="#334155" stroke-width="2"/>
+  <path d="M48 92V72C48 70.8954 48.8954 70 50 70H70C71.1046 70 72 70.8954 72 72V92" fill="#1E293B"/>
+  
+  <!-- Window Glass Display -->
+  <rect x="38" y="66" width="6" height="12" rx="1.5" fill="#38BDF8" fill-opacity="0.3"/>
+  <rect x="76" y="66" width="6" height="12" rx="1.5" fill="#38BDF8" fill-opacity="0.3"/>
+  
+  <!-- AI Spark / Intelligence Node -->
+  <path d="M60 22L62.2 28.8L69 31L62.2 33.2L60 40L57.8 33.2L51 31L57.8 28.8L60 22Z" fill="#F8FAFC"/>
+  <circle cx="60" cy="31" r="2" fill="#E6E6FA"/>
+  <circle cx="82" cy="28" r="1.5" fill="#A78BFA"/>
+</svg>

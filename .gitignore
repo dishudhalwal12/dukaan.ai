@@ -23,4 +23,25 @@ dist-ssr
 *.sln
 *.sw?
 .env
-.env.example
+
+# Worktrees
+.worktrees
+.worktrees/
+worktrees
+worktrees/
+
+# Local ML artifacts (large; not for version control)
+models/
+adapters/
+data/*.jsonl
+
+# Local AI script cache
+scripts/local-ai/__pycache__/
+*.pid
+
+# Local tooling scratch
+.superpowers/
+.codegraph/
+
+# WhatsApp engine runtime state (orders, chats, message log — contains customer PII)
+whatsapp/store/
