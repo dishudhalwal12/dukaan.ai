@@ -1,5 +1,10 @@
 import assert from 'assert';
-import { ownerColumnsFromAuthUser, orderRowFromOrder } from '../src/utils/cloudRows.ts';
+import {
+  ownerColumnsFromAuthUser,
+  orderRowFromOrder,
+  isMissingOptionalColumnError,
+  stripOptionalOrderColumns,
+} from '../src/utils/cloudRows.ts';
 
 console.log('--- RUNNING CLOUD ROW TESTS ---');
 
@@ -81,6 +86,42 @@ assert.strictEqual(empty.customer_phone, null);
 assert.strictEqual(empty.customer_name, null);
 assert.strictEqual(empty.delivery_address, null);
 assert.strictEqual(empty.notes, null);
+
+console.log('\nTest 3: isMissingOptionalColumnError');
+assert.strictEqual(isMissingOptionalColumnError({ code: 'PGRST204' }), true, 'PGRST204 means the column is absent');
+assert.strictEqual(
+  isMissingOptionalColumnError({ message: "Could not find the 'customer_name' column of 'orders' in the schema cache" }),
+  true,
+  'a schema-cache message means the column is absent',
+);
+// Anything else is a real failure and must NOT be swallowed by a retry.
+assert.strictEqual(isMissingOptionalColumnError({ code: '23505', message: 'duplicate key value' }), false, 'a constraint violation is not a missing column');
+assert.strictEqual(isMissingOptionalColumnError({ message: 'JWT expired' }), false, 'an auth error is not a missing column');
+assert.strictEqual(isMissingOptionalColumnError(null), false, 'no error is not a missing column');
+assert.strictEqual(isMissingOptionalColumnError(undefined), false);
+assert.strictEqual(isMissingOptionalColumnError(new Error('network down')), false, 'a plain Error is not a missing column');
+
+console.log('✓ Test 3 Passed');
+
+console.log('\nTest 4: stripOptionalOrderColumns');
+const stripped = stripOptionalOrderColumns([row])[0];
+assert.deepStrictEqual(
+  Object.keys(stripped).sort(),
+  ['created_at', 'customer', 'external_id', 'items', 'payment_method', 'status', 'total', 'updated_at', 'user_id'],
+  'exactly the four optional columns are gone',
+);
+assert.strictEqual(stripped.external_id, row.external_id, 'identity is kept');
+assert.strictEqual(stripped.user_id, row.user_id, 'ownership is kept');
+assert.deepStrictEqual(stripped.customer, row.customer, 'the JSONB is kept');
+assert.strictEqual(stripped.total, row.total, 'the amount is kept');
+assert.ok(!('customer_phone' in stripped) && !('notes' in stripped), 'the flat columns are gone');
+assert.deepStrictEqual(stripOptionalOrderColumns([]), [], 'an empty batch stays empty');
+assert.deepStrictEqual(
+  Object.keys(stripOptionalOrderColumns([row])[0]),
+  Object.keys(stripped),
+  'every row is shaped alike',
+);
+console.log('✓ Test 4 Passed');
 
 console.log('\n========================================');
 console.log('🎉 ALL CLOUD ROW TESTS PASSED 🎉');

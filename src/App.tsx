@@ -23,6 +23,8 @@ import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
+import { mergePolledOrders, electPopupCandidates } from './utils/orderPolling.ts';
+import { isNewOrder } from './utils/orderStatus.ts';
 import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
 import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
 import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboardingStatus.ts';
@@ -85,6 +87,9 @@ const AppContent: React.FC = () => {
   const seenOrderIds = useRef<Set<string>>(
     new Set(JSON.parse(localStorage.getItem('dukan-seen-order-ids') ?? '[]') as string[])
   );
+  // False until the first poll of this account has been folded in. That first
+  // poll sees the whole backlog, so it must elect nobody — see orderPolling.ts.
+  const pollPrimedRef = useRef(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -307,7 +312,7 @@ const AppContent: React.FC = () => {
   // No longer triggered by click — simulation starts explicitly after onboarding completes
   const handleFirstInteraction = useCallback(() => {}, []);
 
-  const newOrderCount = orders.filter(o => o.status === OrderStatus.NEW).length;
+  const newOrderCount = orders.filter(o => isNewOrder(o.status)).length;
 
   const handleNavigation = useCallback((screen: Screen) => {
     setActiveScreen(screen);
@@ -541,6 +546,7 @@ const AppContent: React.FC = () => {
     });
 
     // 2.5s polling fallback to ensure 100% delivery guarantee
+    pollPrimedRef.current = false;
     const pollInterval = setInterval(() => {
       const myId = currentUserRef.current?.id;
       if (!myId) return; // No account → nothing to reconcile.
@@ -552,30 +558,36 @@ const AppContent: React.FC = () => {
           myId,
         );
 
-        // The poll is a state-reconcile path only. It must NOT raise order
-        // alerts: on a fresh browser it sees every pre-existing NEW order at
-        // once and would fire one chime per order (an 898-chime storm here).
-        // New-order alerting belongs to the SSE `dukan_new_order` handler,
-        // which only fires for orders created after the client connected.
+        // The SSE stream is the alerting path, but it can be slow or dropped
+        // behind a proxy. The poll therefore also raises the popup — once per
+        // order: `electPopupCandidates` elects nobody until the first poll has
+        // been folded in, and records what it elected, so a fresh browser cannot
+        // fire one chime per order for its whole backlog.
+        //
+        // Decided out here, not inside the state updater: React may run an
+        // updater twice, and a chime or a popup is not idempotent.
+        const { appeared } = mergePolledOrders(ordersRef.current, freshOrders);
+        const electedIds = electPopupCandidates(appeared, seenOrderIds.current, pollPrimedRef.current);
+        pollPrimedRef.current = true;
+
+        if (electedIds.length > 0) {
+          for (const id of electedIds) seenOrderIds.current.add(id);
+          localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+
+          playOrderChime();
+
+          // Trigger popup unless suppressed by active subscreen or another open modal.
+          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
+            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
+          } else {
+            const first = appeared.find(o => electedIds.includes(o.id));
+            if (first) setTimeout(() => setNewOrderForPopup(first), 0);
+          }
+        }
+
         setOrders(prev => {
-          const freshMap = new Map(freshOrders.map(f => [f.id, f]));
-          return prev.map(p => {
-            const matched = freshMap.get(p.id);
-            if (!matched) return p;
-
-            // Prevent status regression from COMPLETED back to PREPARING
-            const effectiveStatus = (p.status === OrderStatus.COMPLETED && matched.status !== OrderStatus.COMPLETED)
-              ? OrderStatus.COMPLETED
-              : matched.status;
-
-            return {
-              ...p,
-              ...matched,
-              status: effectiveStatus,
-              total: matched.total > 0 ? matched.total : p.total,
-              items: matched.items && matched.items.length > 0 ? matched.items : p.items,
-            };
-          });
+          const merged = mergePolledOrders(prev, freshOrders);
+          return merged.changed ? merged.orders : prev;
         });
       }).catch(() => {});
     }, 2500);

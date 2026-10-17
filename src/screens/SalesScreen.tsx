@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import Card from '../components/Card.tsx';
-import { Order, OrderStatus } from '../types.ts';
+import { Order } from '../types.ts';
+import { isAcceptedSale } from '../utils/orderStatus.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 
 // Guard against undefined/NaN totals from webhook orders or old localStorage data
@@ -203,7 +204,7 @@ const SalesScreen: React.FC<{ orders: Order[] }> = ({ orders }) => {
 
   const filteredOrders = useMemo(() => {
     const relevantOrders = orders
-      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED)
+      .filter(o => isAcceptedSale(o.status))
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     switch (activeFilter) {
@@ -220,7 +221,7 @@ const SalesScreen: React.FC<{ orders: Order[] }> = ({ orders }) => {
 
   const chartData = useMemo(() => {
     const relevantOrders = orders
-      .filter(o => o.status !== OrderStatus.NEW && o.status !== OrderStatus.REJECTED);
+      .filter(o => isAcceptedSale(o.status));
     
     const today = new Date();
 
