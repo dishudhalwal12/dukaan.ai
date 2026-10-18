@@ -1,8 +1,15 @@
 import React from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
+import { saveLanguagePreferenceToCloud } from '../../services/cloudSync.ts';
 
-const languages = [
+export interface LanguageOption {
+  code: string;
+  name: string;
+  nativeName: string;
+}
+
+export const languages: LanguageOption[] = [
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
   { code: 'ur', name: 'Urdu', nativeName: 'اردو' },
@@ -17,6 +24,7 @@ const ChangeLanguageScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleSelectLanguage = (code: string) => {
     setLanguage(code);
+    void saveLanguagePreferenceToCloud(code);
   };
 
   return (

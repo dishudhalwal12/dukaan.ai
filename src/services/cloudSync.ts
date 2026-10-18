@@ -71,12 +71,12 @@ const nonNullColumns = (columns: Record<string, unknown>): Record<string, unknow
  */
 export const saveBusinessProfileToCloud = async (
   storeName: string,
-  profileData: any,
+  profileData?: any,
   explicitUserId?: string,
   onboarding?: any
 ): Promise<void> => {
   try {
-    if (!storeName || !profileData) return;
+    if (!storeName) return;
     if (!isSupabaseConfigured()) {
       console.log('Supabase not configured. Business profile stored locally.');
       return;
@@ -86,6 +86,15 @@ export const saveBusinessProfileToCloud = async (
     // Guests never write to the shared cloud tables — an ownerless profile row
     // would be adopted by whichever account signs in next.
     if (!userId) return;
+
+    const effectiveProfile = profileData || {
+      storeDetails: {
+        storeName,
+        category: localStorage.getItem('dukan-store-category') ?? null,
+      },
+      ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+      preferredLanguage: localStorage.getItem('dukan-language') || 'en',
+    };
 
     // The store's position is its own fact, not part of the profile blob: it is
     // what a new device restores to answer "where is this shop?" without asking
@@ -97,13 +106,14 @@ export const saveBusinessProfileToCloud = async (
       .upsert({
         user_id: userId,
         store_name: storeName,
-        category: profileData?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
-        profile_data: profileData,
+        category: effectiveProfile?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
+        profile_data: effectiveProfile,
         onboarding: onboarding ?? {},
         // Owner identity, mirrored from the auth session: first/last name, picture,
         // provider and language. Without this the dashboard has only the raw
         // profile_data blob and these columns stay NULL.
         ...nonNullColumns(ownerColumnsFromAuthUser(await currentAuthUser())),
+        preferred_language: localStorage.getItem('dukan-language') || effectiveProfile?.preferredLanguage || 'en',
         ...(storeLocation ? {
           store_lat: storeLocation.lat,
           store_lng: storeLocation.lng,
@@ -118,9 +128,143 @@ export const saveBusinessProfileToCloud = async (
       console.warn('Supabase DB Error (saveBusinessProfileToCloud):', error.message);
     } else {
       console.log(`Business profile saved in Supabase for user: ${userId}`);
+      void saveMerchantPreferencesToCloud();
     }
   } catch (error) {
     console.warn('Failed to sync profile to Supabase cloud. Continuing with local data.', error);
+  }
+};
+
+/**
+ * Direct cloud writer for language preference changes.
+ *
+ * Synchronizes the chosen language to business_profiles, merchant_preferences,
+ * and user_identities so it survives across sessions, devices, and reloads.
+ */
+export const saveLanguagePreferenceToCloud = async (
+  lang: string,
+  explicitUserId?: string,
+): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !lang) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) {
+      console.warn('Cannot sync language to cloud: no authenticated user.');
+      return;
+    }
+
+    // 1. Update or upsert business_profiles
+    const storeName = localStorage.getItem('dukan-store-name') || 'My Kirana Store';
+    const { error: bpError } = await supabase
+      .from('business_profiles')
+      .upsert(
+        {
+          user_id: userId,
+          store_name: storeName,
+          preferred_language: lang,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (bpError) {
+      console.warn('Supabase DB Error (saveLanguagePreferenceToCloud - business_profiles):', bpError.message);
+    } else {
+      console.log(`Updated business_profiles preferred_language to '${lang}' for user: ${userId}`);
+    }
+
+    // 2. Upsert merchant_preferences
+    const { error: prefError } = await supabase
+      .from('merchant_preferences')
+      .upsert(
+        {
+          user_id: userId,
+          preferred_language: lang,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (prefError) {
+      console.warn('Supabase DB Error (saveLanguagePreferenceToCloud - merchant_preferences):', prefError.message);
+    }
+
+    // 3. Update user_identities
+    const { error: idError } = await supabase
+      .from('user_identities')
+      .update({
+        preferred_language: lang,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (idError) {
+      console.warn('Supabase DB Error (saveLanguagePreferenceToCloud - user_identities):', idError.message);
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save preferred language to Supabase.', error);
+  }
+};
+
+/**
+ * Direct cloud writer for supplier details.
+ *
+ * Synchronizes supplier details into `public.suppliers`.
+ */
+export const saveSupplierToCloud = async (
+  name: string,
+  whatsapp: string,
+  notes?: string,
+  explicitUserId?: string,
+): Promise<void> => {
+  try {
+    if (!isSupabaseConfigured() || !name) return;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return;
+
+    // Check if supplier row exists for this user
+    const { data: existing } = await supabase
+      .from('suppliers')
+      .select('id')
+      .eq('user_id', userId)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      const { error } = await supabase
+        .from('suppliers')
+        .update({
+          supplier_name: name,
+          supplier_whatsapp: whatsapp,
+          notes: notes ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing[0].id);
+
+      if (error) {
+        console.warn('Supabase DB Error (saveSupplierToCloud - update):', error.message);
+      }
+    } else {
+      const { error } = await supabase
+        .from('suppliers')
+        .insert({
+          user_id: userId,
+          supplier_name: name,
+          supplier_whatsapp: whatsapp,
+          notes: notes ?? null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.warn('Supabase DB Error (saveSupplierToCloud - insert):', error.message);
+      }
+    }
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save supplier to Supabase.', error);
   }
 };
 
@@ -136,11 +280,14 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
     if (userId) {
       const { data, error } = await supabase
         .from('business_profiles')
-        .select('profile_data, store_name, category, onboarding, store_lat, store_lng, store_location_accuracy_m, store_location_source, store_location_captured_at')
+        .select('profile_data, store_name, category, onboarding, preferred_language, store_lat, store_lng, store_location_accuracy_m, store_location_source, store_location_captured_at')
         .eq('user_id', userId)
         .maybeSingle();
 
       if (!error && data?.profile_data) {
+        if (data.preferred_language) {
+          localStorage.setItem('dukan-language', data.preferred_language);
+        }
         // Merge the dynamic onboarding payload alongside the profile body so
         // callers can restore the AI Q&A, not just the raw answers.
         return {

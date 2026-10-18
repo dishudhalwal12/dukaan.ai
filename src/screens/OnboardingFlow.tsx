@@ -6,6 +6,7 @@ import { businessPresets } from '../data/businessPresets.ts';
 import { sanitizeForPrompt } from '../utils/sanitize.ts';
 import LocationModal from '../components/LocationModal.tsx';
 import { saveStoreLocation } from '../utils/location.ts';
+import { languages } from './settings/ChangeLanguageScreen.tsx';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -47,27 +48,25 @@ const NameStep: React.FC<{ onNext: (name: string) => void }> = ({ onNext }) => {
 
 const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeAddress: string; storeCategory: string }) => void }> = ({ onNext }) => {
   const [storeName, setStoreName] = useState('');
-  const [storeAddress, setStoreAddress] = useState('');
   const [storeCategory, setStoreCategory] = useState('');
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const { t } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
 
-  // The store's position is asked for once the shop's identity is known, and
-  // "Setup later" is offered because a shopkeeper who is not in the shop right
-  // now must still be able to finish. The catalog re-asks before the first
-  // product, where it cannot be deferred.
+  // The store's position is asked for once the shop's identity is known via browser GPS,
+  // and "Setup later" is offered because a shopkeeper who is not in the shop right
+  // now must still be able to finish.
   const finish = () => {
     setShowLocationModal(false);
-    onNext({ storeName, storeAddress, storeCategory });
+    onNext({ storeName, storeAddress: '', storeCategory });
   };
 
   const handleContinue = () => {
-    if (storeName.trim() && storeAddress.trim() && storeCategory.trim()) {
+    if (storeName.trim() && storeCategory.trim()) {
       setShowLocationModal(true);
     }
   };
   
-  const canContinue = storeName.trim() && storeAddress.trim() && storeCategory.trim();
+  const canContinue = storeName.trim() && storeCategory.trim();
 
   return (
     <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-sm w-full text-center shadow-lg">
@@ -86,19 +85,28 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
           />
         </div>
         <div>
-          <label className="text-white font-bold" htmlFor="store-address">{t('label_store_address')}</label>
-          <div className="relative">
-            <input
-              className="w-full bg-transparent border-t-0 border-x-0 border-b-2 border-neutral-600 text-white text-lg py-2 pr-10 focus:outline-none focus:ring-0 focus:border-[#E6E6FA] placeholder-neutral-400 transition-colors duration-300"
-              id="store-address"
-              placeholder={t('placeholder_store_address_example')}
-              type="text"
-              value={storeAddress}
-              onChange={(e) => setStoreAddress(e.target.value)}
-            />
-            <span className="absolute inset-y-0 right-0 flex items-center pr-3">
-              <span className="material-symbols-outlined text-neutral-500">place</span>
-            </span>
+          <label className="text-white font-bold" htmlFor="store-language">
+            {t('settings_change_language') || 'Language Preference'}
+          </label>
+          <div className="relative mt-1">
+            <select
+              className="appearance-none w-full bg-transparent border-t-0 border-x-0 border-b-2 border-neutral-600 text-white text-lg py-2.5 focus:outline-none focus:ring-0 focus:border-[#E6E6FA] transition-colors duration-300"
+              id="store-language"
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23e6e6fa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 0.75rem center',
+                backgroundSize: '1.5em 1.5em'
+              }}
+            >
+              {languages.map((lang) => (
+                <option key={lang.code} className="bg-[#1A1A1A] text-white" value={lang.code}>
+                  {lang.name} ({lang.nativeName})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div>
@@ -164,9 +172,8 @@ const BusinessContextStep: React.FC<{
 
         const userName = sanitizeForPrompt(localStorage.getItem('dukan-profile-name') || 'the owner');
         const safeCategory = sanitizeForPrompt(details.storeCategory);
-        const safeStoreName = sanitizeForPrompt(details.storeName);
-        const safeAddress = sanitizeForPrompt(details.storeAddress);
-        const prompt = `You are a top-tier MBA business consultant. The user owns a '${safeCategory}' small business named '${safeStoreName}' in India at '${safeAddress}'. The user's name is '${userName}'. Generate a dynamic onboarding questionnaire of 4 to 7 highly intelligent questions to deeply understand their specific business context. Include a mix of MCQ ('select') and subjective ('input') questions. Respond ONLY in strictly valid JSON format. Schema: {"questions": [{"type": "select" | "input", "title": "string (the question)", "options": ["string"] (required if select, max 5), "intent": "string (short key representing question intent)", "subtext": "string (optional)", "multiSelect": boolean (optional)}]}`;
+        const safeAddress = sanitizeForPrompt(details.storeAddress || 'India');
+        const prompt = `You are a top-tier MBA business consultant. The user owns a '${safeCategory}' small business named '${safeStoreName}' in India${details.storeAddress ? ` at '${safeAddress}'` : ''}. The user's name is '${userName}'. Generate a dynamic onboarding questionnaire of 4 to 7 highly intelligent questions to deeply understand their specific business context. Include a mix of MCQ ('select') and subjective ('input') questions. Respond ONLY in strictly valid JSON format. Schema: {"questions": [{"type": "select" | "input", "title": "string (the question)", "options": ["string"] (required if select, max 5), "intent": "string (short key representing question intent)", "subtext": "string (optional)", "multiSelect": boolean (optional)}]}`;
 
         const response = await withGeminiFailover((client) =>
           client.models.generateContent({
@@ -636,6 +643,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
             answers,
             // Mirrored so "Welcome back, <name>!" still works on another device.
             ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+            preferredLanguage: localStorage.getItem('dukan-language') || 'en',
             timestamp: new Date().toISOString()
         };
         // The dynamic AI-generated Q&A (question/intent/type/answer) is the

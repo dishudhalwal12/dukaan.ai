@@ -48,7 +48,8 @@ const one = async (path) => {
     await r.arrayBuffer();
     return { ms: performance.now() - t, ok: r.ok, code: r.status };
   } catch (e) {
-    return { ms: performance.now() - t, ok: false, code: 'ERR' };
+    const errCode = e?.cause?.code || e?.code || e?.message || 'ERR';
+    return { ms: performance.now() - t, ok: false, code: errCode };
   }
 };
 

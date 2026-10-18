@@ -3,7 +3,8 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
-import { saveBusinessProfileToCloud } from '../../services/cloudSync.ts';
+import { saveBusinessProfileToCloud, saveLanguagePreferenceToCloud } from '../../services/cloudSync.ts';
+import { languages } from './ChangeLanguageScreen.tsx';
 
 const FormField: React.FC<{ label: string; type: string; value: string; placeholder?: string; disabled?: boolean; isVerified?: boolean; onChange: (value: string) => void }> = 
 ({ label, type, value, placeholder, disabled, isVerified, onChange }) => (
@@ -34,7 +35,7 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [profilePic, setProfilePic] = useState(() => localStorage.getItem('dukan-profile-pic') || null);
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingImage, setIsProcessingImage] = useState(false);
-    const { t } = useLanguage();
+    const { language, setLanguage, t } = useLanguage();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,7 +77,6 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         fileInputRef.current?.click();
     };
 
-
     const handleSave = () => {
         setIsSaving(true);
         try {
@@ -88,7 +88,10 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 localStorage.removeItem('dukan-profile-pic');
             }
 
-            console.log('Saving profile:', { name, email });
+            console.log('Saving profile:', { name, email, language });
+
+            // Save language preference to Supabase cloud
+            void saveLanguagePreferenceToCloud(language);
 
             // Mirror the name into the cloud profile so the greeting survives a
             // device change. Fire-and-forget: it never blocks the save.
@@ -104,6 +107,7 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     },
                     answers: readJson('dukan-store-context'),
                     ownerName: name,
+                    preferredLanguage: language,
                     timestamp: new Date().toISOString(),
                 }, undefined, readJson('dukan-business-intelligence-context'));
             }
@@ -156,6 +160,29 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <FormField label={t('label_full_name')} type="text" value={name} onChange={setName} placeholder={t('placeholder_your_full_name')} />
                     <FormField label={t('label_mobile_number')} type="tel" value="+91 98765 43210" onChange={() => {}} disabled isVerified />
                     <FormField label={t('label_email_address')} type="email" value={email} onChange={setEmail} placeholder={t('placeholder_your_email_address')} />
+
+                    <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-1.5 px-1">{t('settings_change_language') || 'Preferred Language'}</label>
+                        <div className="relative">
+                            <select
+                                value={language}
+                                onChange={(e) => setLanguage(e.target.value)}
+                                className="w-full bg-transparent border-b-2 border-neutral-600 text-white text-lg py-2 focus:outline-none focus:border-[#E6E6FA] transition-colors duration-300 appearance-none"
+                                style={{
+                                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23e6e6fa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundPosition: 'right 0.75rem center',
+                                    backgroundSize: '1.5em 1.5em'
+                                }}
+                            >
+                                {languages.map((lang) => (
+                                    <option key={lang.code} className="bg-[#1A1A1A] text-white" value={lang.code}>
+                                        {lang.name} ({lang.nativeName})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

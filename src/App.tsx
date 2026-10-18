@@ -193,11 +193,24 @@ const AppContent: React.FC = () => {
           loadProducts(cloudData.products);
         }
         if (cloudData.profile) {
+          if (cloudData.profile.preferredLanguage) {
+            localStorage.setItem('dukan-language', cloudData.profile.preferredLanguage);
+          }
           if (cloudData.profile.storeDetails?.storeName) {
             localStorage.setItem('dukan-store-name', cloudData.profile.storeDetails.storeName);
           }
           if (cloudData.profile.storeDetails?.category) {
             localStorage.setItem('dukan-store-category', cloudData.profile.storeDetails.category);
+          }
+          if (cloudData.profile.storeDetails?.storeAddress && !localStorage.getItem('dukan-store-address')) {
+            localStorage.setItem('dukan-store-address', cloudData.profile.storeDetails.storeAddress);
+          }
+          if (cloudData.profile.storeDetails?.supplierName && !localStorage.getItem('dukan-supplier-name')) {
+            localStorage.setItem('dukan-supplier-name', cloudData.profile.storeDetails.supplierName);
+          }
+          if (cloudData.profile.storeDetails?.supplierWhatsapp && !localStorage.getItem('dukan-supplier-whatsapp')) {
+            localStorage.setItem('dukan-supplier-whatsapp', cloudData.profile.storeDetails.supplierWhatsapp);
+            localStorage.setItem('dukan-supplier-whatsapp-display', cloudData.profile.storeDetails.supplierWhatsapp);
           }
           if (cloudData.profile.answers) {
             localStorage.setItem('dukan-store-context', JSON.stringify(cloudData.profile.answers));
