@@ -1,16 +1,7 @@
 import React from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
-
-const languages = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-  { code: 'ur', name: 'Urdu', nativeName: 'اردو' },
-  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ' },
-  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી' },
-  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
-];
+import { LANGUAGES as languages } from '../../data/languages.ts';
 
 const ChangeLanguageScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { language: selectedLanguage, setLanguage, t } = useLanguage();

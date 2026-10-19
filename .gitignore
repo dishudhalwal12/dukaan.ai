@@ -52,3 +52,9 @@ whatsapp/store/
 
 # Vercel CLI project link (machine-specific ids)
 .vercel
+
+# Supabase CLI temp directory
+supabase/.temp/
+
+# Spreadsheet exports
+*.xlsx

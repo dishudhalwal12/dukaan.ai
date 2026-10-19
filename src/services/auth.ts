@@ -2,6 +2,7 @@ import type { User, EmailOtpType } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { clearFreshSignIn, markFreshSignIn } from '../utils/authOutcome.ts';
 import { CONFIRM_TYPES, parseConfirmationStatus } from '../utils/confirmLink.ts';
+import { shouldAbandonPendingOAuth, shouldIgnoreFocusSession, urlCarriesOAuthCallback } from '../utils/oauthState.ts';
 
 export type { User };
 
@@ -10,7 +11,56 @@ export interface AuthResult {
   /** Null when the project requires email confirmation \u2014 the account exists but is not signed in. */
   session?: unknown | null;
   error?: string | null;
+  /**
+   * Supabase's machine-readable reason and HTTP status, kept beside the message
+   * so the UI can branch on `invalid_credentials` instead of matching English
+   * text. Both are optional: a thrown exception has neither.
+   */
+  code?: string | null;
+  status?: number | null;
 }
+
+/** The failure half of an `AuthResult`, with the provider's code kept. */
+const failure = (error: { message?: string; code?: string; status?: number } | null | undefined): AuthResult => ({
+  user: null,
+  error: error?.message ?? null,
+  code: error?.code ?? null,
+  status: typeof error?.status === 'number' ? error.status : null,
+});
+
+/** Set while a Google sign-in has left the page and has not come back yet. */
+export const OAUTH_IN_PROGRESS_KEY = 'dukan-oauth-in-progress';
+
+export const isOAuthPending = (): boolean => {
+  try {
+    return localStorage.getItem(OAUTH_IN_PROGRESS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+export const clearOAuthPending = (): void => {
+  try {
+    localStorage.removeItem(OAUTH_IN_PROGRESS_KEY);
+  } catch {
+    // Storage unavailable — the marker simply was never set.
+  }
+};
+
+/**
+ * Writes off a Google sign-in that never returned, and says whether it did.
+ *
+ * Called when the app regains focus. Without it the marker stays set for the
+ * rest of the session, the sign-in button keeps spinning, and every later load
+ * has to guess whether a redirect is "still going".
+ */
+export const abandonPendingOAuth = (hasSession: boolean): boolean => {
+  const pending = isOAuthPending();
+  const callbackInUrl = typeof window !== 'undefined' && urlCarriesOAuthCallback(window.location.href);
+  if (!shouldAbandonPendingOAuth({ pending, callbackInUrl, hasSession })) return false;
+  clearOAuthPending();
+  return true;
+};
 
 /**
  * Initiates Google OAuth sign-in via Supabase.
@@ -32,9 +82,11 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
       provider: 'google',
       options: {
         redirectTo: window.location.origin + window.location.pathname,
+        // Deliberately no `prompt: 'consent'`: forcing the consent screen on
+        // every sign-in gave the shopkeeper one extra window to close, and
+        // closing it is what used to leave the button spinning.
         queryParams: {
           access_type: 'offline',
-          prompt: 'consent',
         },
       },
     });
@@ -84,7 +136,7 @@ export const signUpWithEmail = async (
     if (error) {
       console.warn('Supabase Auth Error (SignUp):', error.message);
       clearFreshSignIn();
-      return { user: null, error: error.message };
+      return failure(error);
     }
 
     // Supabase anti-enumeration protection: if user already exists, Supabase returns
@@ -95,6 +147,9 @@ export const signUpWithEmail = async (
         user: null,
         session: null,
         error: 'An account with this email already exists. Please sign in or use Continue with Google.',
+        // Supabase reports this as a success with an empty `identities` array,
+        // so the reason has to be named here for the UI to switch its message.
+        code: 'account_exists',
       };
     }
 
@@ -146,7 +201,7 @@ export const signInWithEmail = async (
     if (error) {
       console.warn('Supabase Auth Error (SignIn):', error.message);
       clearFreshSignIn();
-      return { user: null, error: error.message };
+      return failure(error);
     }
 
     if (data.session) {
@@ -242,10 +297,12 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
         }));
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
-        cleanOAuthUrl();
       } else {
         localStorage.removeItem('dukan-auth-user');
       }
+      // Cleaned on both branches. A refused callback leaves `error=...` in the
+      // URL, and leaving it there re-raised the same toast on every reload.
+      cleanOAuthUrl();
       callback(user);
     };
 
@@ -283,6 +340,17 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       if (document.visibilityState !== 'visible') return;
       supabase.auth.getSession().then(({ data: { session } }) => {
         const user = session?.user ?? null;
+        // Returning from Google is not a sign-out. While a redirect is pending
+        // or its callback is still in the URL, the exchange owns the session and
+        // a "no session yet" answer here is a race — one that used to drop the
+        // cached account and hard-reload the page.
+        if (shouldIgnoreFocusSession({
+          pending: isOAuthPending(),
+          callbackInUrl: urlCarriesOAuthCallback(window.location.href),
+          hasSession: Boolean(user),
+        })) {
+          return;
+        }
         if ((user?.id ?? null) === lastUserId) return;
         deliver(user);
       }).catch(() => {});

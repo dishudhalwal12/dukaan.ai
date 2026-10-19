@@ -25,12 +25,55 @@ const APP_KEY_PREFIXES = ['dukan-', 'dukaan-'];
  */
 const DEVICE_KEYS = new Set([
   'dukan-language',
+  'dukan-language-chosen',
   'dukan-openrouter-api-key',
   'dukan-auth-user',
   'dukan-oauth-in-progress',
   'dukan-install-id',
   DATA_OWNER_KEY,
+  'dukan-ownership-reboot-at',
 ]);
+
+/**
+ * When the last ownership-triggered reload happened.
+ *
+ * Kept in localStorage rather than sessionStorage because it has to hold across
+ * tabs: the reload brings up a new document, and a per-tab store can lose the
+ * marker while another tab is still starting. Losing it re-armed the reload and
+ * turned one cache drop into a reload loop.
+ */
+export const OWNERSHIP_REBOOT_KEY = 'dukan-ownership-reboot-at';
+
+/** At most one ownership reload in this window; a second would loop. */
+export const OWNERSHIP_REBOOT_COOLDOWN_MS = 30_000;
+
+/** Whether a reload is still warranted, given when the last one happened. */
+export const shouldReloadForOwnership = (
+  lastRebootAt: number,
+  now: number,
+  cooldownMs: number = OWNERSHIP_REBOOT_COOLDOWN_MS,
+): boolean => {
+  if (!Number.isFinite(lastRebootAt) || lastRebootAt <= 0) return true;
+  if (!Number.isFinite(now)) return false;
+  return now - lastRebootAt >= cooldownMs;
+};
+
+/**
+ * Records this reload and says whether it may happen.
+ *
+ * False when one already happened inside the cooldown: the caller then keeps
+ * going with the empty cache it just built instead of reloading again.
+ */
+export const claimOwnershipReboot = (now: number = Date.now()): boolean => {
+  try {
+    const last = Number(localStorage.getItem(OWNERSHIP_REBOOT_KEY) || 0);
+    if (!shouldReloadForOwnership(last, now)) return false;
+    localStorage.setItem(OWNERSHIP_REBOOT_KEY, String(now));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /** The identity that owns the local cache: the signed-in user id, or 'guest'. */
 export const currentIdentity = (): string => {

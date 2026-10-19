@@ -7,8 +7,9 @@ import SalesScreen from './screens/SalesScreen.tsx';
 import InsightsScreen from './screens/InsightsScreen.tsx';
 import CatalogScreen from './screens/CatalogScreen.tsx';
 import SettingsScreen from './screens/SettingsScreen.tsx';
+import PrivacyPolicyScreen from './screens/settings/PrivacyPolicyScreen.tsx';
 import { ProductProvider, useProducts } from './contexts/ProductContext.tsx';
-import { LanguageProvider } from './contexts/LanguageContext.tsx';
+import { LanguageProvider, useLanguage, LANGUAGE_STORAGE_KEY } from './contexts/LanguageContext.tsx';
 import OrdersScreen from './screens/OrdersScreen.tsx';
 import NewOrderModal from './components/NewOrderModal.tsx';
 import { initialProducts } from './data/initialProducts.ts';
@@ -18,9 +19,9 @@ import Toast from './components/Toast.tsx';
 import AuthModal from './components/AuthModal.tsx';
 import WelcomeBackModal from './components/WelcomeBackModal.tsx';
 import EmailConfirmScreen from './components/EmailConfirmScreen.tsx';
-import { readEmailConfirmParams } from './utils/confirmLink.ts';
+import { captureEmailConfirmParams } from './utils/confirmLink.ts';
 import type { ConfirmParams } from './utils/confirmLink.ts';
-import { listenToAuthState, signOutUser, User, getAuthUrlError } from './services/auth.ts';
+import { listenToAuthState, signOutUser, User, getAuthUrlError, isOAuthPending, clearOAuthPending } from './services/auth.ts';
 import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
@@ -28,7 +29,8 @@ import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { mergePolledOrders, electPopupCandidates } from './utils/orderPolling.ts';
 import { isNewOrder } from './utils/orderStatus.ts';
-import { clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
+import { claimOwnershipReboot, clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
+import { normalizeQuantity } from './utils/stock.ts';
 import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
 import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboardingStatus.ts';
 import { PROFILE_NAME_KEY, resolveGreetingName } from './utils/greetingName.ts';
@@ -50,6 +52,10 @@ const getInitialScreen = (): Screen => {
 };
 
 const AppContent: React.FC = () => {
+  // The translator is needed here, not only in the screens: the bottom-bar labels
+  // are built by `resolveTabsFromBusinessType`, which used to return English
+  // literals and so never followed a language change.
+  const { t, applyRemoteLanguage } = useLanguage();
   const [activeScreen, setActiveScreen] = useState<Screen>(getInitialScreen);
   const [orders, setOrders] = useState<Order[]>(() => {
     // The cache is per-device but orders are per-account: drop another
@@ -100,9 +106,11 @@ const AppContent: React.FC = () => {
   // Read once at boot. When a confirmation link is the reason this page loaded,
   // the shell is replaced by EmailConfirmScreen — the token is single-use, so
   // reading it in a lazy initializer is also what keeps a re-render from
-  // re-reading it.
-  const [emailConfirmParams, setEmailConfirmParams] = useState<ConfirmParams | null>(() =>
-    typeof window === 'undefined' ? null : readEmailConfirmParams(window.location.href)
+  // re-reading it. `captureEmailConfirmParams` also wipes the token out of the
+  // address bar immediately, instead of leaving it on screen for the length of
+  // the network round trip.
+  const [emailConfirmParams, setEmailConfirmParams] = useState<ConfirmParams | null>(
+    captureEmailConfirmParams
   );
   const [authUrlError] = useState<string | null>(() =>
     typeof window === 'undefined' ? null : getAuthUrlError()
@@ -118,6 +126,9 @@ const AppContent: React.FC = () => {
 
   // Auth state with local storage caching for immediate session persistence across page loads
   const [showAuthModal, setShowAuthModal] = useState(false);
+  // Opened from the consent line on the sign-in sheet, which renders over the
+  // modal rather than replacing the app.
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const cached = localStorage.getItem('dukan-auth-user');
@@ -136,15 +147,17 @@ const AppContent: React.FC = () => {
   const [tabs, setTabs] = useState<TabConfig[]>(() => {
     const category = localStorage.getItem('dukan-store-category');
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
-    return resolveTabsFromBusinessType(category, aiContext);
+    return resolveTabsFromBusinessType(category, aiContext, t);
   });
 
-  // Re-resolve tabs once onboarding completes (category may have just been written)
+  // Re-resolve tabs once onboarding completes (category may have just been
+  // written) and whenever the language changes — `t` is a new function when the
+  // translations load, so the labels are rebuilt in the chosen language.
   useEffect(() => {
     const category = localStorage.getItem('dukan-store-category');
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
-    setTabs(resolveTabsFromBusinessType(category, aiContext));
-  }, [showOnboarding]);
+    setTabs(resolveTabsFromBusinessType(category, aiContext, t));
+  }, [showOnboarding, t]);
 
   // Listen to Auth State and sync data to/from Supabase backend
   useEffect(() => {
@@ -164,13 +177,19 @@ const AppContent: React.FC = () => {
       if (droppedForeignData) {
         setOrders([]);
         loadProducts([]);
-        if (!sessionStorage.getItem('dukan-ownership-reboot')) {
-          sessionStorage.setItem('dukan-ownership-reboot', '1');
+        // Never reload while a sign-in is mid-flight: the "no session yet" that
+        // dropped this cache may simply be the exchange not having finished, and
+        // reloading there is what made the Google flow look like a refresh loop.
+        const signInInFlight = isOAuthPending() || window.location.search.includes('code=');
+        if (import.meta.env.DEV) {
+          // Deliberately noisy: this exact decision is the one that used to
+          // reload the page while Google was still signing the user in.
+          console.debug('[auth-flow] ownership drop', { signInInFlight, hasUser: Boolean(user) });
+        }
+        if (!signInInFlight && claimOwnershipReboot()) {
           window.location.reload();
           return;
         }
-      } else {
-        sessionStorage.removeItem('dukan-ownership-reboot');
       }
 
       if (user) {
@@ -181,11 +200,16 @@ const AppContent: React.FC = () => {
         // Telemetry, one row per app load. None of these calls is awaited: the
         // Supabase dashboard is their only reader and none may delay the shopkeeper.
         void syncDeviceSessionOnceForAppLoad();
-        void syncMerchantPreferencesOnceForAppLoad();
         void syncUserIdentityOnceForAppLoad();
 
         // Restore store data from Supabase DB or migrate existing local store to cloud with user ID
         const cloudData = await syncOnLogin(ordersRef.current, productsRef.current, user);
+
+        // Adopt the account's language BEFORE the boot-time preferences write.
+        // The other order wrote this device's default English over the stored
+        // choice, which is why a Hindi user kept finding English again.
+        applyRemoteLanguage(cloudData.language);
+        void syncMerchantPreferencesOnceForAppLoad();
         if (cloudData.orders && cloudData.orders.length > 0) {
           setOrders(cloudData.orders);
         }
@@ -217,7 +241,7 @@ const AppContent: React.FC = () => {
           }
           const cat = localStorage.getItem('dukan-store-category');
           const aiCtx = localStorage.getItem('dukan-business-intelligence-context');
-          setTabs(resolveTabsFromBusinessType(cat, aiCtx));
+          setTabs(resolveTabsFromBusinessType(cat, aiCtx, t));
         }
 
         // An account that has already onboarded goes straight in — onboarding
@@ -266,12 +290,12 @@ const AppContent: React.FC = () => {
         // Returning from Google OAuth: the redirect resolves auth by itself, so
         // the modal stays shut.
         const hasOAuthParams = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
-        let isOAuthInProgress = localStorage.getItem('dukan-oauth-in-progress') === 'true';
+        let isOAuthInProgress = isOAuthPending();
         // The flag is set just before redirecting to Google. Coming back without
         // OAuth parameters means the consent screen was abandoned, and leaving
         // the flag set would suppress the sign-in prompt on every later load.
         if (isOAuthInProgress && !hasOAuthParams) {
-            localStorage.removeItem('dukan-oauth-in-progress');
+            clearOAuthPending();
             isOAuthInProgress = false;
         }
 
@@ -345,18 +369,38 @@ const AppContent: React.FC = () => {
     setIsOtherModalShowing(isOpen);
   }, []);
 
+  /**
+   * Applies one order's lines to stock in a single pass.
+   *
+   * Summing per product first is what makes this correct: two lines of the same
+   * item used to overwrite each other, because every line looked up the same
+   * pre-change snapshot of `products` and wrote its own answer over the previous
+   * one. `direction` is -1 for an accepted order and +1 for a cancelled one, and
+   * the context floors the result at zero either way.
+   */
+  const applyStockDelta = useCallback((items: OrderItem[], direction: 1 | -1) => {
+    const perProduct = new Map<string, { product: Product; total: number }>();
+
+    for (const item of items) {
+        const product = products.find(p => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase());
+        if (!product) continue;
+        const quantity = normalizeQuantity(item.quantity);
+        const existing = perProduct.get(product.id);
+        if (existing) existing.total += quantity;
+        else perProduct.set(product.id, { product, total: quantity });
+    }
+
+    for (const { product, total } of perProduct.values()) {
+        updateProduct({ ...product, stock: product.stock + direction * total });
+    }
+  }, [products, updateProduct]);
+
   const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
     const orderToUpdate = orders.find(o => o.id === orderId);
 
     // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
     if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
-        orderToUpdate.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase());
-            if (product) {
-                const newStock = Math.max(0, product.stock - item.quantity);
-                updateProduct({ ...product, stock: newStock });
-            }
-        });
+        applyStockDelta(orderToUpdate.items, -1);
 
         // Trigger real WhatsApp confirmation message via Baileys backend
         whatsappService.acceptOrder(orderId).catch(err => {
@@ -378,14 +422,10 @@ const AppContent: React.FC = () => {
             console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
         });
     } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
-        // If an order is cancelled, restore the stock
-        orderToUpdate.items.forEach(item => {
-            const product = products.find(p => p.id === item.productId || p.name.toLowerCase() === item.name.toLowerCase());
-            if (product) {
-                const newStock = product.stock + item.quantity;
-                updateProduct({ ...product, stock: newStock });
-            }
-        });
+        // If an order is cancelled, restore the stock. This was the one piece of
+        // stock arithmetic with no floor at all: a negative line quantity here
+        // subtracted from stock instead of adding to it.
+        applyStockDelta(orderToUpdate.items, 1);
     }
 
     setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
@@ -413,7 +453,9 @@ const AppContent: React.FC = () => {
       return {
         productId: String(item.id || item.productId || ''),
         name: String(item.name || 'Item'),
-        quantity: Number(item.quantity || 1),
+        // A negative or non-numeric quantity from the shared backend would have
+        // propagated into every stock calculation downstream.
+        quantity: normalizeQuantity(item.quantity),
         price: `₹${priceNum}`,
       };
     });
@@ -653,7 +695,7 @@ const AppContent: React.FC = () => {
     // Re-resolve tabs now that category is written to localStorage
     const category = localStorage.getItem('dukan-store-category');
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
-    setTabs(resolveTabsFromBusinessType(category, aiContext));
+    setTabs(resolveTabsFromBusinessType(category, aiContext, t));
     // No auth prompt here any more: sign-in already happened before onboarding.
   };
 
@@ -672,8 +714,15 @@ const AppContent: React.FC = () => {
     // it has to outlive the logout — otherwise every logout looks like a brand
     // new device and fragments the device-level telemetry.
     const installId = getInstallId();
+    // Same reasoning for the language: wiping it made the app snap back to
+    // English the moment the user signed out. The "chosen here" marker is NOT
+    // restored, so the next account on this device still adopts its own saved
+    // language.
+    let language = 'en';
+    try { language = localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en'; } catch { /* storage gone */ }
     clearLocalStore();
     localStorage.setItem('dukan-install-id', installId);
+    try { localStorage.setItem(LANGUAGE_STORAGE_KEY, language); } catch { /* storage gone */ }
     setCurrentUser(null);
     currentUserRef.current = null;
     setShowAuthModal(true);
@@ -719,7 +768,13 @@ const AppContent: React.FC = () => {
           <AuthModal 
             onClose={handleGuestContinue} 
             onSuccess={() => setShowAuthModal(false)} 
+            onOpenPrivacy={() => setShowPrivacy(true)}
           />
+        )}
+        {showPrivacy && (
+          <div className="fixed inset-0 z-[110] bg-black overflow-y-auto">
+            <PrivacyPolicyScreen onBack={() => setShowPrivacy(false)} />
+          </div>
         )}
         {error && <Toast message={error} onClose={() => setError(null)} />}
       </div>

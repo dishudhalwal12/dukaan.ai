@@ -4,6 +4,7 @@ import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
 import { saveBusinessProfileToCloud } from '../../services/cloudSync.ts';
+import type { User } from '../../services/auth.ts';
 
 const FormField: React.FC<{ label: string; type: string; value: string; placeholder?: string; disabled?: boolean; isVerified?: boolean; onChange: (value: string) => void }> = 
 ({ label, type, value, placeholder, disabled, isVerified, onChange }) => (
@@ -28,7 +29,51 @@ const FormField: React.FC<{ label: string; type: string; value: string; placehol
     </div>
 );
 
-const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+/**
+ * Where this account's data actually lives, stated at the top of the profile.
+ *
+ * It sits above the fields on purpose: a shopkeeper who is testing the app wants
+ * to know in one glance whether the catalogue they just edited is in the cloud or
+ * only on this phone — not scroll to the bottom of Settings to find out.
+ */
+const SyncStatusCard: React.FC<{ currentUser?: User | null; onOpenAuth?: () => void }> = ({ currentUser, onOpenAuth }) => (
+    currentUser ? (
+        <div className="p-3.5 bg-emerald-950/20 border border-emerald-800/40 rounded-xl">
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <p className="text-xs text-emerald-400 font-semibold">Supabase Cloud Sync Active</p>
+                </div>
+                <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-2 py-0.5 rounded-full font-medium">Synced</span>
+            </div>
+            <p className="text-xs text-neutral-400 truncate">{currentUser.email || 'Google User'}</p>
+        </div>
+    ) : (
+        <div className="p-3.5 bg-amber-950/20 border border-amber-800/40 rounded-xl">
+            <div className="flex items-center space-x-2 mb-1">
+                <span className="material-symbols-outlined text-amber-400 text-base">cloud_off</span>
+                <p className="text-xs font-semibold text-amber-300">Guest Mode (Local Only)</p>
+            </div>
+            <p className="text-xs text-neutral-400 mb-2 leading-relaxed">
+                This profile is saved on this phone only. Sign in to keep it in the cloud.
+            </p>
+            {onOpenAuth && (
+                <button
+                    onClick={onOpenAuth}
+                    className="w-full py-2 px-3 bg-white text-gray-900 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition-colors"
+                >
+                    Sign in to sync
+                </button>
+            )}
+        </div>
+    )
+);
+
+const EditProfileScreen: React.FC<{
+    onBack: () => void;
+    currentUser?: User | null;
+    onOpenAuth?: () => void;
+}> = ({ onBack, currentUser, onOpenAuth }) => {
     const [name, setName] = useState(() => localStorage.getItem('dukan-profile-name') || '');
     const [email, setEmail] = useState(() => localStorage.getItem('dukan-profile-email') || '');
     const [profilePic, setProfilePic] = useState(() => localStorage.getItem('dukan-profile-pic') || null);
@@ -127,6 +172,7 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div>
             <SettingsSubHeader title={t('edit_profile_title')} onBack={onBack} onSave={handleSave} isSaving={isSaving} />
             <div className="p-4 space-y-8">
+                <SyncStatusCard currentUser={currentUser} onOpenAuth={onOpenAuth} />
                 <div className="flex flex-col items-center">
                     <div className="relative">
                         <div className="h-28 w-28 rounded-full bg-[#1A1A1A] flex items-center justify-center overflow-hidden">

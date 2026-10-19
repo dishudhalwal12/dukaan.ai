@@ -3,6 +3,9 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
+import LocationModal from '../../components/LocationModal.tsx';
+import { getStoredStoreLocation, saveStoreLocation } from '../../utils/location.ts';
+import { saveStoreLocationToCloud } from '../../services/cloudSync.ts';
 
 const FormField: React.FC<{ label: string; value: string; onChange: (value: string) => void; placeholder?: string }> = 
 ({ label, value, onChange, placeholder }) => (
@@ -20,8 +23,12 @@ const FormField: React.FC<{ label: string; value: string; onChange: (value: stri
 
 const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [storeName, setStoreName] = useState(() => localStorage.getItem('dukan-store-name') || "");
-    const [address, setAddress] = useState(() => localStorage.getItem('dukan-store-address') || "");
     const [category, setCategory] = useState(() => localStorage.getItem('dukan-store-category') || "");
+    // The shop's position IS the address: it is what the delivery radius and the
+    // order map are measured from. A typed address could only ever disagree with
+    // it, so the field is gone and this row shows the real thing instead.
+    const [storeLocation, setStoreLocation] = useState(() => getStoredStoreLocation());
+    const [showLocationModal, setShowLocationModal] = useState(false);
     const [storeBanner, setStoreBanner] = useState(() => localStorage.getItem('dukan-store-banner') || null);
     
     const [supplierName, setSupplierName] = useState(() => localStorage.getItem('dukan-supplier-name') || '');
@@ -58,7 +65,6 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         setIsSaving(true);
         try {
             localStorage.setItem('dukan-store-name', storeName);
-            localStorage.setItem('dukan-store-address', address);
             localStorage.setItem('dukan-store-category', category);
             if (storeBanner) {
                 localStorage.setItem('dukan-store-banner', storeBanner);
@@ -72,7 +78,7 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             localStorage.setItem('dukan-supplier-whatsapp', whatsappDigits);
             localStorage.setItem('dukan-supplier-whatsapp-display', supplierWhatsapp); // Save display version too
 
-            console.log('Saving store details:', { storeName, address, category, supplierName, supplierWhatsapp });
+            console.log('Saving store details:', { storeName, category, supplierName, supplierWhatsapp });
             setTimeout(() => {
                 setIsSaving(false);
                 onBack();
@@ -126,8 +132,26 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
                 <div className="space-y-4">
                     <FormField label={t('label_store_name')} value={storeName} onChange={setStoreName} placeholder={t('placeholder_store_name_example')} />
-                    <FormField label={t('label_store_address')} value={address} onChange={setAddress} placeholder={t('placeholder_store_address_example')} />
                     <FormField label={t('label_store_category')} value={category} onChange={setCategory} placeholder={t('placeholder_store_category_example')} />
+
+                    <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-1.5 px-1">{t('label_store_location')}</label>
+                        <button
+                            type="button"
+                            onClick={() => setShowLocationModal(true)}
+                            className="w-full flex items-center justify-between bg-transparent border-b-2 border-neutral-600 py-2 text-left"
+                        >
+                            <span className={storeLocation ? 'text-white text-lg' : 'text-neutral-400 text-lg'}>
+                                {storeLocation
+                                    ? t('manage_store_location_captured')
+                                    : t('manage_store_location_missing')}
+                            </span>
+                            <span className="flex items-center text-[#E6E6FA] text-sm font-semibold">
+                                <span className="material-symbols-outlined text-base mr-1">my_location</span>
+                                {storeLocation ? t('manage_store_location_update') : t('manage_store_location_capture')}
+                            </span>
+                        </button>
+                    </div>
 
                     <div>
                         <label className="block text-sm font-medium text-neutral-400 mb-1.5 px-1">{t('label_online_store_url')}</label>
@@ -163,6 +187,18 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                 </div>
             </div>
+
+            <LocationModal
+                isOpen={showLocationModal}
+                mode="edit"
+                onCaptured={(location) => {
+                    saveStoreLocation(location);
+                    setStoreLocation(location);
+                    void saveStoreLocationToCloud(location);
+                    setShowLocationModal(false);
+                }}
+                onClose={() => setShowLocationModal(false)}
+            />
         </div>
     );
 };

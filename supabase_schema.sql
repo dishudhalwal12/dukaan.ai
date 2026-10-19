@@ -95,7 +95,11 @@ CREATE TABLE public.products (
     attributes  JSONB NOT NULL DEFAULT '{}'::jsonb,  -- business-type-specific fields
     created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    CONSTRAINT products_owner_external_id_key UNIQUE (user_id, external_id)
+    CONSTRAINT products_owner_external_id_key UNIQUE (user_id, external_id),
+    -- Stock is a count of things on a shelf: zero is "sold out", and there is no
+    -- such thing as less. The client clamps too; this is the row-level backstop
+    -- for anything else that writes here.
+    CONSTRAINT products_stock_non_negative CHECK (stock >= 0)
 );
 
 -- ==============================================================================

@@ -398,6 +398,45 @@ export const saveDeviceSessionToCloud = async (explicitUserId?: string): Promise
 };
 
 /**
+ * Reads the owner's saved preferences.
+ *
+ * The language has to come back from here or it is not really saved: the browser
+ * copy disappears with a reinstall, a cleared cache or a new phone, and until
+ * now that was the only copy. Row-level security already lets an owner select
+ * their own row (supabase_schema.sql, "owner selects own preferences").
+ */
+export const fetchMerchantPreferencesFromCloud = async (
+  explicitUserId?: string,
+): Promise<{ preferred_language: string | null } | null> => {
+  try {
+    if (!isSupabaseConfigured()) return null;
+
+    const userId = await resolveActiveUserId(explicitUserId);
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from('merchant_preferences')
+      .select('preferred_language')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('Supabase DB Error (fetchMerchantPreferencesFromCloud):', error.message);
+      return null;
+    }
+    if (!data) return null;
+
+    return {
+      preferred_language:
+        typeof data.preferred_language === 'string' ? data.preferred_language : null,
+    };
+  } catch (error) {
+    console.warn('Failed to read merchant preferences from Supabase.', error);
+    return null;
+  }
+};
+
+/**
  * One small row of merchant preferences, keyed by owner.
  */
 export const saveMerchantPreferencesToCloud = async (explicitUserId?: string): Promise<void> => {
@@ -557,16 +596,23 @@ export const syncOnLogin = async (
   profile: any | null;
   products: Product[] | null;
   orders: Order[] | null;
+  /**
+   * The language saved against this account, if any. Returned from the same
+   * round trip as the rest of the restore so the caller can apply it BEFORE the
+   * boot-time preferences write, which would otherwise push this device's
+   * default English over the account's real choice.
+   */
+  language: string | null;
 }> => {
   try {
     if (!isSupabaseConfigured()) {
-      return { profile: null, products: null, orders: null };
+      return { profile: null, products: null, orders: null, language: null };
     }
 
     const userId = await resolveActiveUserId(loggedInUser?.id);
     if (!userId) {
       console.warn('syncOnLogin: no active user ID');
-      return { profile: null, products: null, orders: null };
+      return { profile: null, products: null, orders: null, language: null };
     }
 
     console.log('Synchronizing Supabase database for user UUID:', userId);
@@ -575,6 +621,8 @@ export const syncOnLogin = async (
     const cloudProfile = await fetchBusinessProfileFromCloud();
     const cloudProducts = await fetchProductsFromCloud();
     const cloudOrders = await fetchOrdersFromCloud();
+    const cloudPreferences = await fetchMerchantPreferencesFromCloud(userId);
+    const language = cloudPreferences?.preferred_language ?? null;
 
     const hasCloudData = Boolean(
       cloudProfile || 
@@ -589,6 +637,7 @@ export const syncOnLogin = async (
         profile: cloudProfile,
         products: cloudProducts,
         orders: cloudOrders,
+        language,
       };
     }
 
@@ -632,9 +681,9 @@ export const syncOnLogin = async (
 
     console.log('Successfully initialized user store in Supabase with user_id:', userId);
 
-    return { profile: null, products: null, orders: null };
+    return { profile: null, products: null, orders: null, language };
   } catch (error) {
     console.warn('Error in syncOnLogin:', error);
-    return { profile: null, products: null, orders: null };
+    return { profile: null, products: null, orders: null, language: null };
   }
 };

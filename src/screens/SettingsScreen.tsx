@@ -240,7 +240,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
 
     switch(activeSubScreen) {
         case 'profile':
-            return <EditProfileScreen onBack={handleBack} />;
+            return <EditProfileScreen onBack={handleBack} currentUser={currentUser} onOpenAuth={onOpenAuth} />;
         case 'store':
             return <ManageStoreScreen onBack={handleBack} />;
         case 'whatsapp':

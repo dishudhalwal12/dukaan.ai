@@ -1,6 +1,7 @@
 
 import { Product, Insight } from '../types.ts';
 import { withGeminiStreamFailover } from '../utils/geminiClient.ts';
+import { languageName } from '../utils/languageName.ts';
 
 const ALLOWED_ICONS = new Set([
   'warning', 'lightbulb', 'local_fire_department', 'trending_up',
@@ -65,38 +66,30 @@ function extractNextJsonObject(text: string): { parsed: unknown; nextIndex: numb
   return null;
 }
 
-export async function* generateDynamicInsights(products: Product[], language: string): AsyncGenerator<Insight> {
+/**
+ * @param translate Turns an internal product-name key (`product_maggi`) into the
+ *   name the shopkeeper actually sees (`मैगी नूडल्स`). Without it the model is
+ *   handed internal keys and can echo them back inside the advice.
+ */
+export async function* generateDynamicInsights(
+  products: Product[],
+  language: string,
+  translate: (key: string) => string = (key) => key,
+): AsyncGenerator<Insight> {
   if (!products || products.length === 0) {
     yield { icon: 'add_shopping_cart', title: 'Add Your First Product', description: 'Add products to your catalog to start getting AI insights.' };
     return;
   }
 
-  const simplifiedProducts = products.map(({ name, stock, price }) => ({ name, stock, price }));
-  
-  let languageName: string;
-  switch (language) {
-    case 'hi':
-      languageName = 'Hindi';
-      break;
-    case 'ur':
-      languageName = 'Urdu';
-      break;
-    case 'ta':
-      languageName = 'Tamil';
-      break;
-    case 'pa':
-      languageName = 'Punjabi';
-      break;
-    case 'gu':
-      languageName = 'Gujarati';
-      break;
-    case 'kn':
-      languageName = 'Kannada';
-      break;
-    default:
-      languageName = 'English';
-      break;
-  }
+  const simplifiedProducts = products.map(({ name, stock, price }) => ({
+    // The display name, so the model reasons about "Maggi Noodles" rather than
+    // about the translation key that happens to stand for it.
+    name: translate(name) || name,
+    stock,
+    price,
+  }));
+
+  const insightLanguage = languageName(language);
   
   const category = localStorage.getItem('dukan-store-category') || 'retail';
   const rawContext = localStorage.getItem('dukan-business-intelligence-context');
@@ -113,7 +106,7 @@ export async function* generateDynamicInsights(products: Product[], language: st
 **RESPONSE FORMAT RULES (MANDATORY):**
 * You MUST provide EXACTLY FIVE insights.
 * Output valid JSON objects. Each JSON object must have three keys: "icon", "title", and "description".
-* The text for "title" and "description" MUST be in the ${languageName} language.
+* The text for "title" and "description" MUST be in the ${insightLanguage} language.
 * For the "icon" key, you MUST use one of these Material Symbols Outlined names: 'warning', 'lightbulb', 'local_fire_department', 'trending_up', 'inventory', 'sell', 'groups'.
 * CRITICAL LENGTH RULE: Each "description" MUST be strictly under 3 lines (maximum 15 to 20 words). Keep it punchy, direct, and actionable. Avoid long background explanations or wordy sentences.
 

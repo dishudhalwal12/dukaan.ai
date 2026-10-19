@@ -1,5 +1,7 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
+import { isSupportedLanguage, shouldAdoptRemoteLanguage } from '../data/languages.ts';
+import { saveMerchantPreferencesToCloud } from '../services/cloudSync.ts';
 
 // Define translations structure
 interface Translations {
@@ -9,21 +11,48 @@ interface Translations {
 // Define the context shape
 interface LanguageContextType {
   language: string;
+  /** Applies a choice the user just made, and records it against the account. */
   setLanguage: (language: string) => void;
+  /**
+   * Applies a language restored from the account. Ignored when this device
+   * already holds a choice of its own, so a second device never overrides it.
+   */
+  applyRemoteLanguage: (language?: string | null) => void;
   t: (key: string, options?: { [key: string]: string | number }) => string;
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+export const LANGUAGE_STORAGE_KEY = 'dukan-language';
+
+/**
+ * Set only when the user picked a language on THIS device.
+ *
+ * Without it there is no way to tell "never chose, has the default English" from
+ * "chose English on purpose", and restoring the account's value would silently
+ * undo a deliberate choice.
+ */
+export const LANGUAGE_CHOSEN_KEY = 'dukan-language-chosen';
+
+const readStoredLanguage = (): string => {
+  try {
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en';
+  } catch {
+    return 'en';
+  }
+};
+
+const hasLocalChoice = (): boolean => {
+  try {
+    return localStorage.getItem(LANGUAGE_CHOSEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
 // The provider component
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<string>(() => {
-    try {
-      return localStorage.getItem('dukan-language') || 'en';
-    } catch {
-      return 'en';
-    }
-  });
+  const [language, setLanguageState] = useState<string>(readStoredLanguage);
   const [translations, setTranslations] = useState<Translations>({});
 
   useEffect(() => {
@@ -48,11 +77,30 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const setLanguage = (lang: string) => {
     try {
-      localStorage.setItem('dukan-language', lang);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+      localStorage.setItem(LANGUAGE_CHOSEN_KEY, 'true');
       setLanguageState(lang);
     } catch (error) {
       console.error("Could not save language to localStorage", error);
     }
+
+    // Also store it against the account. This is the only write that survives a
+    // reinstall, a cleared browser or a different phone — and it is deliberately
+    // fire-and-forget: choosing a language must never wait on the network.
+    // Guests are skipped inside the service (there is no account to write to).
+    void saveMerchantPreferencesToCloud();
+  };
+
+  const applyRemoteLanguage = (remote?: string | null) => {
+    if (!shouldAdoptRemoteLanguage(remote, hasLocalChoice())) return;
+
+    const next = String(remote).trim().toLowerCase();
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+    } catch {
+      // Storage unavailable: the value still applies to this session.
+    }
+    setLanguageState(next);
   };
 
   const t = useCallback((key: string, options?: { [key: string]: string | number }): string => {
@@ -70,7 +118,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     return value;
   }, [translations]);
 
-  const value = { language, setLanguage, t };
+  const value = { language, setLanguage, applyRemoteLanguage, t };
 
   // Only render children when translations are loaded to avoid flicker
   return (

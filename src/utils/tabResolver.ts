@@ -6,22 +6,35 @@ export interface TabConfig {
   icon: string;
 }
 
+/**
+ * A label translator. Defaults to the identity function so the resolver stays
+ * callable from anywhere (and from tests) without a React context.
+ */
+export type Translate = (key: string) => string;
+
+const identity: Translate = (key) => key;
+
 export function resolveTabsFromBusinessType(
   businessType: string | null,
-  aiContextRaw?: string | null
+  aiContextRaw?: string | null,
+  translate: Translate = identity
 ): TabConfig[] {
-  let ordersLabel = 'Orders';
-  let catalogLabel = 'Catalog';
+  // The labels are translation keys, resolved through `translate`. They used to
+  // be English literals, which is why the bottom bar sat in English while the
+  // rest of the app followed the language setting: the keys were already in all
+  // seven locale files and nothing read them.
+  let ordersKey = 'nav_orders';
+  let catalogKey = 'nav_catalog';
   let catalogIcon = 'local_grocery_store';
   
   const preset = businessPresets.find(p => p.displayName === businessType || p.key === businessType?.toLowerCase());
 
   if (preset) {
      catalogIcon = preset.icon;
-     if (preset.key === 'fruits_vegetables') catalogLabel = 'Produce';
-     if (preset.key === 'dairy') catalogLabel = 'Dairy';
-     if (preset.key === 'fmcg') catalogLabel = 'Catalog';
-     if (preset.key === 'grocery') catalogLabel = 'Catalog';
+     if (preset.key === 'fruits_vegetables') catalogKey = 'nav_produce';
+     if (preset.key === 'dairy') catalogKey = 'nav_dairy';
+     if (preset.key === 'fmcg') catalogKey = 'nav_catalog';
+     if (preset.key === 'grocery') catalogKey = 'nav_catalog';
   }
 
   /* ── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ──
@@ -53,10 +66,10 @@ export function resolveTabsFromBusinessType(
   ── end [MULTI-BUSINESS] ── */
 
   return [
-    { key: 'DASHBOARD', label: 'Dashboard', icon: 'grid_view' },
-    { key: 'SALES', label: 'Sales', icon: 'bar_chart' },
-    { key: 'ORDERS', label: ordersLabel, icon: 'receipt_long' },
-    { key: 'CATALOG', label: catalogLabel, icon: catalogIcon },
-    { key: 'SETTINGS', label: 'Settings', icon: 'settings' }
+    { key: 'DASHBOARD', label: translate('nav_dashboard'), icon: 'grid_view' },
+    { key: 'SALES', label: translate('nav_sales'), icon: 'bar_chart' },
+    { key: 'ORDERS', label: translate(ordersKey), icon: 'receipt_long' },
+    { key: 'CATALOG', label: translate(catalogKey), icon: catalogIcon },
+    { key: 'SETTINGS', label: translate('nav_settings'), icon: 'settings' }
   ];
 }
