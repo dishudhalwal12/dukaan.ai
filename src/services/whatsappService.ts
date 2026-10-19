@@ -92,7 +92,7 @@ export const whatsappService = {
   /**
    * Accepts a pending customer order and sends a WhatsApp confirmation message
    */
-  async acceptOrder(orderId: string): Promise<{ success: boolean; order?: any }> {
+  async acceptOrder(orderId: string): Promise<{ success: boolean; order?: any; whatsappSent?: boolean; warning?: string }> {
     const res = await fetch(apiUrl(`/api/dukan/orders/${encodeURIComponent(orderId)}/accept`), {
       method: 'POST',
       headers: await authHeaders({ 'Content-Type': 'application/json' }),
