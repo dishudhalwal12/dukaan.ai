@@ -12,7 +12,7 @@
 --   * the user_identities table
 -- and until those exist every write fails (42703 / PGRST205), so nothing lands.
 --
--- The full destructive bootstrap (supabase_schema.sql) remains available if a
+-- The full destructive bootstrap (supabase/schema.sql) remains available if a
 -- clean wipe is ever wanted; this file is the surgical alternative.
 -- ============================================================================
 

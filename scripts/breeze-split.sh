@@ -53,7 +53,7 @@ git add services/uploadService.ts utils/parsers.ts components/UploadMenu.tsx || 
 git commit -m "feat: OCR multi-modal uploads and parsers" || true
 
 # 13
-git add supabase.ts supabase_schema.sql services/cloudSync.ts || true
+git add supabase.ts supabase/schema.sql services/cloudSync.ts || true
 git commit -m "feat: local-first supabase integration" || true
 
 # 14

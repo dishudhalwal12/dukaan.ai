@@ -53,6 +53,6 @@ echo
 if [ "$fail" = 0 ]; then
   echo "✅ LIVE ACCEPTANCE PASS"
 else
-  echo "❌ LIVE ACCEPTANCE FAIL — see deploy/wispbyte/README.md § Troubleshooting"
+  echo "❌ LIVE ACCEPTANCE FAIL — see deploy/README.md § Legacy: Wispbyte VPS"
 fi
 exit "$fail"

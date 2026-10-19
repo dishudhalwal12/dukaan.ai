@@ -1,7 +1,7 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-<img src="./public/logo.svg" alt="Dukaan.AI logo" width="88" height="88" />
+<img src="./public/logo.png" alt="Dukaan.AI logo" width="88" height="88" />
 
 # Dukaan.AI
 
@@ -41,7 +41,8 @@ The screen and the bot both work in English, Hindi, Tamil, Punjabi, Kannada, Guj
 
 ## The live beta
 
-The beta is running at https://dukaan-ai-beta.vercel.app. Open it on a phone or a laptop, sign in with an email or as a guest, and link your WhatsApp number from Settings. Nothing to download, for you or for your customer.
+The beta is running at https://dukaan-ai-hypnexis.vercel.app. The older
+https://dukaan-ai-beta.vercel.app address redirects there. Open it on a phone or a laptop, sign in with an email or as a guest, and link your WhatsApp number from Settings. Nothing to download, for you or for your customer.
 
 Being honest about a beta: the bot runs on one laptop at home, behind a tunnel, so it goes quiet when that machine sleeps. The AI still misreads a messy message now and then, and voice notes can take a few seconds to come back. If something breaks, tell us and we will fix it.
 
@@ -189,7 +190,7 @@ repo config:
    Vite's dev server hides this by serving an SPA fallback for every path, which
    is why `scripts/test_repo_hygiene.js` asserts the documented link stays at the
    root rather than trusting a local check.
-5. Apply `supabase_email_confirmation.sql` (SQL editor). It creates the
+5. Apply `supabase/email_confirmation.sql` (SQL editor). It creates the
    `is_email_confirmed` function the status endpoint calls.
 6. `supabase functions deploy email-confirmation-status`.
 
@@ -228,7 +229,10 @@ the Site URL, and the link opens the wrong page.
 
 The web app is a static build, so it can live on Vercel. The bot has to run on a machine that stays awake, because it holds the WhatsApp session, and `VITE_API_BASE` points the browser at it.
 
-Two guides cover the whole thing: `deploy/wispbyte/README.md` for the VPS plus Vercel setup, written so that someone who has never deployed anything can follow it, and `deploy/laptop/README.md` for running the bot on a home machine. Once a box is set up, `./deploy/laptop/update.sh` builds, syncs, restarts, and verifies, or puts the previous version back if the check fails.
+Everything about deploying is in [deploy/README.md](deploy/README.md): the
+production topology, day-2 operations, the security contract, and
+`./deploy/laptop/update.sh`, which builds, syncs, restarts, verifies, and puts
+the previous version back if a check fails.
 
 ## Project structure
 
@@ -238,12 +242,19 @@ dukaan.ai/
 ├── vite.config.ts               # Dev server (3000) + /api & /events proxy -> 5001
 ├── tsconfig.json                # TypeScript config (scopes src/ + vite.config.ts)
 ├── package.json                 # Frontend dependencies & scripts
-├── supabase_schema.sql          # Tables + Row Level Security policies (fresh installs)
-├── supabase_migrations/         # Idempotent, non-destructive migrations for a live database
+├── supabase/
+│   ├── schema.sql               # Tables + Row Level Security policies (fresh installs)
+│   ├── email_confirmation.sql   # RPC behind the confirmation status endpoint
+│   ├── fix_signup.sql           # Repair script for older signup rows
+│   ├── migrations/              # Idempotent, non-destructive migrations (date order)
+│   └── functions/               # Edge Functions (capture-session, email-confirmation-status)
 ├── .env.example                 # The one environment template for the whole app
 ├── public/                      # Static assets served as-is
-│   ├── logo.svg
+│   ├── logo.png                 # App mark (favicon, PWA, social card source)
 │   ├── favicon.ico
+│   ├── apple-touch-icon.png
+│   ├── og-image.png             # 1200x630 card for X/Open Graph
+│   ├── site.webmanifest
 │   ├── index.css
 │   └── i18n/locales/            # Translation bundles (en, hi, gu, kn, pa, ta, ur)
 ├── src/                         # Shopkeeper POS (React 19 + TypeScript)
@@ -280,11 +291,12 @@ dukaan.ai/
 │   ├── seed_300_catalog.js
 │   ├── terminal_chat.js
 │   └── test_*.js
-├── deploy/                      # Deployment guides and scripts
-│   ├── laptop/                  # Run the bot on a home machine
-│   └── wispbyte/                # VPS + Vercel, step by step
-└── data/                        # LoRA training workspace
-    └── generate_dataset.py      # Generates train/valid/test .jsonl (gitignored)
+├── deploy/                      # Production runbook, deploy and hardening scripts
+│   ├── README.md                # Current topology + day-2 operations
+│   ├── laptop/                  # update.sh, harden.sh, reconnect.sh, migrate-env.sh
+│   └── wispbyte/                # Legacy VPS startup script (not in the live path)
+└── .claude/
+    └── context.md               # Engineering context, incident log and runbook
 ```
 
 ## The message ledger and the training export

@@ -1,8 +1,8 @@
-# Dukaan.AI — run it on the laptop
+# Deploying Dukaan.AI
 
-`beyou@192.168.29.202` (Debian 12 / Q4OS, x86_64, 3.4 GB RAM). This box serves the
-POS **and** the WhatsApp bot from one origin, so there is no CORS, no reverse
-proxy and no hardcoded backend address anywhere.
+Production is split in two: **Vercel** serves the static POS bundle, and a
+**self-hosted laptop** runs the WhatsApp bot behind an ngrok tunnel. There is no
+VPS in the live path.
 
 ```
         shopkeeper's browser                       customer's WhatsApp
@@ -30,8 +30,16 @@ proxy and no hardcoded backend address anywhere.
                                           owner catalog, orders) OpenRouter
 ```
 
-Measured: ~105–125 MB RSS idle. The 4 GB laptop has ~20× headroom over the
-512 MB free VPS that kept OOM-killing the bot.
+- **Laptop**: `beyou@192.168.29.202` (Debian 12 / Q4OS, x86_64, 3.4 GB RAM).
+- **Public API**: `https://aurelio-chasmy-dorsiventrally.ngrok-free.dev`.
+- **Frontend**: `https://dukaan-ai-hypnexis.vercel.app`. The old
+  `https://dukaan-ai-beta.vercel.app` 307-redirects here.
+- The bot idles at roughly 105–125 MB RSS.
+
+The browser evaluates CORS against the URL it lands on, not the one it typed.
+That is why [whatsapp/corsPolicy.js](../whatsapp/corsPolicy.js) lists both Vercel
+origins in `FIRST_PARTY_ORIGINS` and why `vercel.json` must keep the canonical
+`VITE_API_BASE`.
 
 ## Day-2 operations
 
@@ -77,14 +85,14 @@ There is exactly **one** environment file, at the repository root:
 ```
 
 Both the bot (`whatsapp/server.js`, `whatsapp/dukanBot.js`) and the Vite build
-read it, and `.env.example` documents every variable it may contain. To change
-any key — including after a rotation — edit that one file and restart the bot.
-Nothing else on the box reads credentials.
+read it, and [.env.example](../.env.example) documents every variable it may
+contain. To change any key — including after a rotation — edit that one file and
+restart the bot. Nothing else on the box reads credentials.
 
 This box's file was **migrated from the old `whatsapp/.env`**, which is no longer
-read and has been moved aside (see `deploy/laptop/update.sh`). If you are reading
-this before the migration has run, that is the file to merge from; the values are
-the same names, minus the `VITE_` prefix on every server key.
+read and has been moved aside (see [laptop/update.sh](laptop/update.sh)). If you
+are reading this before the migration has run, that is the file to merge from;
+the values are the same names, minus the `VITE_` prefix on every server key.
 
 `LLM_BASE_URL` / `LLM_MODEL_NAME` are deliberately **unset**: they point at a
 local model server on port 8080 that does not exist here. Leaving them set made
@@ -93,11 +101,21 @@ failed. Absent, `callLocalSlm` returns immediately.
 
 ## Shipping a change
 
-Prefer `deploy/laptop/update.sh`: it syncs, restarts, health-checks and
-**rolls back on failure**. The manual equivalent, which that script automates:
+Prefer [laptop/update.sh](laptop/update.sh). It builds locally (the secret guard
+runs as `postbuild`), dry-runs the sync and refuses unexpected deletions,
+snapshots the box to `~/dukaan.ai.bak`, syncs, restarts only `dukaan-bot`,
+verifies the security contract on the box and through the tunnel, and restores
+the snapshot automatically if the check fails.
 
 ```bash
-# 1. on the dev machine — the build now refuses to ship a secret
+./deploy/laptop/update.sh            # build, sync, migrate, restart, verify
+./deploy/laptop/update.sh --check    # verify the running box, change nothing
+```
+
+The manual equivalent:
+
+```bash
+# 1. on the dev machine — the build refuses to ship a secret
 cd /Users/dishu/Downloads/dukaan.ai
 rm -rf dist && npm run build          # postbuild runs scripts/check-secrets.mjs
 
@@ -105,25 +123,43 @@ rm -rf dist && npm run build          # postbuild runs scripts/check-secrets.mjs
 #    `.env` is deliberately NOT synced: it is machine-local, and overwriting it
 #    would replace this box's keys with the dev machine's.
 rsync -az --delete \
+      --include=.env.example \
       --exclude node_modules --exclude models --exclude '.venv*' \
-      --exclude adapters --exclude .worktrees \
-      --exclude auth_info --exclude '.env' --exclude 'whatsapp/.env' \
+      --exclude adapters --exclude .worktrees --exclude .git \
+      --exclude whatsapp/auth_info --exclude whatsapp/store \
+      --exclude .env --exclude '.env.*' \
       ./ beyou@192.168.29.202:dukaan.ai/
 
 # 3. restart
 ssh beyou@192.168.29.202 'sudo systemctl restart dukaan-bot'
 ```
 
-Never let `--delete` reach `whatsapp/auth_info/`: that is the linked WhatsApp
-session, and re-pairing needs a QR scan. It is excluded above for that reason.
+Never let `--delete` reach `whatsapp/auth_info/` (the linked WhatsApp session)
+or `whatsapp/store/` (live orders). Neither can be re-created by re-running a
+deploy; the session needs a QR scan and the orders are real customer data.
 
-`npm run build` also enforces that the bundle does not contain the old hardcoded
-`127.0.0.1:8080` model URL, and that no provider key reaches `dist/` — see
-`scripts/check-secrets.mjs`, wired as `postbuild`.
+`npm run build` also enforces that no provider key and no loopback model URL
+reach `dist/` — see [scripts/check-secrets.mjs](../scripts/check-secrets.mjs).
+
+### Rollback
+
+```bash
+ssh beyou@192.168.29.202 "rsync -a --delete \
+  --include=.env.example --exclude=node_modules --exclude=models \
+  --exclude='.venv*' --exclude=adapters --exclude=.worktrees --exclude=.git \
+  --exclude=whatsapp/auth_info --exclude=whatsapp/store \
+  --exclude=.env --exclude='.env*' \
+  ~/dukaan.ai.bak/ ~/dukaan.ai/ && sudo systemctl restart dukaan-bot"
+```
+
+`update.sh` snapshots on every run, so the snapshot is the *previous* deploy.
+Copy `~/dukaan.ai.bak` to a dated directory before a deploy you may need to
+audit later.
 
 ## Security posture
 
-Applied by `deploy/laptop/harden.sh`, and asserted at the end of that script:
+Applied by [laptop/harden.sh](laptop/harden.sh), and asserted at the end of that
+script:
 
 | Layer | Setting |
 |---|---|
@@ -147,8 +183,8 @@ would remove the exposure outright if you would rather not rely on the token.
 ## Supabase
 
 Server side is verified working with the `service_role` key from this box:
-`business_profiles` (shop registry, 3 shops with pins), `products` (owner
-catalog, 31 rows) and `orders` (mirror) all answer.
+`business_profiles` (shop registry, shops with pins), `products` (owner catalog)
+and `orders` (mirror) all answer.
 
 Browser side needs one **dashboard** step, because the app's OAuth `redirectTo`
 is `window.location.origin`:
@@ -159,6 +195,11 @@ is `window.location.origin`:
 
 Without it Google sign-in returns to the wrong place. Guest mode still works,
 but the demo should sign in.
+
+Apply SQL from [supabase/](../supabase/) in the Supabase SQL Editor — there is no
+automatic migration runner. Fresh installs start with
+[supabase/schema.sql](../supabase/schema.sql); live databases take the files in
+[supabase/migrations/](../supabase/migrations/) in date order.
 
 ## Known limits
 
@@ -187,3 +228,21 @@ but the demo should sign in.
    Windows partition (`root=/dev/loop0 loop=/Linux64/Debian12_S001/disks/root.disk`).
    If the machine reboots and picks Windows, the bot stays down until someone
    selects Linux at the boot menu.
+
+## Legacy: Wispbyte VPS
+
+[.github/workflows/deploy-backend.yml](../.github/workflows/deploy-backend.yml)
+still targets a 512 MiB Wispbyte (Pterodactyl) VPS from an earlier setup. It is
+**not** part of production: the restart step is skipped because the
+`WISPBYTE_*` repository secrets are unset, and the box is not running the bot.
+
+Keep the workflow only as a fallback. If the laptop is unavailable and the bot
+must move back to a panel host, the startup command is
+[wispbyte/startup-command.sh](wispbyte/startup-command.sh); the panel needs
+`Auto Update on Startup` enabled, `whatsapp/server.js` as the startup file, and
+the variables from `.env.example` set in **Server Configuration**. On that host
+the bot must keep its own `whatsapp/auth_info/` and `whatsapp/store/`.
+
+The older VPS guide assumed Vercel reverse-proxied `/api` and baked provider keys
+into the bundle. Both are gone: `vercel.json` has no rewrites, and keys live only
+on the bot host. Treat this section as history, not as the current setup.
