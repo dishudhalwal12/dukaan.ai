@@ -22,7 +22,7 @@ assert.strictEqual(originAllowed(undefined, PROD), true,
   'a request with no Origin header (curl, the bot itself) is not a CORS request at all');
 assert.strictEqual(originAllowed('https://dukaan-ai-beta.vercel.app', PROD), true);
 assert.strictEqual(originAllowed('https://aurelio-chasmy-dorsiventrally.ngrok-free.dev', PROD), true);
-assert.ok(FIRST_PARTY_ORIGINS.includes('https://dukaan-ai-hypnexis.vercel.app'),
+assert.strictEqual(originAllowed('https://dukaan-ai-hypnexis.vercel.app', FIRST_PARTY_ORIGINS), true,
   'the project domain must be allowed: beta redirects there and CORS is judged on the final origin');
 assert.strictEqual(originAllowed('https://dukaan-ai-hypnexis.vercel.app', PROD), false,
   'the env list alone need not name it — server.js unions FIRST_PARTY_ORIGINS into the allowlist');
