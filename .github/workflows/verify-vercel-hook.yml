@@ -10,17 +10,32 @@ jobs:
     name: Verify Hook Secret
     runs-on: ubuntu-latest
     steps:
-      - name: Check Secret Configuration
+      - name: Check Secret and Variable Variations
         env:
-          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+          SECRET_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+          SECRET_HOOK_LOWER: ${{ secrets.vercel_deploy_hook }}
+          VAR_HOOK: ${{ vars.VERCEL_DEPLOY_HOOK }}
+          VAR_HOOK_LOWER: ${{ vars.vercel_deploy_hook }}
         run: |
-          if [ -z "$HOOK" ]; then
-            echo "❌ ERROR: VERCEL_DEPLOY_HOOK is NOT set in Repository Secrets."
-            exit 1
+          found=0
+          if [ -n "$SECRET_HOOK" ]; then
+            echo "FOUND: Repository Secret 'VERCEL_DEPLOY_HOOK' is present!"
+            found=1
           fi
-          echo "✅ Secret VERCEL_DEPLOY_HOOK detected!"
-          if [[ "$HOOK" == https://api.vercel.com/v1/integrations/deploy/* ]]; then
-            echo "✅ Valid Vercel Deploy Hook URL format."
-          else
-            echo "⚠️ Secret is present but does not start with https://api.vercel.com/v1/integrations/deploy/"
+          if [ -n "$SECRET_HOOK_LOWER" ]; then
+            echo "FOUND: Repository Secret 'vercel_deploy_hook' (lowercase) is present!"
+            found=1
+          fi
+          if [ -n "$VAR_HOOK" ]; then
+            echo "FOUND: Added as Repository Variable instead of Secret: 'VERCEL_DEPLOY_HOOK'!"
+            found=1
+          fi
+          if [ -n "$VAR_HOOK_LOWER" ]; then
+            echo "FOUND: Added as Repository Variable (lowercase): 'vercel_deploy_hook'!"
+            found=1
+          fi
+
+          if [ $found -eq 0 ]; then
+            echo "MISSING: Neither Secret nor Variable 'VERCEL_DEPLOY_HOOK' was detected in this repository."
+            exit 1
           fi
