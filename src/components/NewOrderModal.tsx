@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Order, OrderStatus } from '../types.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
+import SlideToConfirm from './SlideToConfirm.tsx';
 
 interface NewOrderModalProps {
   isOpen: boolean;
@@ -13,12 +14,6 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
   const timerIntervalRef = useRef<number | null>(null);
   const { t } = useLanguage();
 
-  // Swipe refs to avoid re-renders during swipe gesture
-  const isSwipingRef = useRef(false);
-  const swipeStartXRef = useRef(0);
-  const swipeDeltaRef = useRef(0);
-  const sliderRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<HTMLDivElement>(null);
   const onUpdateStatusRef = useRef(onUpdateStatus);
   useEffect(() => {
     onUpdateStatusRef.current = onUpdateStatus;
@@ -71,99 +66,7 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
     };
   }, [isOpen, order, handleCloseAndReject]);
 
-  const getClientX = useCallback((e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent): number =>
-    'touches' in e ? e.touches[0].clientX : e.clientX, []);
 
-  const handleSwipeMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isSwipingRef.current) return;
-    if (e.cancelable) e.preventDefault();
-
-    const currentX = getClientX(e);
-    let delta = currentX - swipeStartXRef.current;
-
-    if (sliderRef.current && handleRef.current) {
-        const sliderWidth = sliderRef.current.offsetWidth;
-        const handleWidth = handleRef.current.offsetWidth;
-        const maxSwipe = sliderWidth - handleWidth;
-        delta = Math.max(0, Math.min(delta, maxSwipe));
-        swipeDeltaRef.current = delta;
-        handleRef.current.style.transform = `translateX(${delta}px)`;
-        const textElement = sliderRef.current.querySelector('p');
-        if (textElement) {
-            const opacity = Math.max(0, 1 - (delta / (sliderWidth * 0.6)));
-            textElement.style.opacity = `${opacity}`;
-        }
-    }
-  }, [getClientX]);
-
-  const handleSwipeEnd = useCallback(() => {
-    window.removeEventListener('mousemove', handleSwipeMove);
-    window.removeEventListener('touchmove', handleSwipeMove);
-    window.removeEventListener('mouseup', handleSwipeEnd);
-    window.removeEventListener('touchend', handleSwipeEnd);
-
-    if (!isSwipingRef.current || !order) return;
-    isSwipingRef.current = false;
-
-    if (sliderRef.current && handleRef.current) {
-        const acceptanceThreshold = sliderRef.current.offsetWidth * 0.5;
-        if (swipeDeltaRef.current > acceptanceThreshold) {
-            // Animate success then update
-            if (handleRef.current && sliderRef.current) {
-                const maxSwipe = sliderRef.current.offsetWidth - handleRef.current.offsetWidth;
-                handleRef.current.style.transition = 'transform 0.2s ease-in';
-                handleRef.current.style.transform = `translateX(${maxSwipe}px)`;
-            }
-            setTimeout(() => {
-                onUpdateStatusRef.current(order.id, OrderStatus.PREPARING);
-            }, 200);
-        } else {
-            // Animate back to start
-            if (handleRef.current) {
-                handleRef.current.style.transition = 'transform 0.3s ease-out';
-                handleRef.current.style.transform = 'translateX(0px)';
-            }
-            const textElement = sliderRef.current.querySelector('p');
-            if (textElement) {
-                textElement.style.transition = 'opacity 0.3s ease-out';
-                textElement.style.opacity = '1';
-            }
-        }
-    }
-  }, [order, handleSwipeMove]);
-
-  const handleSwipeStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    if (!order || isSwipingRef.current) return;
-    
-    if (handleRef.current) {
-        handleRef.current.style.transition = 'none';
-    }
-     if (sliderRef.current) {
-        const textElement = sliderRef.current.querySelector('p');
-        if (textElement) {
-            textElement.style.transition = 'none';
-        }
-    }
-    swipeStartXRef.current = getClientX(e);
-    isSwipingRef.current = true;
-    swipeDeltaRef.current = 0;
-
-    window.addEventListener('mousemove', handleSwipeMove);
-    window.addEventListener('touchmove', handleSwipeMove, { passive: false });
-    window.addEventListener('mouseup', handleSwipeEnd);
-    window.addEventListener('touchend', handleSwipeEnd);
-  }, [order, getClientX, handleSwipeMove, handleSwipeEnd]);
-
-  useEffect(() => {
-    return () => {
-        if (isSwipingRef.current) {
-            window.removeEventListener('mousemove', handleSwipeMove);
-            window.removeEventListener('touchmove', handleSwipeMove);
-            window.removeEventListener('mouseup', handleSwipeEnd);
-            window.removeEventListener('touchend', handleSwipeEnd);
-        }
-    };
-  }, [handleSwipeMove, handleSwipeEnd]);
 
   if (!isOpen || !order) return null;
 
@@ -230,23 +133,12 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
                 </div>
 
                 <div className="pt-2 space-y-3">
-                  {/* Swipe-to-accept slider */}
-                  <div
-                    ref={sliderRef}
-                    className="relative w-full bg-[#2D2D2D] rounded-full h-14 flex items-center justify-center overflow-hidden select-none"
-                  >
-                    <p className={`text-neutral-300 font-semibold z-10 transition-opacity duration-200 pointer-events-none`}>
-                      {t('swipe_to_accept')}
-                    </p>
-                    <div
-                      ref={handleRef}
-                      className={`absolute top-0 left-0 h-full w-14 bg-[#E6E6FA] rounded-full flex items-center justify-center z-20 cursor-grab active:cursor-grabbing shadow-[0_0_16px_rgba(230,230,250,0.3)]`}
-                      onMouseDown={handleSwipeStart}
-                      onTouchStart={handleSwipeStart}
-                    >
-                      <span className="material-symbols-outlined text-black font-bold">chevron_right</span>
-                    </div>
-                  </div>
+                  {/* Enhanced physics-based Slide to Confirm */}
+                  <SlideToConfirm
+                    label={t('swipe_to_accept') || 'Swipe to Accept'}
+                    confirmedLabel="Accepted"
+                    onConfirm={() => onUpdateStatusRef.current(order.id, OrderStatus.PREPARING)}
+                  />
                   {/* Decline button */}
                   <button
                     onClick={handleCloseAndReject}

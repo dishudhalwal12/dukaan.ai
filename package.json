@@ -17,6 +17,8 @@
   "dependencies": {
     "@google/genai": "^1.52.0",
     "@supabase/supabase-js": "^2.117.3",
+    "framer-motion": "^14.3.0",
+    "lucide-react": "^1.59.0",
     "papaparse": "^5.5.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"

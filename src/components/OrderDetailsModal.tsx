@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Order, OrderStatus } from '../types.ts';
 import { XIcon, WhatsAppIcon } from './Icons.tsx';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 import UpiQrCodeModal from './UpiQrCodeModal.tsx';
+import SlideToConfirm from './SlideToConfirm.tsx';
 
 interface OrderDetailsModalProps {
   isOpen: boolean;
@@ -18,12 +19,6 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
   const timerIntervalRef = useRef<number | null>(null);
   const { t } = useLanguage();
 
-  // Swipe refs to avoid re-renders during swipe gesture
-  const isSwipingRef = useRef(false);
-  const swipeStartXRef = useRef(0);
-  const swipeDeltaRef = useRef(0);
-  const sliderRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<HTMLDivElement>(null);
   const onUpdateStatusRef = useRef(onUpdateStatus);
   useEffect(() => {
     onUpdateStatusRef.current = onUpdateStatus;
@@ -69,101 +64,6 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
     };
   }, [isOpen, order.id, order.status]);
 
-  const getClientX = useCallback((e: MouseEvent | TouchEvent | React.MouseEvent | React.TouchEvent): number =>
-    'touches' in e ? e.touches[0].clientX : e.clientX, []);
-
-  const handleSwipeMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isSwipingRef.current) return;
-    if (e.cancelable) e.preventDefault();
-
-    const currentX = getClientX(e);
-    let delta = currentX - swipeStartXRef.current;
-
-    if (sliderRef.current && handleRef.current) {
-        const sliderWidth = sliderRef.current.offsetWidth;
-        const handleWidth = handleRef.current.offsetWidth;
-        const maxSwipe = sliderWidth - handleWidth;
-        delta = Math.max(0, Math.min(delta, maxSwipe));
-        swipeDeltaRef.current = delta;
-        handleRef.current.style.transform = `translateX(${delta}px)`;
-        const textElement = sliderRef.current.querySelector('p');
-        if (textElement) {
-            const opacity = Math.max(0, 1 - (delta / (sliderWidth * 0.6)));
-            textElement.style.opacity = `${opacity}`;
-        }
-    }
-  }, [getClientX]);
-
-  const handleSwipeEnd = useCallback(() => {
-    window.removeEventListener('mousemove', handleSwipeMove);
-    window.removeEventListener('touchmove', handleSwipeMove);
-    window.removeEventListener('mouseup', handleSwipeEnd);
-    window.removeEventListener('touchend', handleSwipeEnd);
-
-    if (!isSwipingRef.current) return;
-    isSwipingRef.current = false;
-
-    if (sliderRef.current && handleRef.current) {
-        const acceptanceThreshold = sliderRef.current.offsetWidth * 0.5;
-        if (swipeDeltaRef.current > acceptanceThreshold) {
-            // Animate success then update
-            if (handleRef.current && sliderRef.current) {
-                const maxSwipe = sliderRef.current.offsetWidth - handleRef.current.offsetWidth;
-                handleRef.current.style.transition = 'transform 0.2s ease-out';
-                handleRef.current.style.transform = `translateX(${maxSwipe}px)`;
-            }
-            setTimeout(() => {
-                onUpdateStatusRef.current(order.id, OrderStatus.PREPARING);
-            }, 200);
-        } else {
-            // Animate back to start
-            if (handleRef.current) {
-                handleRef.current.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-                handleRef.current.style.transform = 'translateX(0px)';
-            }
-            const textElement = sliderRef.current.querySelector('p');
-            if (textElement) {
-                textElement.style.transition = 'opacity 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)';
-                textElement.style.opacity = '1';
-            }
-        }
-    }
-  }, [order.id, handleSwipeMove]);
-
-  const handleSwipeStart = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
-    if (order.status !== OrderStatus.NEW || isSwipingRef.current) return;
-    
-    if (handleRef.current) {
-        handleRef.current.style.transition = 'none';
-    }
-    if (sliderRef.current) {
-        const textElement = sliderRef.current.querySelector('p');
-        if (textElement) {
-            textElement.style.transition = 'none';
-        }
-    }
-
-    swipeStartXRef.current = getClientX(e);
-    isSwipingRef.current = true;
-    swipeDeltaRef.current = 0;
-
-    window.addEventListener('mousemove', handleSwipeMove);
-    window.addEventListener('touchmove', handleSwipeMove, { passive: false });
-    window.addEventListener('mouseup', handleSwipeEnd);
-    window.addEventListener('touchend', handleSwipeEnd);
-  }, [order.status, getClientX, handleSwipeMove, handleSwipeEnd]);
-
-  useEffect(() => {
-    return () => {
-        if (isSwipingRef.current) {
-            window.removeEventListener('mousemove', handleSwipeMove);
-            window.removeEventListener('touchmove', handleSwipeMove);
-            window.removeEventListener('mouseup', handleSwipeEnd);
-            window.removeEventListener('touchend', handleSwipeEnd);
-        }
-    };
-  }, [handleSwipeMove, handleSwipeEnd]);
-
   const handlePaymentDone = () => {
     setShowQrModal(false);
     onUpdateStatus(order.id, OrderStatus.COMPLETED);
@@ -193,22 +93,11 @@ const OrderDetailsModal: React.FC<OrderDetailsModalProps> = ({ isOpen, onClose, 
     switch (order.status) {
       case OrderStatus.NEW:
         return (
-            <div 
-              ref={sliderRef} 
-              className="relative w-full bg-[#2D2D2D] rounded-full h-14 flex items-center justify-center overflow-hidden select-none"
-            >
-              <p className={`text-neutral-300 font-semibold z-10 transition-opacity duration-200 pointer-events-none`}>
-                Swipe to Accept
-              </p>
-              <div
-                ref={handleRef}
-                className={`absolute top-0 left-0 h-full w-14 bg-[#E6E6FA] rounded-full flex items-center justify-center z-20 cursor-grab active:cursor-grabbing`}
-                onMouseDown={handleSwipeStart}
-                onTouchStart={handleSwipeStart}
-              >
-                <span className="material-symbols-outlined text-black font-bold">chevron_right</span>
-              </div>
-            </div>
+          <SlideToConfirm
+            label={t('swipe_to_accept') || 'Swipe to Accept'}
+            confirmedLabel="Accepted"
+            onConfirm={() => onUpdateStatusRef.current(order.id, OrderStatus.PREPARING)}
+          />
         );
       case OrderStatus.PREPARING:
         return (
