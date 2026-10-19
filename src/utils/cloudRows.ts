@@ -12,6 +12,7 @@ import type { Customer, OrderItem } from '../types.ts';
 export interface AuthUserLike {
   email?: string | null;
   email_confirmed_at?: string | null;
+  created_at?: string | null;
   user_metadata?: Record<string, any> | null;
   app_metadata?: Record<string, any> | null;
 }
@@ -35,6 +36,7 @@ export interface IdentityRow {
   avatar_url: string | null;
   auth_provider: string | null;
   preferred_language: string | null;
+  signup_at: string | null;
 }
 
 export interface OrderRow {
@@ -117,6 +119,9 @@ export const identityRowFromAuthUser = (user?: AuthUserLike | null): Partial<Ide
     avatar_url: str(md.picture) || str(md.avatar_url),
     auth_provider: str(app.provider),
     preferred_language: str(md.locale),
+    // The upsert inserts when the trigger has not seeded the row yet; signup_at
+    // is NOT NULL, so the insert has to carry the account's own creation time.
+    signup_at: str(user.created_at),
   };
 };
 

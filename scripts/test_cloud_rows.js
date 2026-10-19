@@ -88,9 +88,12 @@ assert.strictEqual(
 const idRow = identityRowFromAuthUser({
   email: 'owner@shop.com',
   email_confirmed_at: '2026-10-17T00:00:00Z',
+  created_at: '2026-10-01T09:30:00Z',
   user_metadata: { full_name: 'Divyarth Saini', avatar_url: 'https://example.com/a.png' },
   app_metadata: { provider: 'email' },
 });
+assert.strictEqual(idRow.signup_at, '2026-10-01T09:30:00Z',
+  'the upsert insert must carry signup_at or the NOT NULL column rejects it');
 assert.strictEqual(idRow.email, 'owner@shop.com');
 assert.strictEqual(idRow.email_verified, true);
 assert.strictEqual(idRow.owner_first_name, 'Divyarth');

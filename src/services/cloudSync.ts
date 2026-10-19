@@ -652,6 +652,11 @@ export const saveUserIdentityToCloud = async (explicitUserId?: string): Promise<
     // would be adopted by whichever account signs in next.
     if (!userId) return;
 
+    // Without the session there is no created_at to satisfy the NOT NULL
+    // signup_at, and a cached id is not an identity to refresh. The signup
+    // trigger owns the row in that case.
+    if (!user) return;
+
     const identity = identityRowFromAuthUser(user);
     const localName = typeof localStorage !== 'undefined' ? localStorage.getItem('dukan-profile-name') : null;
     const emailName = user?.email && user.email.includes('@') ? user.email.split('@')[0].replace(/[._+]/g, ' ') : null;
