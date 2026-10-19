@@ -178,14 +178,34 @@ export async function mirrorOrder(order, { fetchImpl = globalThis.fetch, timeout
     if (!order?.userId) return { ok: false, error: 'order has no owner' };
     if (!order?.id) return { ok: false, error: 'order has no id' };
 
-    await restRequest('orders?on_conflict=user_id,external_id', {
-      method: 'POST',
-      body: buildOrderRow(order),
-      prefer: 'resolution=merge-duplicates,return=minimal',
-      fetchImpl,
-      timeoutMs,
-    });
-    return { ok: true };
+    const row = buildOrderRow(order);
+    try {
+      await restRequest('orders?on_conflict=user_id,external_id', {
+        method: 'POST',
+        body: row,
+        prefer: 'resolution=merge-duplicates,return=minimal',
+        fetchImpl,
+        timeoutMs,
+      });
+      return { ok: true };
+    } catch (e) {
+      // An older deployed table may carry only the JSONB and the base columns; the
+      // optional flat columns then fail the whole upsert. Retry without them so the
+      // order is saved rather than dropped.
+      const { customer_phone, customer_name, delivery_address, notes, ...baseRow } = row;
+      try {
+        await restRequest('orders?on_conflict=user_id,external_id', {
+          method: 'POST',
+          body: baseRow,
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          fetchImpl,
+          timeoutMs,
+        });
+        return { ok: true };
+      } catch (inner) {
+        return { ok: false, error: inner.message };
+      }
+    }
   } catch (e) {
     return { ok: false, error: e.message };
   }

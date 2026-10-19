@@ -52,7 +52,7 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeC
   const [storeName, setStoreName] = useState('');
   const [storeCategory, setStoreCategory] = useState('');
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const { t } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
 
   // The store's position is asked for once the shop's identity is known, and
   // "Setup later" is offered because a shopkeeper who is not in the shop right
@@ -775,6 +775,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
             answers,
             // Mirrored so "Welcome back, <name>!" still works on another device.
             ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+            preferredLanguage: localStorage.getItem('dukan-language') || 'en',
             timestamp: new Date().toISOString()
         };
         // The dynamic AI-generated Q&A (question/intent/type/answer) is the

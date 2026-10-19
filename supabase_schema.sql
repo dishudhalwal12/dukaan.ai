@@ -37,6 +37,7 @@ DROP TABLE IF EXISTS public.device_sessions CASCADE;
 DROP TABLE IF EXISTS public.merchant_preferences CASCADE;
 DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.suppliers CASCADE;
 DROP TABLE IF EXISTS public.products CASCADE;
 DROP TABLE IF EXISTS public.business_profiles CASCADE;
 DROP TRIGGER  IF EXISTS on_auth_user_created_identity ON auth.users;
@@ -126,6 +127,19 @@ CREATE TABLE public.orders (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     CONSTRAINT orders_owner_external_id_key UNIQUE (user_id, external_id)
+);
+
+-- ==============================================================================
+-- 3b. SUPPLIERS — owner-scoped
+-- ==============================================================================
+CREATE TABLE public.suppliers (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    supplier_name     TEXT NOT NULL,
+    supplier_whatsapp TEXT NOT NULL,
+    notes             TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 -- ==============================================================================
@@ -424,6 +438,7 @@ CREATE INDEX idx_products_owner_external ON public.products(user_id, external_id
 CREATE INDEX idx_orders_user_id ON public.orders(user_id);
 CREATE INDEX idx_orders_owner_external ON public.orders(user_id, external_id);
 CREATE INDEX idx_orders_created_at ON public.orders(created_at DESC);
+CREATE INDEX idx_suppliers_user_id ON public.suppliers(user_id);
 CREATE INDEX idx_device_sessions_user_id ON public.device_sessions(user_id);
 CREATE INDEX idx_device_sessions_user_started ON public.device_sessions(user_id, started_at DESC);
 CREATE INDEX idx_device_sessions_install_id ON public.device_sessions(install_id);
@@ -439,6 +454,7 @@ CREATE INDEX idx_user_roles_user_id ON public.user_roles(user_id);
 ALTER TABLE public.business_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.merchant_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_identities ENABLE ROW LEVEL SECURITY;
@@ -472,6 +488,16 @@ CREATE POLICY "owner inserts own orders" ON public.orders
 CREATE POLICY "owner updates own orders" ON public.orders
     FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "owner deletes own orders" ON public.orders
+    FOR DELETE USING (auth.uid() = user_id);
+
+-- Suppliers:
+CREATE POLICY "owner selects own suppliers" ON public.suppliers
+    FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "owner inserts own suppliers" ON public.suppliers
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner updates own suppliers" ON public.suppliers
+    FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner deletes own suppliers" ON public.suppliers
     FOR DELETE USING (auth.uid() = user_id);
 
 -- Device Sessions:

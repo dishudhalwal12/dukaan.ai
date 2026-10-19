@@ -5,7 +5,7 @@ import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
 import LocationModal from '../../components/LocationModal.tsx';
 import { getStoredStoreLocation, saveStoreLocation } from '../../utils/location.ts';
-import { saveStoreLocationToCloud } from '../../services/cloudSync.ts';
+import { saveStoreLocationToCloud, saveBusinessProfileToCloud, saveSupplierToCloud } from '../../services/cloudSync.ts';
 
 const FormField: React.FC<{ label: string; value: string; onChange: (value: string) => void; placeholder?: string }> = 
 ({ label, value, onChange, placeholder }) => (
@@ -79,6 +79,28 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             localStorage.setItem('dukan-supplier-whatsapp-display', supplierWhatsapp); // Save display version too
 
             console.log('Saving store details:', { storeName, category, supplierName, supplierWhatsapp });
+
+            // Persist updated store & supplier details to Supabase cloud profile
+            const readJson = (key: string) => {
+                try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+            };
+            void saveBusinessProfileToCloud(storeName, {
+                storeDetails: {
+                    storeName,
+                    storeAddress: localStorage.getItem('dukan-store-address') || undefined,
+                    category,
+                    supplierName,
+                    supplierWhatsapp: whatsappDigits,
+                },
+                answers: readJson('dukan-store-context'),
+                ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+                preferredLanguage: localStorage.getItem('dukan-language') || 'en',
+                timestamp: new Date().toISOString(),
+            }, undefined, readJson('dukan-business-intelligence-context'));
+
+            if (supplierName) {
+                void saveSupplierToCloud(supplierName, whatsappDigits);
+            }
             setTimeout(() => {
                 setIsSaving(false);
                 onBack();

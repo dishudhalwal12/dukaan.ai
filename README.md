@@ -300,7 +300,7 @@ node whatsapp/export_training_data.js --report        # who is personal, who is 
 node whatsapp/export_training_data.js --out train.jsonl
 ```
 
-The trigger is `/hey` with the leading slash, not a bare "hey".
+The trigger is `/hey` with the leading slash, not a bare "hey" and not "/heyy".
 
 The live ledger lives on the bot's machine, not in a dev checkout. `whatsapp/store/` is gitignored and excluded from the deploy sync, so the running bot keeps its own copy. To export real data, run the exporter on that machine, or copy `messages.json` across and pass `--in <path>`.
 

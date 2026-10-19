@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { XIcon } from './Icons.tsx';
+import { saveBusinessProfileToCloud, saveSupplierToCloud } from '../services/cloudSync.ts';
 
 interface SupplierDetailsModalProps {
   isOpen: boolean;
@@ -36,6 +37,29 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
     localStorage.setItem('dukan-supplier-name', name);
     localStorage.setItem('dukan-supplier-whatsapp', whatsappDigits);
     localStorage.setItem('dukan-supplier-whatsapp-display', whatsapp);
+
+    const storeName = localStorage.getItem('dukan-store-name');
+    if (storeName) {
+      const readJson = (key: string) => {
+        try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+      };
+      void saveBusinessProfileToCloud(storeName, {
+        storeDetails: {
+          storeName,
+          category: localStorage.getItem('dukan-store-category') || undefined,
+          storeAddress: localStorage.getItem('dukan-store-address') || undefined,
+          supplierName: name,
+          supplierWhatsapp: whatsappDigits,
+        },
+        answers: readJson('dukan-store-context'),
+        ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+        preferredLanguage: localStorage.getItem('dukan-language') || 'en',
+        timestamp: new Date().toISOString(),
+      }, undefined, readJson('dukan-business-intelligence-context'));
+    }
+
+    void saveSupplierToCloud(name, whatsappDigits);
+
     onSave();
   };
 

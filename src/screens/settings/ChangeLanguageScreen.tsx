@@ -1,13 +1,18 @@
 import React from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
-import { LANGUAGES as languages } from '../../data/languages.ts';
+import { LANGUAGES as languages, type LanguageOption } from '../../data/languages.ts';
+import { saveLanguagePreferenceToCloud } from '../../services/cloudSync.ts';
+
+export type { LanguageOption };
+export { languages };
 
 const ChangeLanguageScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { language: selectedLanguage, setLanguage, t } = useLanguage();
 
   const handleSelectLanguage = (code: string) => {
     setLanguage(code);
+    void saveLanguagePreferenceToCloud(code);
   };
 
   return (
