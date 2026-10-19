@@ -491,44 +491,6 @@ export const confirmEmail = async (
 };
 
 /**
- * Verifies a 6-digit email confirmation code directly without opening any link.
- */
-export const verifyEmailOtp = async (
-  email: string,
-  token: string
-): Promise<AuthResult> => {
-  try {
-    if (!isSupabaseConfigured()) {
-      return { user: null, error: 'Supabase credentials not configured.' };
-    }
-    const cleanToken = token.trim();
-    if (!cleanToken) {
-      return { user: null, error: 'Please enter the 6-digit confirmation code.' };
-    }
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: cleanToken,
-      type: 'signup',
-    });
-    if (error) {
-      console.warn('Supabase Auth Error (VerifyEmailOtp):', error.message);
-      return failure(error);
-    }
-    if (data.session && data.user) {
-      localStorage.setItem('dukan-auth-user', JSON.stringify({
-        id: data.user.id,
-        email: data.user.email,
-      }));
-      localStorage.removeItem('dukan-guest-mode');
-    }
-    return { user: data.user, error: null, session: data.session };
-  } catch (error: any) {
-    console.warn('Supabase Auth Exception (VerifyEmailOtp):', error);
-    return { user: null, error: error?.message || 'Failed to verify confirmation code.' };
-  }
-};
-
-/**
  * Whether the account for `email` has confirmed, asked of the server rather than
  * of local storage.
  *

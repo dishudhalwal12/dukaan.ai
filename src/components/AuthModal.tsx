@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, getEmailConfirmationStatus, abandonPendingOAuth, verifyEmailOtp, User } from '../services/auth.ts';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, getEmailConfirmationStatus, abandonPendingOAuth, User } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 import { classifyAuthOutcome, isUnconfirmedEmailError } from '../utils/authOutcome.ts';
@@ -38,8 +38,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState(() => (typeof localStorage !== 'undefined' ? localStorage.getItem('dukan-profile-name') || '' : ''));
-  const [otpCode, setOtpCode] = useState('');
-  const [otpLoading, setOtpLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -216,29 +214,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!otpCode.trim() || otpCode.trim().length < 6) {
-      setError("Please enter the 6-digit confirmation code.");
-      return;
-    }
-    setOtpLoading(true);
-    setError(null);
-    const result = await verifyEmailOtp(email, otpCode);
-    setOtpLoading(false);
-    if (result.error) {
-      setError(result.error);
-      return;
-    }
-    if (result.user) {
-      await completeSignIn(result.user);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError("Please enter email and password.");
+      return;
+    }
+    if (isSignUp && !fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+    if (isSignUp && password.length < 6) {
+      setError("Password must be at least 6 characters.");
       return;
     }
 
@@ -332,29 +319,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
                   <span>{error}</span>
                 </div>
               )}
-
-              <form onSubmit={handleVerifyOtp} className="my-3 p-3 bg-neutral-900 border border-neutral-800 rounded-xl">
-                <p className="text-neutral-400 text-xs mb-2 text-center">
-                  Have a 6-digit code from email? Enter it here:
-                </p>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    maxLength={6}
-                    placeholder="123456"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                    className="flex-1 bg-black border border-neutral-700 rounded-xl px-3 py-2 text-white text-center text-base tracking-widest font-mono focus:outline-none focus:border-[#E6E6FA] transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    disabled={otpLoading || otpCode.length < 6}
-                    className="px-4 bg-[#E6E6FA] text-black font-semibold rounded-xl text-xs hover:bg-opacity-90 disabled:opacity-50 transition-opacity"
-                  >
-                    {otpLoading ? 'Verifying...' : 'Verify'}
-                  </button>
-                </div>
-              </form>
 
               <div className="space-y-2 mt-2">
                 <button
@@ -451,7 +415,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
               <div>
                 <input
                   type="text"
-                  placeholder="Full name (e.g. Ramesh Kumar)"
+                  placeholder="Full name (Required)"
+                  required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#E6E6FA] transition-colors"

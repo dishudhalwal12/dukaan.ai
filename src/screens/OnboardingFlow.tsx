@@ -320,7 +320,7 @@ Return ONLY this JSON, with no markdown and no explanation:
     };
     fetchGeminiData();
     return () => { mounted = false; };
-  }, [details]);
+  }, [details, language]);
 
   // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
   // const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
