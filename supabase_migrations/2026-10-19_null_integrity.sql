@@ -273,8 +273,11 @@ ALTER TABLE public.user_identities
     ALTER COLUMN email_verified SET DEFAULT false,
     ALTER COLUMN email_verified SET NOT NULL;
 
--- signup_at is a fact of every auth account; keep it non-null too.
+-- signup_at is a fact of every auth account; keep it non-null too. The default
+-- covers writers that insert an identity row before the auth trigger has run;
+-- the app sends auth.users.created_at explicitly, which stays authoritative.
 ALTER TABLE public.user_identities
+    ALTER COLUMN signup_at SET DEFAULT timezone('utc'::text, now()),
     ALTER COLUMN signup_at SET NOT NULL;
 
 -- ---------------------------------------------------------------------------
