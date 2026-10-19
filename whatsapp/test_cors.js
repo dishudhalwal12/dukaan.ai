@@ -1,6 +1,6 @@
 import './test_setup_orders_file.js'; // pin the stores, blank the live credentials
 import assert from 'assert';
-import { parseOrigins, originAllowed, corsOptionsFor } from './corsPolicy.js';
+import { parseOrigins, originAllowed, corsOptionsFor, FIRST_PARTY_ORIGINS } from './corsPolicy.js';
 
 console.log('--- RUNNING CORS POLICY TESTS ---');
 let n = 0;
@@ -22,6 +22,10 @@ assert.strictEqual(originAllowed(undefined, PROD), true,
   'a request with no Origin header (curl, the bot itself) is not a CORS request at all');
 assert.strictEqual(originAllowed('https://dukaan-ai-beta.vercel.app', PROD), true);
 assert.strictEqual(originAllowed('https://aurelio-chasmy-dorsiventrally.ngrok-free.dev', PROD), true);
+assert.strictEqual(originAllowed('https://dukaan-ai-hypnexis.vercel.app', FIRST_PARTY_ORIGINS), true,
+  'the project domain must be allowed: beta redirects there and CORS is judged on the final origin');
+assert.strictEqual(originAllowed('https://dukaan-ai-hypnexis.vercel.app', PROD), false,
+  'the env list alone need not name it — server.js unions FIRST_PARTY_ORIGINS into the allowlist');
 assert.strictEqual(originAllowed('https://evil.example', PROD), false);
 assert.strictEqual(originAllowed('https://dukaan-ai-beta.vercel.app.evil.example', PROD), false,
   'a suffix match is NOT a match — this is the classic allowlist bypass');
@@ -39,7 +43,12 @@ const decide = (origin) => {
 };
 
 assert.deepStrictEqual(decide('https://dukaan-ai-beta.vercel.app'), { err: null, allow: true });
-ok('the production frontend is allowed');
+const liveOpts = corsOptionsFor({ allowedOrigins: [...new Set([...FIRST_PARTY_ORIGINS, ...PROD])] });
+let liveDecision;
+liveOpts.origin('https://dukaan-ai-hypnexis.vercel.app', (err, allow) => { liveDecision = { err, allow }; });
+assert.deepStrictEqual(liveDecision, { err: null, allow: true },
+  'the redirect target must pass, or the live POS cannot reach the bot');
+ok('the production frontend and its redirect target are both allowed');
 
 assert.deepStrictEqual(decide('http://localhost:3000'), { err: null, allow: true });
 assert.deepStrictEqual(decide('http://127.0.0.1:5173'), { err: null, allow: true });

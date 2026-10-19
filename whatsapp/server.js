@@ -16,7 +16,7 @@ import { notifyCustomer } from './orderNotifications.js';
 import { registryStatus, mirrorOrder } from './dukanCloud.js';
 import { installPosRoutes } from './posStatic.js';
 import { createApiAuth } from './apiAuth.js';
-import { corsOptionsFor, parseOrigins } from './corsPolicy.js';
+import { corsOptionsFor, parseOrigins, FIRST_PARTY_ORIGINS } from './corsPolicy.js';
 import { buildUpstreamRequest, resolveModelConfig } from './aiProxy.js';
 import { resolveLocation } from './locationFetcher.js';
 import { transcribeAudioMessage } from './audioTranscriber.js';
@@ -50,8 +50,10 @@ const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 let n8nWebhookUrl = process.env.N8N_WEBHOOK_URL || '';
 
 // Only the origins this app is actually served from may call the API; a
-// wildcard let any website read a shopkeeper's orders.
-app.use(cors(corsOptionsFor({ allowedOrigins: parseOrigins(process.env.CORS_ORIGINS) })));
+// wildcard let any website read a shopkeeper's orders. The first-party domains
+// are always present so a stale panel env cannot take the POS offline.
+const corsOrigins = [...new Set([...FIRST_PARTY_ORIGINS, ...parseOrigins(process.env.CORS_ORIGINS)])];
+app.use(cors(corsOptionsFor({ allowedOrigins: corsOrigins })));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
