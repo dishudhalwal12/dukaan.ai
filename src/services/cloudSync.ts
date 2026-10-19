@@ -568,7 +568,7 @@ export const saveDeviceSessionToCloud = async (explicitUserId?: string): Promise
  * The language has to come back from here or it is not really saved: the browser
  * copy disappears with a reinstall, a cleared cache or a new phone, and until
  * now that was the only copy. Row-level security already lets an owner select
- * their own row (supabase_schema.sql, "owner selects own preferences").
+ * their own row (supabase/schema.sql, "owner selects own preferences").
  */
 export const fetchMerchantPreferencesFromCloud = async (
   explicitUserId?: string,

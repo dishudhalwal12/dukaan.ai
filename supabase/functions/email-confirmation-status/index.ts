@@ -35,7 +35,7 @@
  * nonce at signup that the server can look up instead.
  *
  * Deploy:  supabase functions deploy email-confirmation-status
- * Needs:   supabase_email_confirmation.sql applied (the RPC it calls).
+ * Needs:   supabase/email_confirmation.sql applied (the RPC it calls).
  * Secrets: none to set — SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected
  *          by the platform. The service role is required because the RPC is
  *          revoked from anon and authenticated.

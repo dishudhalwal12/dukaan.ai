@@ -1,6 +1,6 @@
 {
-  "name": "Dukan.Ai apk 1.2.0",
-  "description": "A SaaS tool for small and medium business owners in India to provide AI-powered insights for their business. Dukan.AI makes complex data simple and actionable.",
+  "name": "Dukaan.AI",
+  "description": "AI-powered commerce for Indian shops: WhatsApp orders, stock and insights in one POS.",
   "requestFramePermissions": [
     "camera"
   ]
