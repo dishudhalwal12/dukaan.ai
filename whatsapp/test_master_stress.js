@@ -44,7 +44,8 @@ async function check(section, name, fn) {
     results.push({ id, section, name, status: 'CLEAR', detail: detail || '' });
   } catch (e) {
     failed++;
-    results.push({ id, section, name, status: 'FAIL', detail: e.message });
+    const cause = e?.cause?.code || e?.cause?.message;
+    results.push({ id, section, name, status: 'FAIL', detail: cause ? `${e.message} (${cause})` : e.message });
   }
 }
 
@@ -345,6 +346,17 @@ function vercelApiBase() {
   }
 }
 
+async function retryFetch(url, init, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await realFetch(url, init);
+    } catch (err) {
+      if (i === retries) throw err;
+      await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+    }
+  }
+}
+
 async function withTimeout(promise, ms, label) {
   let timer;
   try {
@@ -369,7 +381,7 @@ if (!HERMETIC_ONLY) {
     // 10 ── the backend answers at all ───────────────────────────────────────
     let statusBody = null;
     await check('live', '10. tunnel answers /api/status', async () => {
-      const res = await withTimeout(realFetch(`${apiBase}/api/status`, { headers: sockHeader }), 20000, '/api/status');
+      const res = await withTimeout(retryFetch(`${apiBase}/api/status`, { headers: sockHeader }), 20000, '/api/status');
       assert(res.ok, `HTTP ${res.status}`);
       statusBody = await res.json();
       assert(statusBody && typeof statusBody.status === 'string', 'no status field in the response');
@@ -389,21 +401,21 @@ if (!HERMETIC_ONLY) {
       if (!supa || !svc || !anon) throw new Error('skipped: Supabase keys missing from .env');
       const admin = { apikey: svc, Authorization: `Bearer ${svc}`, 'Content-Type': 'application/json' };
       const email = `stress-${Date.now()}@example.com`;
-      const created = await withTimeout(realFetch(`${supa}/auth/v1/admin/users`, {
+      const created = await withTimeout(retryFetch(`${supa}/auth/v1/admin/users`, {
         method: 'POST', headers: admin,
         body: JSON.stringify({ email, password: 'Stress!2345', email_confirm: true }),
       }), 30000, 'create probe user');
       if (!created.ok) throw new Error(`could not create a probe account (HTTP ${created.status})`);
       const uid = (await created.json()).id;
       try {
-        const tok = await withTimeout(realFetch(`${supa}/auth/v1/token?grant_type=password`, {
+        const tok = await withTimeout(retryFetch(`${supa}/auth/v1/token?grant_type=password`, {
           method: 'POST', headers: { apikey: anon, 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password: 'Stress!2345' }),
         }), 30000, 'sign in');
         assert(tok.ok, `sign in failed (HTTP ${tok.status})`);
         const access = (await tok.json()).access_token;
         const t0 = Date.now();
-        const res = await withTimeout(realFetch(`${apiBase}/api/ai/chat/completions`, {
+        const res = await withTimeout(retryFetch(`${apiBase}/api/ai/chat/completions`, {
           method: 'POST',
           headers: { ...sockHeader, 'Content-Type': 'application/json', Authorization: `Bearer ${access}` },
           body: JSON.stringify({ messages: [{ role: 'user', content: 'Return ONLY JSON: {"ok":true}' }] }),
@@ -414,13 +426,13 @@ if (!HERMETIC_ONLY) {
         assert(content && content.length > 0, 'the AI returned no content');
         return `HTTP 200 in ${((Date.now() - t0) / 1000).toFixed(1)}s via ${body.model || 'unknown model'}`;
       } finally {
-        await realFetch(`${supa}/auth/v1/admin/users/${uid}`, { method: 'DELETE', headers: admin }).catch(() => {});
+        await retryFetch(`${supa}/auth/v1/admin/users/${uid}`, { method: 'DELETE', headers: admin }).catch(() => {});
       }
     });
 
     // 13 ── the deployed POS app can reach that same AI ──────────────────────
     await check('live', '13. POS app is live and wired to the backend', async () => {
-      const page = await withTimeout(realFetch(posUrl, { headers: sockHeader }), 30000, 'POS page');
+      const page = await withTimeout(retryFetch(posUrl, { headers: sockHeader }), 30000, 'POS page');
       assert(page.ok, `the POS page answered HTTP ${page.status}`);
       const html = await page.text();
       assert(/<div id="root"/.test(html) || /<script/.test(html), 'the POS page is not the app shell');
@@ -435,7 +447,7 @@ if (!HERMETIC_ONLY) {
       let sawBackend = false;
       let sawSupabase = false;
       for (const s of srcs) {
-        const bundle = await withTimeout(realFetch(new URL(s, posUrl).toString(), { headers: sockHeader }), 30000, 'POS bundle');
+        const bundle = await withTimeout(retryFetch(new URL(s, posUrl).toString(), { headers: sockHeader }), 30000, 'POS bundle');
         assert(bundle.ok, `the app bundle ${s} answered HTTP ${bundle.status}`);
         const code = await bundle.text();
         if (code.includes(host)) sawBackend = true;
@@ -446,7 +458,7 @@ if (!HERMETIC_ONLY) {
 
       // and the browser's preflight must be allowed, or the POS never reaches it
       const origin = new URL(posUrl).origin;
-      const pre = await withTimeout(realFetch(`${apiBase}/api/ai/chat/completions`, {
+      const pre = await withTimeout(retryFetch(`${apiBase}/api/ai/chat/completions`, {
         method: 'OPTIONS',
         headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' },
       }), 20000, 'CORS preflight');
@@ -458,8 +470,8 @@ if (!HERMETIC_ONLY) {
 
     // 14 ── the order routes are still gated ──────────────────────────────────
     await check('live', '14. order actions are auth-gated without a token', async () => {
-      const res = await withTimeout(realFetch(`${apiBase}/api/dukan/orders`, { headers: sockHeader }), 20000, 'orders route');
-      assert(res.status === 401 || res.status === 403, `an unauthenticated request got HTTP ${res.status}`);
+      const res = await withTimeout(retryFetch(`${apiBase}/api/dukan/orders`, { headers: sockHeader }), 20000, 'orders route');
+      assert(res && (res.status === 401 || res.status === 403), `an unauthenticated request got HTTP ${res ? res.status : 'no response'}`);
       return `unauthenticated request rejected (HTTP ${res.status})`;
     });
   }

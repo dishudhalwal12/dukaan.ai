@@ -5,6 +5,7 @@ import { ruleBasedWhatsAppParser } from '../utils/parsers.ts';
 import { generateRandomPhoneNumber } from '../utils/phone.ts';
 import { withGeminiFailover } from '../utils/geminiClient.ts';
 import { sanitizeCsvField } from '../utils/sanitize.ts';
+import { normalizeQuantity } from '../utils/stock.ts';
 
 // Helper to convert an uploaded File to base64
 // This is required for inlineData parameter in @google/genai API
@@ -74,7 +75,9 @@ Return ONLY a valid JSON array of objects. No markdown. Each object must have "n
   return parsed.map((item: any) => ({
     productId: `ai-id-${Math.random().toString(36).substr(2, 9)}`,
     name: item.name || 'Unknown Item',
-    quantity: Number(item.quantity) || 1,
+    // A model (or a CSV cell) can answer "-5"; `Number(x) || 1` let it through
+    // because a negative number is truthy.
+    quantity: normalizeQuantity(item.quantity),
     price: String(item.price || '0'),
   }));
 };
@@ -121,7 +124,7 @@ Each object in the array must have ONLY these three keys:
     return parsed.map((item: any) => ({
       productId: `ai-vis-id-${Math.random().toString(36).substr(2, 9)}`,
       name: String(item.name || 'Unknown Item').substring(0, 30),
-      quantity: Number(item.quantity) || 1,
+      quantity: normalizeQuantity(item.quantity),
       price: String(item.price || '0').replace(/[^0-9.]/g, ''),
     })).filter((item: any) => Number(item.price) > 0);
 };
@@ -182,7 +185,7 @@ export const processCsvFile = async (file: File): Promise<Order[]> => {
 
             const name = sanitizeCsvField(getVal(['product', 'name', 'item', 'product name']) || 'Uploaded Item');
             const quantityRaw = getVal(['quantity', 'qty']) || 1;
-            const quantity = parseInt(String(quantityRaw).trim(), 10) || 1;
+            const quantity = normalizeQuantity(quantityRaw);
             
             const priceRaw = getVal(['price', 'unit price', 'amount', 'rate']) || '0';
             const price = String(priceRaw).replace(/[^0-9.]/g, '');
@@ -200,7 +203,7 @@ export const processCsvFile = async (file: File): Promise<Order[]> => {
             orderGroups[orderId].push({
                 productId: `csv-raw-${Math.random().toString(36).substr(2, 9)}`,
                 name,
-                quantity: Number(quantity),
+                quantity,
                 price: String(price).replace(/[^0-9.]/g, '')
             });
         });

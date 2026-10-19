@@ -3,7 +3,9 @@ import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
-import { saveBusinessProfileToCloud } from '../../services/cloudSync.ts';
+import { saveBusinessProfileToCloud, saveLanguagePreferenceToCloud } from '../../services/cloudSync.ts';
+import type { User } from '../../services/auth.ts';
+import { languages } from './ChangeLanguageScreen.tsx';
 
 const FormField: React.FC<{ label: string; type: string; value: string; placeholder?: string; disabled?: boolean; isVerified?: boolean; onChange: (value: string) => void }> = 
 ({ label, type, value, placeholder, disabled, isVerified, onChange }) => (
@@ -28,13 +30,57 @@ const FormField: React.FC<{ label: string; type: string; value: string; placehol
     </div>
 );
 
-const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+/**
+ * Where this account's data actually lives, stated at the top of the profile.
+ *
+ * It sits above the fields on purpose: a shopkeeper who is testing the app wants
+ * to know in one glance whether the catalogue they just edited is in the cloud or
+ * only on this phone — not scroll to the bottom of Settings to find out.
+ */
+const SyncStatusCard: React.FC<{ currentUser?: User | null; onOpenAuth?: () => void }> = ({ currentUser, onOpenAuth }) => (
+    currentUser ? (
+        <div className="p-3.5 bg-emerald-950/20 border border-emerald-800/40 rounded-xl">
+            <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center space-x-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <p className="text-xs text-emerald-400 font-semibold">Supabase Cloud Sync Active</p>
+                </div>
+                <span className="text-[10px] bg-emerald-900/60 text-emerald-300 px-2 py-0.5 rounded-full font-medium">Synced</span>
+            </div>
+            <p className="text-xs text-neutral-400 truncate">{currentUser.email || 'Google User'}</p>
+        </div>
+    ) : (
+        <div className="p-3.5 bg-amber-950/20 border border-amber-800/40 rounded-xl">
+            <div className="flex items-center space-x-2 mb-1">
+                <span className="material-symbols-outlined text-amber-400 text-base">cloud_off</span>
+                <p className="text-xs font-semibold text-amber-300">Guest Mode (Local Only)</p>
+            </div>
+            <p className="text-xs text-neutral-400 mb-2 leading-relaxed">
+                This profile is saved on this phone only. Sign in to keep it in the cloud.
+            </p>
+            {onOpenAuth && (
+                <button
+                    onClick={onOpenAuth}
+                    className="w-full py-2 px-3 bg-white text-gray-900 font-semibold rounded-lg text-xs hover:bg-neutral-100 transition-colors"
+                >
+                    Sign in to sync
+                </button>
+            )}
+        </div>
+    )
+);
+
+const EditProfileScreen: React.FC<{
+    onBack: () => void;
+    currentUser?: User | null;
+    onOpenAuth?: () => void;
+}> = ({ onBack, currentUser, onOpenAuth }) => {
     const [name, setName] = useState(() => localStorage.getItem('dukan-profile-name') || '');
     const [email, setEmail] = useState(() => localStorage.getItem('dukan-profile-email') || '');
     const [profilePic, setProfilePic] = useState(() => localStorage.getItem('dukan-profile-pic') || null);
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingImage, setIsProcessingImage] = useState(false);
-    const { t } = useLanguage();
+    const { language, setLanguage, t } = useLanguage();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -76,7 +122,6 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         fileInputRef.current?.click();
     };
 
-
     const handleSave = () => {
         setIsSaving(true);
         try {
@@ -88,7 +133,10 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 localStorage.removeItem('dukan-profile-pic');
             }
 
-            console.log('Saving profile:', { name, email });
+            console.log('Saving profile:', { name, email, language });
+
+            // Save language preference to Supabase cloud
+            void saveLanguagePreferenceToCloud(language);
 
             // Mirror the name into the cloud profile so the greeting survives a
             // device change. Fire-and-forget: it never blocks the save.
@@ -104,6 +152,7 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     },
                     answers: readJson('dukan-store-context'),
                     ownerName: name,
+                    preferredLanguage: language,
                     timestamp: new Date().toISOString(),
                 }, undefined, readJson('dukan-business-intelligence-context'));
             }
@@ -127,6 +176,7 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <div>
             <SettingsSubHeader title={t('edit_profile_title')} onBack={onBack} onSave={handleSave} isSaving={isSaving} />
             <div className="p-4 space-y-8">
+                <SyncStatusCard currentUser={currentUser} onOpenAuth={onOpenAuth} />
                 <div className="flex flex-col items-center">
                     <div className="relative">
                         <div className="h-28 w-28 rounded-full bg-[#1A1A1A] flex items-center justify-center overflow-hidden">
@@ -156,6 +206,29 @@ const EditProfileScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <FormField label={t('label_full_name')} type="text" value={name} onChange={setName} placeholder={t('placeholder_your_full_name')} />
                     <FormField label={t('label_mobile_number')} type="tel" value="+91 98765 43210" onChange={() => {}} disabled isVerified />
                     <FormField label={t('label_email_address')} type="email" value={email} onChange={setEmail} placeholder={t('placeholder_your_email_address')} />
+
+                    <div>
+                        <label className="block text-sm font-medium text-neutral-400 mb-1.5 px-1">{t('settings_change_language') || 'Preferred Language'}</label>
+                        <div className="relative">
+                            <select
+                                value={language}
+                                onChange={(e) => setLanguage(e.target.value)}
+                                className="w-full bg-transparent border-b-2 border-neutral-600 text-white text-lg py-2 focus:outline-none focus:border-[#E6E6FA] transition-colors duration-300 appearance-none"
+                                style={{
+                                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23e6e6fa' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                                    backgroundRepeat: 'no-repeat',
+                                    backgroundPosition: 'right 0.75rem center',
+                                    backgroundSize: '1.5em 1.5em'
+                                }}
+                            >
+                                {languages.map((lang) => (
+                                    <option key={lang.code} className="bg-[#1A1A1A] text-white" value={lang.code}>
+                                        {lang.name} ({lang.nativeName})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

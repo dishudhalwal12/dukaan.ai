@@ -71,6 +71,75 @@ export const parseConfirmationStatus = (body: unknown): boolean =>
   body !== null &&
   (body as { confirmed?: unknown }).confirmed === true;
 
+/**
+ * Auth parameters worth removing once they have been read.
+ *
+ * `token_hash` is a single-use credential: anyone who reads it off the screen can
+ * spend it. `type` only means anything beside it. The `error*` keys are left
+ * over from a refused callback and would otherwise re-raise the same message on
+ * every reload.
+ */
+const AUTH_PARAMS = ['token_hash', 'type', 'error', 'error_code', 'error_description'] as const;
+
+/**
+ * The same page with the auth parameters stripped out of the query string and
+ * the fragment.
+ *
+ * Used the instant a confirmation link is read, so the token never sits in the
+ * address bar while the network round trip to Supabase is in flight — it is
+ * visible there for as long as the request takes, which on a phone is seconds.
+ * An emptied fragment is dropped rather than left as a bare `#`.
+ */
+export const cleanConfirmUrl = (href: string): string => {
+  try {
+    const url = new URL(href);
+    for (const key of AUTH_PARAMS) url.searchParams.delete(key);
+
+    // Only a fragment that is a parameter list is touched. The app also routes
+    // on plain hashes like `#orders`, and parsing one of those as parameters
+    // turns it into `#orders=`.
+    if (url.hash.length > 1 && url.hash.includes('=')) {
+      const hashParams = new URLSearchParams(url.hash.slice(1));
+      for (const key of AUTH_PARAMS) hashParams.delete(key);
+      const remaining = hashParams.toString();
+      url.hash = remaining ? `#${remaining}` : '';
+    }
+
+    const query = url.searchParams.toString();
+    return `${url.origin}${url.pathname}${query ? `?${query}` : ''}${url.hash}`;
+  } catch {
+    // An unparseable href is left alone; there is nothing sensible to clean.
+    return href;
+  }
+};
+
+/**
+ * Reads the confirmation payload from the page URL **once**, and scrubs the URL
+ * on the way out.
+ *
+ * The result is cached for the lifetime of the page because the URL is cleaned
+ * as part of reading it: a second call would otherwise find nothing and report
+ * "this is not a confirmation link". Caching also makes the React StrictMode
+ * double-render harmless, which matters because the token is single-use.
+ */
+let capturedParams: ConfirmParams | null | undefined;
+
+export const captureEmailConfirmParams = (): ConfirmParams | null => {
+  if (capturedParams !== undefined) return capturedParams;
+  if (typeof window === 'undefined') {
+    capturedParams = null;
+    return capturedParams;
+  }
+
+  const params = readEmailConfirmParams(window.location.href);
+  capturedParams = params;
+  if (params) {
+    window.history.replaceState({}, document.title, cleanConfirmUrl(window.location.href));
+  }
+  return params;
+};
+
+
 /** One verification per token, shared by every caller. */
 const attempts = new Map<string, Promise<unknown>>();
 

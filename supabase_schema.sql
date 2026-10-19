@@ -37,6 +37,7 @@ DROP TABLE IF EXISTS public.device_sessions CASCADE;
 DROP TABLE IF EXISTS public.merchant_preferences CASCADE;
 DROP TABLE IF EXISTS public.user_roles CASCADE;
 DROP TABLE IF EXISTS public.orders CASCADE;
+DROP TABLE IF EXISTS public.suppliers CASCADE;
 DROP TABLE IF EXISTS public.products CASCADE;
 DROP TABLE IF EXISTS public.business_profiles CASCADE;
 DROP TRIGGER  IF EXISTS on_auth_user_created_identity ON auth.users;
@@ -95,7 +96,11 @@ CREATE TABLE public.products (
     attributes  JSONB NOT NULL DEFAULT '{}'::jsonb,  -- business-type-specific fields
     created_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-    CONSTRAINT products_owner_external_id_key UNIQUE (user_id, external_id)
+    CONSTRAINT products_owner_external_id_key UNIQUE (user_id, external_id),
+    -- Stock is a count of things on a shelf: zero is "sold out", and there is no
+    -- such thing as less. The client clamps too; this is the row-level backstop
+    -- for anything else that writes here.
+    CONSTRAINT products_stock_non_negative CHECK (stock >= 0)
 );
 
 -- ==============================================================================
@@ -122,6 +127,19 @@ CREATE TABLE public.orders (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     updated_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
     CONSTRAINT orders_owner_external_id_key UNIQUE (user_id, external_id)
+);
+
+-- ==============================================================================
+-- 3b. SUPPLIERS — owner-scoped
+-- ==============================================================================
+CREATE TABLE public.suppliers (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    supplier_name     TEXT NOT NULL,
+    supplier_whatsapp TEXT NOT NULL,
+    notes             TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
 -- ==============================================================================
@@ -344,13 +362,22 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    meta      jsonb := coalesce(NEW.raw_user_meta_data, '{}'::jsonb);
-    app       jsonb := coalesce(NEW.raw_app_meta_data, '{}'::jsonb);
-    raw_name  text  := coalesce(nullif(meta->>'full_name', ''), nullif(meta->>'name', ''));
+    meta       jsonb := coalesce(NEW.raw_user_meta_data, '{}'::jsonb);
+    app        jsonb := coalesce(NEW.raw_app_meta_data, '{}'::jsonb);
+    email_name text  := initcap(regexp_replace(split_part(coalesce(NEW.email, ''), '@', 1), '[._+]+', ' ', 'g'));
+    raw_name   text  := coalesce(
+        nullif(meta->>'full_name', ''),
+        nullif(meta->>'name', ''),
+        nullif(email_name, ''),
+        'Store Owner'
+    );
     -- Collapse runs of whitespace so the split agrees with the client builder;
     -- otherwise ' Ramesh  Kumar' would seed a last name of ' Kumar'.
-    full_name text  := nullif(regexp_replace(trim(coalesce(raw_name, '')), '\s+', ' ', 'g'), '');
-    first     text  := nullif(split_part(full_name, ' ', 1), '');
+    full_name  text  := nullif(regexp_replace(trim(raw_name), '\s+', ' ', 'g'), '');
+    first      text  := coalesce(nullif(split_part(full_name, ' ', 1), ''), 'Store');
+    last_raw   text  := nullif(substr(full_name, length(first) + 2), '');
+    last       text  := coalesce(last_raw, 'Owner');
+    prov       text  := coalesce(nullif(app->>'provider', ''), 'email');
 BEGIN
     INSERT INTO public.user_identities (
         user_id, email, email_verified, owner_first_name, owner_last_name,
@@ -361,16 +388,22 @@ BEGIN
         NEW.email,
         (NEW.email_confirmed_at IS NOT NULL),
         first,
-        nullif(substr(full_name, length(coalesce(first, '')) + 2), ''),
-        nullif(full_name, ''),
+        last,
+        full_name,
         coalesce(nullif(meta->>'picture', ''), nullif(meta->>'avatar_url', '')),
-        nullif(app->>'provider', ''),
+        prov,
         nullif(meta->>'locale', ''),
         NEW.phone,
         NEW.created_at,
         NEW.last_sign_in_at
     )
-    ON CONFLICT (user_id) DO NOTHING;   -- idempotent: a re-run never duplicates
+    ON CONFLICT (user_id) DO UPDATE SET
+        owner_first_name = EXCLUDED.owner_first_name,
+        owner_last_name  = EXCLUDED.owner_last_name,
+        display_name     = EXCLUDED.display_name,
+        email_verified   = EXCLUDED.email_verified,
+        auth_provider    = EXCLUDED.auth_provider,
+        last_sign_in_at  = coalesce(EXCLUDED.last_sign_in_at, public.user_identities.last_sign_in_at);
     RETURN NEW;
 END;
 $$;
@@ -405,6 +438,7 @@ CREATE INDEX idx_products_owner_external ON public.products(user_id, external_id
 CREATE INDEX idx_orders_user_id ON public.orders(user_id);
 CREATE INDEX idx_orders_owner_external ON public.orders(user_id, external_id);
 CREATE INDEX idx_orders_created_at ON public.orders(created_at DESC);
+CREATE INDEX idx_suppliers_user_id ON public.suppliers(user_id);
 CREATE INDEX idx_device_sessions_user_id ON public.device_sessions(user_id);
 CREATE INDEX idx_device_sessions_user_started ON public.device_sessions(user_id, started_at DESC);
 CREATE INDEX idx_device_sessions_install_id ON public.device_sessions(install_id);
@@ -420,6 +454,7 @@ CREATE INDEX idx_user_roles_user_id ON public.user_roles(user_id);
 ALTER TABLE public.business_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suppliers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.merchant_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_identities ENABLE ROW LEVEL SECURITY;
@@ -453,6 +488,16 @@ CREATE POLICY "owner inserts own orders" ON public.orders
 CREATE POLICY "owner updates own orders" ON public.orders
     FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 CREATE POLICY "owner deletes own orders" ON public.orders
+    FOR DELETE USING (auth.uid() = user_id);
+
+-- Suppliers:
+CREATE POLICY "owner selects own suppliers" ON public.suppliers
+    FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "owner inserts own suppliers" ON public.suppliers
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner updates own suppliers" ON public.suppliers
+    FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "owner deletes own suppliers" ON public.suppliers
     FOR DELETE USING (auth.uid() = user_id);
 
 -- Device Sessions:

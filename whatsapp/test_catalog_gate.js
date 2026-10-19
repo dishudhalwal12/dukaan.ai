@@ -51,6 +51,19 @@ assert.strictEqual(amb.status, 'ambiguous', 'two distinct Maggi variants → ask
 assert(amb.options.length >= 2, 'the options are offered back');
 ok('resolveCatalogItem returns ok / missing / ambiguous');
 
+// ── zero-quantity items are unavailable even on an exact-name match ──────────
+// Regression: the exact-name shortcut used to bypass searchInCatalog's stock
+// filter, so adding "Coca-Cola" by its exact name skipped the inStock check.
+const OUT_OF_STOCK = [
+  { id: 'o1', name: 'Coca-Cola', category: 'Beverages', price: 45, unit: 'bottle', inStock: false, stock: 0, keywords: ['coke'] },
+  { id: 'o2', name: 'Parle-G Biscuits', category: 'Biscuits', price: 12, unit: 'pack', inStock: true, stock: 0, keywords: ['parle-g'] },
+  { id: 'o3', name: 'Good Day Cookies', category: 'Biscuits', price: 20, unit: 'pack', inStock: true, stock: 7, keywords: ['good day'] },
+];
+assert.strictEqual(resolveCatalogItem(OUT_OF_STOCK, 'Coca-Cola').status, 'missing', 'inStock:false is never resolvable by exact name');
+assert.strictEqual(resolveCatalogItem(OUT_OF_STOCK, 'Parle-G Biscuits').status, 'missing', 'stock 0 is never resolvable by exact name');
+assert.strictEqual(resolveCatalogItem(OUT_OF_STOCK, 'Good Day Cookies').status, 'ok', 'a positive stock still resolves');
+ok('resolveCatalogItem refuses exact-name matches with zero quantity');
+
 // ── resolveAndPriceItems is scoped ────────────────────────────────────────────
 const scoped = resolveAndPriceItems([{ name: 'Parle-G Biscuits', quantity: 2 }], SHOP);
 assert.strictEqual(scoped.items[0].price, 12, 'priced from the given catalog, not the global one');
@@ -84,6 +97,15 @@ assert.strictEqual(res.cart.items.length, 0, 'an out-of-catalog item is never ad
 assert.strictEqual(res.cart.items.find((i) => i.price === 30), undefined, 'no invented ₹30 line');
 assert.deepStrictEqual(res.unavailable, ['Coca-Cola'], 'the dropped item is reported');
 ok('an out-of-catalog item is dropped, not invented at ₹30');
+
+const jid4 = '914444444444@s.whatsapp.net';
+activeShops.set(jid4, { ...shop, shopId: 'u-zero', userId: 'u-zero', catalog: OUT_OF_STOCK });
+res = executeModelActions([{ type: 'ADD_TO_CART', args: { name: 'Coca-Cola', qty: 1 } }], jid4, 'Cust', '914444444444', null);
+assert.strictEqual(res.cart.items.length, 0, 'a zero-stock item is never added by exact name');
+assert.deepStrictEqual(res.unavailable, ['Coca-Cola'], 'the zero-stock item is reported as unavailable');
+res = executeModelActions([{ type: 'ADD_TO_CART', args: { name: 'Parle-G Biscuits', qty: 1 } }], jid4, 'Cust', '914444444444', null);
+assert.strictEqual(res.cart.items.length, 0, 'stock 0 is never added even when inStock is stale-true');
+ok('a zero-quantity item is dropped at the cart gate');
 
 const jid3 = '913333333333@s.whatsapp.net';
 activeShops.set(jid3, shop);

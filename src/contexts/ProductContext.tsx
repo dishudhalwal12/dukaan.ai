@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
 import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
@@ -7,6 +7,7 @@ import { currentIdentity, enforceDataOwnership } from '../utils/localStore.ts';
 import { syncProductsToCloud, deleteProductFromCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 import { whatsappService } from '../services/whatsappService.ts';
+import { normalizeStock } from '../utils/stock.ts';
 
 interface ProductContextType {
   products: Product[];
@@ -36,7 +37,11 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { language, t } = useLanguage();
+  const { language, t, languageReady, translationsLanguage } = useLanguage();
+  // Every generation gets an id. A language change starts a new generation, and
+  // the old stream's remaining chunks are ignored instead of being appended to
+  // the new (possibly different-language) list.
+  const insightsRequestId = useRef(0);
 
   /* ─── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ───
   // ─── Neutral fallback for "Other" — mirrors OnboardingFlow's constant ──────
@@ -128,7 +133,10 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       if (storedProducts && !categoryMismatch) {
         const parsed = JSON.parse(storedProducts);
-        if (Array.isArray(parsed)) setProducts(parsed);
+        // Re-clamped on the way in: a build that predates the guard may have
+        // left a negative count in storage, and it would otherwise persist for
+        // ever because nothing rewrites an untouched row.
+        if (Array.isArray(parsed)) setProducts(parsed.map(p => ({ ...p, stock: normalizeStock(p?.stock) })));
       } else {
         let initialSeed: Product[] = initialProducts;
 
@@ -181,45 +189,73 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [products, loading]);
 
   const refreshInsights = useCallback(async () => {
+    const requestId = ++insightsRequestId.current;
     setIsLoadingInsights(true);
     setError(null);
     setInsights([]); // Clear previous insights for streaming
 
     try {
-      for await (const insight of generateDynamicInsights(products, language)) {
+      for await (const insight of generateDynamicInsights(products, language, t)) {
+        if (requestId !== insightsRequestId.current) return;
         setInsights(prevInsights => [...prevInsights, insight]);
       }
     } catch (err) {
+      if (requestId !== insightsRequestId.current) return;
       const errorMessage = 'Failed to load insights due to a network or client error.';
       setError(errorMessage);
       console.error(err);
     } finally {
-      setIsLoadingInsights(false);
+      if (requestId === insightsRequestId.current) {
+        setIsLoadingInsights(false);
+      }
     }
-  }, [products, language]);
+  }, [products, language, t]);
 
   useEffect(() => {
-    // This effect runs only when the initial product data has been loaded.
-    // It is intentionally not dependent on `refreshInsights` (and by extension, `products`)
-    // to prevent automatic refreshes when the product catalog changes.
-    // Insights will now only refresh on initial load or when the user manually clicks the refresh button.
-    if (!loading) {
+    // Runs when the catalogue has loaded, and again when the language changes:
+    // the insights are model-written prose, so the only way to localise them is
+    // to ask again. Deliberately NOT dependent on `products` (that would re-ask
+    // on every stock edit) or on `refreshInsights` (same reason).
+    //
+    // `languageReady` is the first-load fix: on a new device the provider starts
+    // with English and only learns the account's language after the profile
+    // sync. Generating before that paints English insights first and then
+    // replaces them — the "refresh fixes it" bug.
+    //
+    // `translationsLanguage` closes the other half: changing `language` starts
+    // the bundle fetch, so without this the generator would run once with the
+    // previous language's strings and never re-run when the new bundle landed.
+    if (!loading && languageReady && translationsLanguage === language) {
       refreshInsights();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  }, [loading, language, languageReady, translationsLanguage]);
+
+  /**
+   * The single choke point for stock.
+   *
+   * Every writer funnels through here — the product form, accepting an order,
+   * cancelling one, and a restore from Supabase — so a negative count cannot be
+   * introduced by a caller that forgot to clamp. Before this, the only floor in
+   * the codebase was one `Math.max(0, …)` at a single call site in App.tsx.
+   */
+  const withSafeStock = (product: Product): Product => ({
+    ...product,
+    stock: normalizeStock(product.stock),
+  });
 
   const addProduct = (product: Omit<Product, 'id'>) => {
-    const newProduct: Product = {
+    const newProduct: Product = withSafeStock({
       ...product,
       id: `prod_${new Date().getTime()}`,
-    };
+    });
     setProducts(prevProducts => [...prevProducts, newProduct]);
   };
 
   const updateProduct = (updatedProduct: Product) => {
+    const safeProduct = withSafeStock(updatedProduct);
     setProducts(prevProducts =>
-      prevProducts.map(p => (p.id === updatedProduct.id ? updatedProduct : p))
+      prevProducts.map(p => (p.id === safeProduct.id ? safeProduct : p))
     );
   };
 
@@ -229,7 +265,9 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
   
   const loadProducts = useCallback((newProducts: Product[]) => {
-    setProducts(newProducts);
+    // Also covers a restore from Supabase and anything an older build left in
+    // localStorage with a negative count.
+    setProducts(newProducts.map(withSafeStock));
     try {
       localStorage.setItem('dukan-products', JSON.stringify(newProducts));
     } catch (e) {

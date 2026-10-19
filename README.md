@@ -154,6 +154,20 @@ Every key lives in the root `.env`. The complete list with the reasoning for eac
 > [!WARNING]
 > Every `VITE_*` variable ends up inside the browser bundle, where anyone can read it. Never put a Supabase `service_role` key, a database password, or any private credential in a `VITE_*` variable.
 
+### Where the language preference lives
+
+The chosen language is kept in two places on purpose. `localStorage` under
+`dukan-language` is what the app reads first, so switching language is instant
+and works with no network. `merchant_preferences.preferred_language` is the copy
+that survives a reinstall, a cleared browser or a new phone.
+
+A choice made on a device always wins over the stored value, which is why
+`dukan-language-chosen` exists: without it there is no way to tell "never chose,
+so English" apart from "chose English on purpose", and signing in would silently
+undo a deliberate choice. The stored value only fills the gap on a device that
+has not chosen yet. Logging out keeps the language and forgets the "chosen"
+marker, so the next account on that phone adopts its own saved language.
+
 ### Email confirmation links
 
 When **Confirm email** is on, signup sends a link that has to confirm the account
@@ -188,9 +202,22 @@ that account in.
 With steps 4–6 in place the confirmation page confirms in whatever browser opened
 it, and the "Check your email" panel polls the status endpoint every 3 seconds —
 so a confirmation on one device finishes the sign-in on every device, with no
-manual refresh and no second tap. Where the link is opened in a mail app's
-browser, Android is offered a hand-off to Chrome; iOS is only advised, because no
-web page can launch another browser.
+manual refresh and no second tap.
+
+The landing page never refreshes, redirects or opens a second tab. It used to
+offer an "Open in Chrome" hand-off for mail-app browsers, but that re-opened the
+same one-time link in another tab: the token was spent twice and the second tab
+painted "This link didn't work" over a confirmation that had actually succeeded.
+The link is also wiped out of the address bar the instant it is read, before the
+network round trip, so the one-time `token_hash` is not left on screen.
+
+One part of the Google/consent experience is not in this repo: what the Google
+account chooser itself shows. Set **Authentication → Providers → Google** in
+Supabase, and the OAuth consent screen in Google Cloud (app name, support email,
+homepage and privacy-policy URL — the production URL, e.g.
+`https://<app>.vercel.app`). The in-app half — the "By continuing you agree to
+our Privacy Policy" line and the address the service is served from — is in
+`AuthModal`.
 
 `emailRedirectTo` is still sent on signup and resend. Before step 4 it is what
 decides where the confirmation link lands; after step 4 it no longer affects
@@ -211,7 +238,8 @@ dukaan.ai/
 ├── vite.config.ts               # Dev server (3000) + /api & /events proxy -> 5001
 ├── tsconfig.json                # TypeScript config (scopes src/ + vite.config.ts)
 ├── package.json                 # Frontend dependencies & scripts
-├── supabase_schema.sql          # Tables + Row Level Security policies
+├── supabase_schema.sql          # Tables + Row Level Security policies (fresh installs)
+├── supabase_migrations/         # Idempotent, non-destructive migrations for a live database
 ├── .env.example                 # The one environment template for the whole app
 ├── public/                      # Static assets served as-is
 │   ├── logo.svg

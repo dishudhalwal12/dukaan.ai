@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { confirmEmail } from '../services/auth.ts';
 import { confirmTokenOnce } from '../utils/confirmLink.ts';
 import type { ConfirmParams } from '../utils/confirmLink.ts';
-import { browserHandoffUrl, isInAppWebView, isIos } from '../utils/openInBrowser.ts';
 
 interface EmailConfirmScreenProps {
   params: ConfirmParams;
@@ -24,8 +23,11 @@ type ConfirmState = 'verifying' | 'confirmed' | 'failed';
  * link was opened. Whether it was opened in the "right" browser no longer
  * decides whether the account is confirmed.
  *
- * The in-app browser hand-off below is a convenience on top of that, never a
- * prerequisite: Android can be sent to Chrome explicitly, iOS can only be asked.
+ * The page does not refresh, redirect or open anything else. It used to offer an
+ * "Open in Chrome" hand-off for mail-app browsers; that re-opened the very same
+ * one-time link in a second tab, which spent the token twice and painted "This
+ * link didn't work" over a confirmation that had actually succeeded. Opening a
+ * second tab is exactly what this screen must not do, so the hand-off is gone.
  */
 const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authError, onContinue }) => {
   const [state, setState] = useState<ConfirmState>(authError ? 'failed' : 'verifying');
@@ -53,12 +55,6 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
         return;
       }
 
-      // Drop the spent token before anything can replay it. A reload now lands on
-      // the app itself rather than re-verifying — which a single-use token would
-      // answer with "invalid link", over a confirmation that succeeded.
-      if (typeof window !== 'undefined') {
-        window.history.replaceState({}, document.title, window.location.origin + window.location.pathname);
-      }
       setState('confirmed');
     })();
 
@@ -66,16 +62,6 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
       alive = false;
     };
   }, [authError, params.tokenHash, params.type]);
-
-  // A link tapped in Gmail opens in Gmail's browser: a different storage
-  // sandbox. Offer the real browser, and say plainly that it is optional.
-  const handoff = useMemo(() => {
-    if (typeof navigator === 'undefined' || !isInAppWebView(navigator.userAgent)) return null;
-    const href = typeof window !== 'undefined' ? window.location.href : '';
-    return isIos(navigator.userAgent)
-      ? { kind: 'ios' as const, href: null }
-      : { kind: 'android' as const, href: browserHandoffUrl(href) };
-  }, []);
 
   return (
     <div className="min-h-screen bg-black flex justify-center">
@@ -96,16 +82,16 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
               <div className="w-12 h-12 bg-[#E6E6FA]/10 border border-[#E6E6FA]/30 rounded-2xl flex items-center justify-center mx-auto mb-3 text-[#E6E6FA]">
                 <span className="material-symbols-outlined text-2xl">check_circle</span>
               </div>
-              <p className="text-white font-bold text-base mb-1">Email confirmed</p>
+              <p className="text-white font-bold text-base mb-1">Email verified</p>
               <p className="text-neutral-400 text-xs leading-relaxed">
-                You're all set. Any device where you signed in will finish signing in on its own.
+                Your email address is now verified. You can now visit the app again.
               </p>
               <button
                 type="button"
                 onClick={onContinue}
                 className="mt-6 w-full bg-[#E6E6FA] text-black font-semibold py-2.5 rounded-xl hover:bg-opacity-90 transition-opacity text-sm"
               >
-                Go to app
+                Visit the app
               </button>
             </>
           )}
@@ -130,30 +116,6 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
                 Go to sign in
               </button>
             </>
-          )}
-
-          {handoff && (
-            <div className="mt-5 pt-4 border-t border-neutral-800 text-left">
-              {handoff.kind === 'android' && handoff.href ? (
-                <>
-                  <p className="text-neutral-400 text-xs mb-2">
-                    Opening in a mail app's browser? Open it properly instead:
-                  </p>
-                  <a
-                    href={handoff.href}
-                    className="w-full bg-transparent border border-neutral-700 text-white text-xs font-medium py-2.5 rounded-xl flex items-center justify-center space-x-2"
-                  >
-                    <span className="material-symbols-outlined text-base">open_in_new</span>
-                    <span>Open in Chrome</span>
-                  </a>
-                </>
-              ) : (
-                <p className="text-neutral-400 text-xs leading-relaxed">
-                  Opening in a mail app's browser? Tap <span className="text-white">•••</span> and choose
-                  <span className="text-white"> Open in Safari</span> — optional, this page confirms either way.
-                </p>
-              )}
-            </div>
           )}
         </div>
       </div>

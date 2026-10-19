@@ -7,8 +7,10 @@ interface LocationModalProps {
    * `onboarding` offers "Setup later", because a shopkeeper who is not standing
    * in the shop right now must still be able to finish setting up.
    * `required` does not: the catalog cannot be filled from an unknown location.
+   * `edit` is the same gate opened on purpose from Settings, so it offers a
+   * plain "Back" instead of pretending something is missing.
    */
-  mode: 'onboarding' | 'required';
+  mode: 'onboarding' | 'required' | 'edit';
   onCaptured: (location: StoreLocation) => void;
   onSetupLater?: () => void;
   onClose?: () => void;
@@ -71,6 +73,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
     mode === 'required'
       ? 'Add your products after setting your store location.'
       : null;
+  const canDismiss = mode === 'required' || mode === 'edit';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -109,7 +112,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
           </button>
         )}
 
-        {mode === 'required' && onClose && (
+        {canDismiss && onClose && (
           <button
             onClick={onClose}
             className="w-full text-neutral-400 text-sm font-medium py-3 mt-1 hover:text-neutral-200 transition-colors"

@@ -6,6 +6,9 @@ import { businessPresets } from '../data/businessPresets.ts';
 import { sanitizeForPrompt } from '../utils/sanitize.ts';
 import LocationModal from '../components/LocationModal.tsx';
 import { saveStoreLocation } from '../utils/location.ts';
+import { LANGUAGES } from '../data/languages.ts';
+import { localizedFallbackQuestions, type FallbackQuestion } from '../data/onboardingQuestions.ts';
+import { languageInstruction, languageName } from '../utils/languageName.ts';
 
 interface OnboardingFlowProps {
   onComplete: () => void;
@@ -45,9 +48,8 @@ const NameStep: React.FC<{ onNext: (name: string) => void }> = ({ onNext }) => {
   );
 };
 
-const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeAddress: string; storeCategory: string }) => void }> = ({ onNext }) => {
+const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeCategory: string }) => void }> = ({ onNext }) => {
   const [storeName, setStoreName] = useState('');
-  const [storeAddress, setStoreAddress] = useState('');
   const [storeCategory, setStoreCategory] = useState('');
   const [showLocationModal, setShowLocationModal] = useState(false);
   const { t } = useLanguage();
@@ -56,18 +58,22 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
   // "Setup later" is offered because a shopkeeper who is not in the shop right
   // now must still be able to finish. The catalog re-asks before the first
   // product, where it cannot be deferred.
+  //
+  // There is deliberately no address box: the position is the address, and a
+  // typed address was one more field to fight with on a phone keyboard while
+  // standing behind a counter.
   const finish = () => {
     setShowLocationModal(false);
-    onNext({ storeName, storeAddress, storeCategory });
+    onNext({ storeName, storeCategory });
   };
 
   const handleContinue = () => {
-    if (storeName.trim() && storeAddress.trim() && storeCategory.trim()) {
+    if (storeName.trim() && storeCategory.trim()) {
       setShowLocationModal(true);
     }
   };
   
-  const canContinue = storeName.trim() && storeAddress.trim() && storeCategory.trim();
+  const canContinue = Boolean(storeName.trim() && storeCategory.trim());
 
   return (
     <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-sm w-full text-center shadow-lg">
@@ -84,22 +90,6 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
             value={storeName}
             onChange={(e) => setStoreName(e.target.value)}
           />
-        </div>
-        <div>
-          <label className="text-white font-bold" htmlFor="store-address">{t('label_store_address')}</label>
-          <div className="relative">
-            <input
-              className="w-full bg-transparent border-t-0 border-x-0 border-b-2 border-neutral-600 text-white text-lg py-2 pr-10 focus:outline-none focus:ring-0 focus:border-[#E6E6FA] placeholder-neutral-400 transition-colors duration-300"
-              id="store-address"
-              placeholder={t('placeholder_store_address_example')}
-              type="text"
-              value={storeAddress}
-              onChange={(e) => setStoreAddress(e.target.value)}
-            />
-            <span className="absolute inset-y-0 right-0 flex items-center pr-3">
-              <span className="material-symbols-outlined text-neutral-500">place</span>
-            </span>
-          </div>
         </div>
         <div>
           <label className="text-white font-bold" htmlFor="store-category">{t('label_store_category')}</label>
@@ -142,143 +132,264 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeA
   );
 };
 
+/**
+ * Language preference, asked before the store details.
+ *
+ * Applying the choice immediately — rather than on Continue — is deliberate: the
+ * heading and the button below it change language under the shopkeeper's finger,
+ * which is the clearest possible confirmation that the choice took effect. Every
+ * screen after this one, including the AI questionnaire, opens in that language.
+ */
+const LanguageStep: React.FC<{ onNext: () => void }> = ({ onNext }) => {
+  const { language, setLanguage, t } = useLanguage();
+
+  return (
+    <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-sm w-full shadow-lg flex flex-col max-h-[80vh]">
+      <h2 className="text-white text-2xl font-bold mb-1 text-center">{t('onboarding_language_title')}</h2>
+      <p className="text-neutral-400 text-xs text-center mb-4">{t('onboarding_language_hint')}</p>
+
+      <div className="space-y-2 overflow-y-auto hide-scrollbar flex-1">
+        {LANGUAGES.map((option) => {
+          const selected = language === option.code;
+          return (
+            <button
+              key={option.code}
+              type="button"
+              onClick={() => setLanguage(option.code)}
+              aria-pressed={selected}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-colors ${
+                selected
+                  ? 'border-[#E6E6FA] bg-[#E6E6FA]/10 text-white'
+                  : 'border-neutral-700 text-neutral-300 hover:border-neutral-500'
+              }`}
+            >
+              <span>
+                <span className="block font-semibold text-base">{option.nativeName}</span>
+                <span className="block text-xs text-neutral-500">{option.name}</span>
+              </span>
+              {selected && <span className="material-symbols-outlined text-[#E6E6FA]">check_circle</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={onNext}
+        className="w-full bg-[#E6E6FA] text-black font-semibold py-3 rounded-full text-lg hover:bg-opacity-90 transition-opacity mt-4"
+      >
+        {t('onboarding_continue')}
+      </button>
+    </div>
+  );
+};
+
+interface AiQuestion {
+  type: 'select' | 'input';
+  title: string;
+  options?: string[];
+  intent?: string;
+  subtext?: string;
+  multiSelect?: boolean;
+}
+
+/**
+ * Keeps only the questions that can actually be rendered.
+ *
+ * The model is asked for a strict shape, and mostly gives one — but a single
+ * malformed entry used to be enough to paint an empty card (no title, no
+ * options) that the shopkeeper could not answer and could not skip.
+ */
+const parseQuestionnaire = (parsed: unknown): AiQuestion[] => {
+  const raw = (parsed as { questions?: unknown })?.questions;
+  if (!Array.isArray(raw)) return [];
+
+  const cleaned: AiQuestion[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const q = entry as Record<string, unknown>;
+    const title = typeof q.title === 'string' ? q.title.trim() : '';
+    if (!title) continue;
+
+    const type: 'select' | 'input' = q.type === 'input' ? 'input' : 'select';
+    const options = Array.isArray(q.options)
+      ? q.options
+          .map((option) => (typeof option === 'string' ? option.trim() : ''))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+
+    // A select question with nothing to select is unanswerable.
+    if (type === 'select' && options.length === 0) continue;
+
+    cleaned.push({
+      type,
+      title,
+      options: type === 'select' ? options : undefined,
+      intent: typeof q.intent === 'string' && q.intent.trim() ? q.intent.trim() : 'unknown',
+      subtext: typeof q.subtext === 'string' && q.subtext.trim() ? q.subtext.trim() : undefined,
+      multiSelect: Boolean(q.multiSelect),
+    });
+  }
+  return cleaned;
+};
+
 const BusinessContextStep: React.FC<{ 
-  details: { storeName: string; storeAddress: string; storeCategory: string };
+  details: { storeName: string; storeCategory: string };
   onComplete: (answers: any) => void;
 }> = ({ details, onComplete }) => {
+  const { language, t } = useLanguage();
   const [stepIndex, setStepIndex] = useState(0);
   const [answers, setAnswers] = useState<any[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [isOptionsExpanded, setIsOptionsExpanded] = useState(false);
-  const [dynamicConfig, setDynamicConfig] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // The localized fallback is painted first. The model's questionnaire replaces
+  // only the questions the shopkeeper has not reached yet.
+  const [questionSet, setQuestionSet] = useState<FallbackQuestion[]>(() =>
+    localizedFallbackQuestions(language),
+  );
+  const [isPersonalizing, setIsPersonalizing] = useState(true);
+  const answersRef = React.useRef<any[]>([]);
+
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  // A deliberately short splash. The shopkeeper should never watch a spinner
+  // while a model decides whether it can answer at all.
+  React.useEffect(() => {
+    const id = setTimeout(() => setIsPersonalizing(false), 3500);
+    return () => clearTimeout(id);
+  }, []);
+
+  const mergeAiQuestions = (
+    base: FallbackQuestion[],
+    ai: FallbackQuestion[],
+  ): FallbackQuestion[] => {
+    // Answers already given, and the question on screen, are never rewritten:
+    // swapping a question after it was answered would file the answer under the
+    // wrong heading. Only the unanswered tail is personalized.
+    const answeredCount = answersRef.current.length;
+    const protectedCount = Math.min(answeredCount + 1, base.length);
+    const head = base.slice(0, protectedCount);
+    const tail = base.slice(protectedCount);
+
+    // On the last fallback question: let them finish rather than moving the
+    // finish line under their finger.
+    if (tail.length === 0) return base;
+
+    const answeredIntents = new Set(
+      base
+        .slice(0, answeredCount)
+        .map((q) => q.intent)
+        .filter((intent) => intent && intent !== 'unknown'),
+    );
+    const next = ai.filter(
+      (q) => !q.intent || q.intent === 'unknown' || !answeredIntents.has(q.intent),
+    );
+
+    return next.length > 0 ? [...head, ...next] : base;
+  };
 
   React.useEffect(() => {
     let mounted = true;
     const fetchGeminiData = async () => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const userName = sanitizeForPrompt(localStorage.getItem('dukan-profile-name') || 'the owner');
         const safeCategory = sanitizeForPrompt(details.storeCategory);
         const safeStoreName = sanitizeForPrompt(details.storeName);
-        const safeAddress = sanitizeForPrompt(details.storeAddress);
-        const prompt = `You are a top-tier MBA business consultant. The user owns a '${safeCategory}' small business named '${safeStoreName}' in India at '${safeAddress}'. The user's name is '${userName}'. Generate a dynamic onboarding questionnaire of 4 to 7 highly intelligent questions to deeply understand their specific business context. Include a mix of MCQ ('select') and subjective ('input') questions. Respond ONLY in strictly valid JSON format. Schema: {"questions": [{"type": "select" | "input", "title": "string (the question)", "options": ["string"] (required if select, max 5), "intent": "string (short key representing question intent)", "subtext": "string (optional)", "multiSelect": boolean (optional)}]}`;
+        // The questions are asked in the language the shopkeeper just chose, in
+        // words they already use. The previous prompt asked a model to be a "MBA
+        // business consultant", which produced MBA vocabulary — the exact
+        // opposite of what someone behind a counter needs.
+        const prompt = `You write a short setup questionnaire for a small shop owner in India. You are not writing for a manager. You are writing for the person behind the counter, who knows their shop better than any consultant and does not want to read business English.
 
-        const response = await withGeminiFailover((client) =>
-          client.models.generateContent({
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-            },
-          })
-        );
+The shop: a '${safeCategory}' business called '${safeStoreName}'. The owner's name is '${userName}'.
 
-        clearTimeout(timeoutId);
+LANGUAGE — the most important rule:
+- ${languageInstruction(language)}
+- Every question, every option and every sub-hint must be in ${languageName(language)}.
+- The only field that stays in English is "intent" (a short lowercase code like "primary_challenge").
+
+STYLE — write like a person talking, not like a form:
+- One short sentence per question, about 12 words at most.
+- Use the words the owner already says out loud. Never use business jargon.
+- Never use these words or ideas: inventory turnover, SKU, churn, procurement, omnichannel, conversion funnel, margin optimisation, supply chain, customer acquisition, operational efficiency, leverage, utilise.
+- Each option is 2 to 5 words and is a real, concrete choice.
+- No smileys, no exclamation marks, no "Let's".
+
+SHAPE:
+- 4 to 7 questions.
+- Most are "select"; 1 or 2 may be "input" (the owner types the answer).
+- "options" only on "select", with 2 to 5 entries.
+
+EXAMPLE OF THE STYLE (English, for illustration only — do not copy it, and do not answer in English):
+  bad:  "What is your current inventory turnover challenge?"
+  good: "Which items run out fastest?"
+
+Return ONLY this JSON, with no markdown and no explanation:
+{"questions":[{"type":"select","title":"string","options":["string"],"intent":"english_snake_case","subtext":"string","multiSelect":false}]}`;
+
+        const response = await Promise.race([
+          withGeminiFailover((client) =>
+            client.models.generateContent({
+              contents: prompt,
+              config: {
+                responseMimeType: 'application/json',
+              },
+            })
+          ),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('questionnaire-timeout')), 10000);
+          }),
+        ]);
 
         const text = response.text;
         if (text && mounted) {
           const parsed = JSON.parse(text);
-          if (parsed.questions && Array.isArray(parsed.questions)) {
-            setDynamicConfig(parsed.questions);
+          const questions = parseQuestionnaire(parsed);
+          // A questionnaire too broken to ask (one question, or none with
+          // options) is treated as no questionnaire at all, so the fallback set
+          // appears instead of a blank card.
+          if (questions.length >= 3) {
+            const normalized: FallbackQuestion[] = questions.map((q) => ({
+              title: q.title,
+              subtext: q.subtext ?? (q.multiSelect ? t('onboarding_select_all') : undefined),
+              type: q.type,
+              options: q.options,
+              multiSelect: !!q.multiSelect,
+              intent: q.intent || 'unknown',
+              placeholder: q.type === 'input' ? t('onboarding_type_answer') : undefined,
+            }));
+            setQuestionSet((prev) => mergeAiQuestions(prev, normalized));
+          } else {
+            console.warn('[Onboarding] AI questionnaire rejected as incomplete', questions.length);
           }
         }
       } catch (e) {
         console.warn('OpenRouter AI failed, falling back to preset', e);
       } finally {
-        if (mounted) setIsLoading(false);
+        if (timeoutId) clearTimeout(timeoutId);
       }
     };
     fetchGeminiData();
     return () => { mounted = false; };
-  }, [details]);
+  }, [details, language]);
 
-  // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
-  // const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
-
-  const q1Options = (() => {
-    switch (details.storeCategory) {
-      case 'Grocery / Kirana':
-      case 'Pharmacy':
-        return ['Managing expired inventory', 'Tracking customer credit (Udhar)', 'Competing with quick commerce', 'Managing multiple suppliers'];
-      case 'Salon':
-        return ['Empty slots during weekdays', 'Managing staff schedules', 'Retaining loyal clients', 'No-shows on appointments'];
-      case 'Restaurant':
-      case 'Cafe':
-        return ['Food wastage', 'Managing rush hours', 'High delivery commissions', 'Inconsistent food quality'];
-      default:
-        return ['Getting new customers', 'Managing cash flow', 'Hiring good staff', 'Tracking inventory'];
-    }
-  })();
-
+  // The set is already localized; there is no second fallback ladder to keep in
+  // sync. This only adapts it to the card's render shape.
   const getQuestionConfig = (index: number) => {
-    if (dynamicConfig && Array.isArray(dynamicConfig) && index < dynamicConfig.length) {
-      const q = dynamicConfig[index];
-      // Ensure specific structure matches existing UI expectations
-      return {
-        title: q.title || `Question ${index + 1}`,
-        subtext: q.subtext || (q.multiSelect ? "(Select all that apply)" : undefined),
-        type: q.type === 'input' ? 'input' : 'select',
-        options: q.options || [],
-        multiSelect: !!q.multiSelect,
-        intent: q.intent || 'unknown',
-        placeholder: q.type === 'input' ? 'Type your answer here...' : undefined
-      };
-    }
-
-    // Fallback Preset Logic
-    if (index === 0) {
-      return {
-        title: "1. What is your biggest challenge right now?",
-        subtext: "(Select up to 2)",
-        type: 'select',
-        options: [...q1Options, "Other"],
-        multiSelect: true,
-        intent: 'primary_challenge'
-      };
-    }
-    if (index === 1) {
-      const q1Answers = answers[0] || [];
-      const mainChallenge = q1Answers[0] || '';
-
-      if (mainChallenge.includes('expired') || mainChallenge.includes('wastage') || mainChallenge.includes('inventory')) {
-        return { title: "2. How do you track your waste/inventory?", type: 'select', options: ["Manual counts", "Basic POS", "No tracking yet", "Supplier handles it"], intent: 'inventory_tracking' };
-      }
-      if (mainChallenge.includes('credit') || mainChallenge.includes('cash flow') || mainChallenge.includes('Udhar')) {
-        return { title: "2. How do you manage payments & credit?", type: 'select', options: ["Paper diary", "Accounting App", "Memory", "Cash only"], intent: 'credit_management' };
-      }
-      if (mainChallenge.includes('slots') || mainChallenge.includes('no-shows') || mainChallenge.includes('retention')) {
-        return { title: "2. How do clients book your services?", type: 'select', options: ["Phone calls", "Walk-ins only", "WhatsApp", "Booking platform"], intent: 'booking_method' };
-      }
-      return { title: "2. How do you primarily serve customers?", type: 'select', options: ["Walk-in", "Appointment-based", "Online", "Mix"], intent: 'service_method' };
-    }
-    if (index === 2) {
-      return {
-        title: "3. What do you want to improve the most?",
-        type: 'select',
-        options: ['Increase sales', 'Reduce losses', 'Improve retention', 'Improve efficiency', 'Better financial visibility'],
-        intent: 'primary_goal'
-      };
-    }
-    // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
-    // if (index === 3 && isOtherCategory) {
-    //    return {
-    //      title: "4. Describe your business in one line",
-    //      type: 'input',
-    //      placeholder: "e.g. A boutique selling handmade jewelry",
-    //      intent: 'business_description'
-    //    };
-    // }
-    return null;
+    const q = questionSet[index];
+    if (!q) return null;
+    return {
+      ...q,
+      placeholder: q.type === 'input' ? t('onboarding_type_answer') : undefined,
+    };
   };
 
   const currentQ = getQuestionConfig(stepIndex);
-  // [MULTI-BUSINESS] grocery-only build: preset step count is 3 (the "Other" 4th step is disabled).
-  // const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : (isOtherCategory ? 4 : 3);
-  const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : 3;
+  const totalSteps = questionSet.length;
 
   const handleToggle = (opt: string) => {
     // @ts-ignore
@@ -430,8 +541,6 @@ Return format:
     
     const newAnswers = [...answers, finalSelection];
     if (stepIndex >= totalSteps - 1) {
-      setIsLoading(true);
-      
       const completeData = {
         businessContext: details,
         timestamp: new Date().toISOString(),
@@ -469,12 +578,13 @@ Return format:
     }
   };
 
-  if (isLoading) {
+  if (isPersonalizing) {
     return (
       <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-sm w-full shadow-lg flex flex-col h-[65vh] max-h-[550px] overflow-hidden justify-center items-center">
-         <div className="animate-pulse flex flex-col items-center">
+         <div className="animate-pulse flex flex-col items-center px-4">
            <div className="w-8 h-8 rounded-full border-2 border-neutral-600 border-t-[#E6E6FA] animate-spin mb-6" />
-           <p className="text-neutral-400 text-sm font-medium">Personalizing your experience...</p>
+           <p className="text-neutral-300 text-sm font-medium text-center">{t('onboarding_personalizing_title')}</p>
+           <p className="text-neutral-500 text-xs mt-2 text-center leading-relaxed">{t('onboarding_personalizing_hint')}</p>
          </div>
       </div>
     );
@@ -499,7 +609,7 @@ Return format:
         .dust-enter { animation: dust-in 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
       `}</style>
       <div className="text-center mb-6 shrink-0 z-10">
-        <h2 className="text-white text-2xl font-bold mb-2">Help us understand you</h2>
+        <h2 className="text-white text-2xl font-bold mb-2">{t('onboarding_questions_title')}</h2>
       </div>
 
       <div className="flex-1 relative">
@@ -600,7 +710,7 @@ Return format:
           disabled={!canContinue || isTransitioning}
           className="w-full bg-[#E6E6FA] text-black font-semibold py-3.5 rounded-full text-lg hover:bg-opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {stepIndex === totalSteps - 1 ? 'Complete Setup' : 'Continue'}
+          {t('onboarding_continue')}
         </button>
       </div>
     </div>
@@ -609,17 +719,22 @@ Return format:
 
 
 const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
-  const [step, setStep] = useState<'name' | 'storeDetails' | 'businessContext'>('name');
-  const [storeDetails, setStoreDetails] = useState<{storeName: string, storeAddress: string, storeCategory: string} | null>(null);
+  const [step, setStep] = useState<'name' | 'language' | 'storeDetails' | 'businessContext'>('name');
+  const [storeDetails, setStoreDetails] = useState<{storeName: string, storeCategory: string} | null>(null);
 
   const handleNameNext = (name: string) => {
     localStorage.setItem('dukan-profile-name', name);
+    // Language comes before the store details so every screen after this point,
+    // including the AI questionnaire, is already in the chosen language.
+    setStep('language');
+  };
+
+  const handleLanguageNext = () => {
     setStep('storeDetails');
   };
 
-  const handleStoreDetailsNext = (details: { storeName: string; storeAddress: string; storeCategory: string }) => {
+  const handleStoreDetailsNext = (details: { storeName: string; storeCategory: string }) => {
     localStorage.setItem('dukan-store-name', details.storeName);
-    localStorage.setItem('dukan-store-address', details.storeAddress);
     localStorage.setItem('dukan-store-category', details.storeCategory);
     setStoreDetails(details);
     setStep('businessContext');
@@ -636,6 +751,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
             answers,
             // Mirrored so "Welcome back, <name>!" still works on another device.
             ownerName: localStorage.getItem('dukan-profile-name') || undefined,
+            preferredLanguage: localStorage.getItem('dukan-language') || 'en',
             timestamp: new Date().toISOString()
         };
         // The dynamic AI-generated Q&A (question/intent/type/answer) is the
@@ -658,6 +774,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         {step === 'name' && <NameStep onNext={handleNameNext} />}
+        {step === 'language' && <LanguageStep onNext={handleLanguageNext} />}
         {step === 'storeDetails' && <StoreDetailsStep onNext={handleStoreDetailsNext} />}
         {step === 'businessContext' && storeDetails && <BusinessContextStep details={storeDetails} onComplete={handleContextComplete} />}
     </div>

@@ -154,7 +154,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           </div>
           <div className="space-y-4">
             {error ? (
-                <InsightCard icon="error" title="Error" description={error} />
+                <InsightCard icon="error" title={t('generic_error')} description={error} />
             ) : (
               <>
                 {insights.map((insight, index) => (
@@ -171,13 +171,13 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
                 {!isLoadingInsights && insights.length === 0 && (
                   <div className="flex flex-col items-center justify-center p-6 bg-[#1A1A1A] rounded-xl text-center border border-[#2D2D2D]">
                     <span className="material-symbols-outlined text-3xl text-neutral-400 mb-2">auto_awesome</span>
-                    <p className="text-sm font-semibold text-white mb-1">No insights generated yet</p>
-                    <p className="text-xs text-neutral-400 mb-3">Tap refresh to analyze your store catalog.</p>
+                    <p className="text-sm font-semibold text-white mb-1">{t('dashboard_no_insights')}</p>
+                    <p className="text-xs text-neutral-400 mb-3">{t('dashboard_no_insights_hint')}</p>
                     <button
                       onClick={refreshInsights}
                       className="px-4 py-1.5 bg-[#E6E6FA] text-black text-xs font-semibold rounded-lg hover:bg-white transition-colors"
                     >
-                      Generate Insights
+                      {t('dashboard_generate_insights')}
                     </button>
                   </div>
                 )}

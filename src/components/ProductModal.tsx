@@ -3,6 +3,7 @@ import { Product } from '../types.ts';
 import { XIcon, CameraIcon } from './Icons.tsx';
 import { useProducts } from '../contexts/ProductContext.tsx';
 import { resizeImage } from '../utils/image.ts';
+import { isValidStockInput, normalizeStock } from '../utils/stock.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 
 interface ProductModalProps {
@@ -62,10 +63,17 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, productToE
         alert("Please fill all fields.");
         return;
     }
+    // `min="0"` stops the arrows going below zero, but not a typed "-5", and not
+    // the spinner in browsers that ignore `min` on a manual entry. Say so plainly
+    // instead of silently saving a corrected number.
+    if (!isValidStockInput(stock)) {
+        alert("Stock has to be a whole number, 0 or more.");
+        return;
+    }
     const productData = {
       name,
       price: `₹${price}`,
-      stock: parseInt(stock, 10),
+      stock: normalizeStock(stock),
       stockUnit,
       imageUrl: imageUrl || 'https://via.placeholder.com/150/1A1A1A/E6E6FA?text=No+Image',
     };
@@ -155,7 +163,7 @@ const ProductModal: React.FC<ProductModalProps> = ({ isOpen, onClose, productToE
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="stock" className="text-sm font-medium text-neutral-400">Stock</label>
-              <input id="stock" type="number" value={stock} onChange={e => setStock(e.target.value)} className="w-full bg-[#2D2D2D] mt-1 text-white rounded-md p-2 border-transparent focus:ring-2 focus:ring-[#E6E6FA] focus:outline-none" required/>
+              <input id="stock" type="number" min="0" step="1" inputMode="numeric" value={stock} onChange={e => setStock(e.target.value)} className="w-full bg-[#2D2D2D] mt-1 text-white rounded-md p-2 border-transparent focus:ring-2 focus:ring-[#E6E6FA] focus:outline-none" required/>
             </div>
             <div>
               <label htmlFor="unit" className="text-sm font-medium text-neutral-400">Unit</label>

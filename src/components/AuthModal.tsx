@@ -1,23 +1,43 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, getEmailConfirmationStatus, User } from '../services/auth.ts';
+import { signInWithEmail, signUpWithEmail, signInWithGoogle, resendConfirmationEmail, getEmailConfirmationStatus, abandonPendingOAuth, User } from '../services/auth.ts';
 import { syncOnLogin } from '../services/cloudSync.ts';
 import { GoogleIcon } from './Icons.tsx';
 import { classifyAuthOutcome, isUnconfirmedEmailError } from '../utils/authOutcome.ts';
+import { describeAuthFailure, AuthFailureAction } from '../utils/authMessages.ts';
 import { openMailApp } from '../utils/openMail.ts';
 import { supabase } from '../supabase.ts';
 
 /** How often the waiting panel asks the server whether the account confirmed. */
 const CONFIRMATION_POLL_MS = 3000;
 
+/**
+ * How long the Google button may spin before the page decides the redirect never
+ * happened. The redirect itself is near-instant, so a page still on screen after
+ * this is one whose consent window was closed.
+ */
+const GOOGLE_STUCK_MS = 10_000;
+
 interface AuthModalProps {
   onClose: () => void;
   onSuccess: () => void;
+  /** Opens the privacy policy over the sheet, for the consent line. */
+  onOpenPrivacy?: () => void;
 }
 
-const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
+/** Where this build is served from, shown so consent names a real address. */
+const serviceAddress = (): string => {
+  try {
+    return typeof window === 'undefined' ? '' : window.location.origin;
+  } catch {
+    return '';
+  }
+};
+
+const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState(() => (typeof localStorage !== 'undefined' ? localStorage.getItem('dukan-profile-name') || '' : ''));
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +46,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
   const [formNotice, setFormNotice] = useState<string | null>(null);
+  // Set when the failed attempt deserves a nudge towards creating an account.
+  const [errorAction, setErrorAction] = useState<AuthFailureAction>('none');
 
   // Held in a ref so the effects below stay subscribed/polling across the
   // frequent re-renders of the app shell instead of tearing down every render.
@@ -68,6 +90,49 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       subscription.unsubscribe();
     };
   }, [completeSignIn]);
+
+  // Closing Google's window leaves this page exactly as it was: no redirect
+  // happened, so nothing ever resets the button and it spins until the tab is
+  // reloaded. That is what reads as "the app keeps refreshing". Reset it as soon
+  // as the page is back in front of the user with no session.
+  useEffect(() => {
+    if (!googleLoading) return;
+
+    let settled = false;
+    const reset = async () => {
+      if (settled) return;
+      if (document.visibilityState === 'hidden') return;
+
+      let signedIn = false;
+      try {
+        const { data } = await supabase.auth.getSession();
+        signedIn = Boolean(data?.session?.user);
+      } catch {
+        signedIn = false;
+      }
+      if (settled) return;
+      if (signedIn) return; // the redirect did complete; the shell takes over
+
+      settled = true;
+      abandonPendingOAuth(false);
+      setGoogleLoading(false);
+      setError('Sign-in was cancelled. You can try again whenever you are ready.');
+      setErrorAction('none');
+    };
+
+    const timer = window.setTimeout(reset, GOOGLE_STUCK_MS);
+    document.addEventListener('visibilitychange', reset);
+    window.addEventListener('focus', reset);
+    window.addEventListener('pageshow', reset);
+
+    return () => {
+      settled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', reset);
+      window.removeEventListener('focus', reset);
+      window.removeEventListener('pageshow', reset);
+    };
+  }, [googleLoading]);
 
   // The confirmation can happen on another device, where the session it creates
   // is invisible to this browser — so ask the server whether the account is
@@ -136,6 +201,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
     setResendLoading(true);
     setResendStatus(null);
     setError(null);
+    setErrorAction('none');
 
     const res = await resendConfirmationEmail(email);
     setResendLoading(false);
@@ -154,14 +220,23 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       setError("Please enter email and password.");
       return;
     }
+    if (isSignUp && !fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+    if (isSignUp && password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
+    setErrorAction('none');
     setResendStatus(null);
     setFormNotice(null);
 
     const result = isSignUp
-      ? await signUpWithEmail(email, password)
+      ? await signUpWithEmail(email, password, fullName)
       : await signInWithEmail(email, password);
 
     const outcome = classifyAuthOutcome(result);
@@ -187,12 +262,17 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
       return;
     }
 
-    setError(
-      result.error ||
-      (isSignUp
-        ? "Failed to create account. Please try again."
-        : "Invalid email or password. Please try again.")
-    );
+    // Never show the provider's own text: it is English-only API jargon, and it
+    // says "invalid login credentials" for an address that simply has no
+    // account — which reads like the user's fault.
+    const copy = describeAuthFailure({
+      message: result.error,
+      code: result.code,
+      status: result.status,
+      isSignUp,
+    });
+    setError(copy.text);
+    setErrorAction(copy.action);
     setLoading(false);
   };
 
@@ -240,7 +320,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 </div>
               )}
 
-              <div className="space-y-2 mt-4">
+              <div className="space-y-2 mt-2">
                 <button
                   type="button"
                   onClick={openMailApp}
@@ -274,6 +354,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                     setAwaitingConfirmation(false);
                     setIsSignUp(false);
                     setError(null);
+                    setErrorAction('none');
                     setResendStatus(null);
                   }}
                   className="w-full text-neutral-400 hover:text-white py-2 text-xs transition-colors"
@@ -301,6 +382,26 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             )}
           </button>
 
+          {/* Consent line. Google's own consent screen is configured in the
+              Google/Supabase dashboards; this is the in-app half, so the person
+              signing in knows what they are agreeing to and where the service
+              actually lives. */}
+          <p className="mt-3 text-[11px] leading-relaxed text-neutral-500 text-center">
+            By continuing you agree to our{' '}
+            <button
+              type="button"
+              onClick={() => onOpenPrivacy?.()}
+              className="text-neutral-300 underline underline-offset-2 hover:text-white"
+            >
+              Privacy Policy
+            </button>
+            {serviceAddress() && (
+              <>
+                {' '}· <span className="break-all">{serviceAddress()}</span>
+              </>
+            )}
+          </p>
+
           {/* Divider */}
           <div className="flex items-center my-4">
             <div className="flex-1 border-t border-neutral-800"></div>
@@ -310,6 +411,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
 
           {/* Email / Password Form */}
           <form onSubmit={handleSubmit} className="space-y-3.5">
+            {isSignUp && (
+              <div>
+                <input
+                  type="text"
+                  placeholder="Full name (Required)"
+                  required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#E6E6FA] transition-colors"
+                />
+              </div>
+            )}
             <div>
               <input
                 type="email"
@@ -337,7 +450,26 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
             )}
 
             {error && (
-              <p className="text-red-400 text-xs text-center py-1 bg-red-950/30 rounded-lg border border-red-900/50">{error}</p>
+              <div className="py-1.5 px-2.5 bg-red-950/30 rounded-lg border border-red-900/50">
+                <p className="text-red-400 text-xs text-center leading-relaxed">{error}</p>
+                {/* Supabase cannot tell a wrong password from an address that
+                    has no account, so the useful move is to offer signup with
+                    the address already typed rather than guess. */}
+                {errorAction === 'sign-up' && !isSignUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSignUp(true);
+                      setError(null);
+                      setErrorAction('none');
+                      setFormNotice(null);
+                    }}
+                    className="mt-1.5 w-full text-[#E6E6FA] text-xs font-semibold text-center underline underline-offset-2"
+                  >
+                    Sign up with this email instead
+                  </button>
+                )}
+              </div>
             )}
 
             <button
@@ -358,6 +490,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess }) => {
                 onClick={() => {
                   setIsSignUp(!isSignUp);
                   setError(null);
+                  setErrorAction('none');
                   setFormNotice(null);
                 }}
                 className="text-neutral-400 text-xs hover:text-white transition-colors"

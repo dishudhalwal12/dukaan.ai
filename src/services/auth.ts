@@ -2,6 +2,7 @@ import type { User, EmailOtpType } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { clearFreshSignIn, markFreshSignIn } from '../utils/authOutcome.ts';
 import { CONFIRM_TYPES, parseConfirmationStatus } from '../utils/confirmLink.ts';
+import { shouldAbandonPendingOAuth, shouldIgnoreFocusSession, urlCarriesOAuthCallback } from '../utils/oauthState.ts';
 
 export type { User };
 
@@ -10,7 +11,56 @@ export interface AuthResult {
   /** Null when the project requires email confirmation \u2014 the account exists but is not signed in. */
   session?: unknown | null;
   error?: string | null;
+  /**
+   * Supabase's machine-readable reason and HTTP status, kept beside the message
+   * so the UI can branch on `invalid_credentials` instead of matching English
+   * text. Both are optional: a thrown exception has neither.
+   */
+  code?: string | null;
+  status?: number | null;
 }
+
+/** The failure half of an `AuthResult`, with the provider's code kept. */
+const failure = (error: { message?: string; code?: string; status?: number } | null | undefined): AuthResult => ({
+  user: null,
+  error: error?.message ?? null,
+  code: error?.code ?? null,
+  status: typeof error?.status === 'number' ? error.status : null,
+});
+
+/** Set while a Google sign-in has left the page and has not come back yet. */
+export const OAUTH_IN_PROGRESS_KEY = 'dukan-oauth-in-progress';
+
+export const isOAuthPending = (): boolean => {
+  try {
+    return localStorage.getItem(OAUTH_IN_PROGRESS_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+export const clearOAuthPending = (): void => {
+  try {
+    localStorage.removeItem(OAUTH_IN_PROGRESS_KEY);
+  } catch {
+    // Storage unavailable — the marker simply was never set.
+  }
+};
+
+/**
+ * Writes off a Google sign-in that never returned, and says whether it did.
+ *
+ * Called when the app regains focus. Without it the marker stays set for the
+ * rest of the session, the sign-in button keeps spinning, and every later load
+ * has to guess whether a redirect is "still going".
+ */
+export const abandonPendingOAuth = (hasSession: boolean): boolean => {
+  const pending = isOAuthPending();
+  const callbackInUrl = typeof window !== 'undefined' && urlCarriesOAuthCallback(window.location.href);
+  if (!shouldAbandonPendingOAuth({ pending, callbackInUrl, hasSession })) return false;
+  clearOAuthPending();
+  return true;
+};
 
 /**
  * Initiates Google OAuth sign-in via Supabase.
@@ -32,9 +82,11 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
       provider: 'google',
       options: {
         redirectTo: window.location.origin + window.location.pathname,
+        // Deliberately no `prompt: 'consent'`: forcing the consent screen on
+        // every sign-in gave the shopkeeper one extra window to close, and
+        // closing it is what used to leave the button spinning.
         queryParams: {
           access_type: 'offline',
-          prompt: 'consent',
         },
       },
     });
@@ -58,7 +110,8 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
  */
 export const signUpWithEmail = async (
   email: string, 
-  password: string
+  password: string,
+  fullName?: string
 ): Promise<AuthResult> => {
   try {
     if (!isSupabaseConfigured()) {
@@ -73,10 +126,33 @@ export const signUpWithEmail = async (
     // late — and leaves the marker behind for a later reload to consume.
     markFreshSignIn();
 
+    let derived = fullName?.trim();
+    if (!derived && typeof localStorage !== 'undefined') {
+      derived = localStorage.getItem('dukan-profile-name') || '';
+    }
+    if (!derived && email.includes('@')) {
+      const userPart = email.split('@')[0].replace(/[._+]/g, ' ');
+      derived = userPart.charAt(0).toUpperCase() + userPart.slice(1);
+    }
+    const parts = (derived || 'Store Owner').split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || 'Store';
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'Owner';
+    const cleanFullName = `${firstName} ${lastName}`.trim();
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('dukan-profile-name', cleanFullName);
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        data: {
+          full_name: cleanFullName,
+          name: cleanFullName,
+          first_name: firstName,
+          last_name: lastName,
+        },
         emailRedirectTo: window.location.origin + window.location.pathname,
       },
     });
@@ -84,7 +160,7 @@ export const signUpWithEmail = async (
     if (error) {
       console.warn('Supabase Auth Error (SignUp):', error.message);
       clearFreshSignIn();
-      return { user: null, error: error.message };
+      return failure(error);
     }
 
     // Supabase anti-enumeration protection: if user already exists, Supabase returns
@@ -95,6 +171,9 @@ export const signUpWithEmail = async (
         user: null,
         session: null,
         error: 'An account with this email already exists. Please sign in or use Continue with Google.',
+        // Supabase reports this as a success with an empty `identities` array,
+        // so the reason has to be named here for the UI to switch its message.
+        code: 'account_exists',
       };
     }
 
@@ -146,7 +225,7 @@ export const signInWithEmail = async (
     if (error) {
       console.warn('Supabase Auth Error (SignIn):', error.message);
       clearFreshSignIn();
-      return { user: null, error: error.message };
+      return failure(error);
     }
 
     if (data.session) {
@@ -206,14 +285,30 @@ export const getCurrentUser = async (): Promise<User | null> => {
   }
 };
 
+export interface AuthReport {
+  /**
+   * Whether this report is proof of who the user is.
+   *
+   * A `getSession()` answer of "no session" is NOT proof. The shell boots from
+   * the cached identity, and that request can answer long after the page has
+   * painted as signed in — or after a session it has not seen yet was stored by
+   * a token refresh. Treating that answer as a sign-out made the app drop its
+   * cache and hard-reload underneath an order popup. Only a session Supabase
+   * accepted, or an explicit SIGNED_OUT, is proof.
+   */
+  confirmed: boolean;
+}
+
 /**
  * Listen to auth state changes in Supabase and notify callbacks.
  * Automatically cleans OAuth query/hash tokens from URL and caches active user.
  */
-export const listenToAuthState = (callback: (user: User | null) => void): (() => void) => {
+export const listenToAuthState = (
+  callback: (user: User | null, report?: AuthReport) => void,
+): (() => void) => {
   try {
     if (!isSupabaseConfigured()) {
-      callback(null);
+      callback(null, { confirmed: true });
       return () => {};
     }
 
@@ -233,7 +328,7 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
     let lastUserId: string | null = null;
 
     /** Caches the identity, reports it, and remembers it. */
-    const deliver = (user: User | null) => {
+    const deliver = (user: User | null, confirmed = true) => {
       lastUserId = user?.id ?? null;
       if (user) {
         localStorage.setItem('dukan-auth-user', JSON.stringify({
@@ -242,11 +337,17 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
         }));
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
-        cleanOAuthUrl();
-      } else {
+      } else if (confirmed) {
+        // Only a confirmed sign-out may erase the cached identity. An
+        // unconfirmed "no session yet" must leave it alone: it is what the
+        // shell reads on the next boot, and wiping it made a signed-in
+        // shopkeeper look like a guest.
         localStorage.removeItem('dukan-auth-user');
       }
-      callback(user);
+      // Cleaned on both branches. A refused callback leaves `error=...` in the
+      // URL, and leaving it there re-raised the same toast on every reload.
+      cleanOAuthUrl();
+      callback(user, { confirmed });
     };
 
     // 1. Initial session check
@@ -254,14 +355,15 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       if (session?.user) {
         deliver(session.user);
       } else {
-        // If no active session and not in the middle of OAuth redirect, notify null
+        // If no active session and not in the middle of OAuth redirect, notify
+        // null — unconfirmed, because this answer only says "not yet here".
         const isOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
         if (!isOAuth) {
-          deliver(null);
+          deliver(null, false);
         }
       }
     }).catch(() => {
-      deliver(null);
+      deliver(null, false);
     });
 
     // 2. Realtime auth state listener
@@ -283,8 +385,22 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       if (document.visibilityState !== 'visible') return;
       supabase.auth.getSession().then(({ data: { session } }) => {
         const user = session?.user ?? null;
+        // Returning from Google is not a sign-out. While a redirect is pending
+        // or its callback is still in the URL, the exchange owns the session and
+        // a "no session yet" answer here is a race — one that used to drop the
+        // cached account and hard-reload the page.
+        if (shouldIgnoreFocusSession({
+          pending: isOAuthPending(),
+          callbackInUrl: urlCarriesOAuthCallback(window.location.href),
+          hasSession: Boolean(user),
+        })) {
+          return;
+        }
         if ((user?.id ?? null) === lastUserId) return;
-        deliver(user);
+        // Unconfirmed when there is no user: a foreground re-check that finds no
+        // session may merely have raced a refresh, and must not be read as a
+        // sign-out. A session it does find is proof.
+        deliver(user, Boolean(user));
       }).catch(() => {});
     };
     document.addEventListener('visibilitychange', onForeground);

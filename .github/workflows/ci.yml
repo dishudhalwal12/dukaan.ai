@@ -1,14 +1,19 @@
-name: CI
+name: CI & Deployment Gate
 
 # Runs the real suites on every change, so a red branch never reaches main.
 on:
   push:
     branches: [main, 'deploy/**']
   pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:
-    name: POS app (Vite)
+    name: POS App Quality Gate (Vite & UI)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,12 +21,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci --no-audit --no-fund
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: |
+            package-lock.json
+            whatsapp/package-lock.json
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      # The hermetic stress suite drives the real bot, so the bot's own
+      # dependencies (dotenv first) must exist in this job too. On a clean
+      # runner the root install alone left dukanBot.js unable to import.
+      - name: Install bot dependencies for the stress suite
+        run: npm ci --no-audit --no-fund
+        working-directory: whatsapp
+      - name: Run client & UI test suites (16 suites)
+        run: npm test
+      - name: Static type checking (TypeScript)
+        run: npx tsc --noEmit
+      - name: Master stress test (Hermetic 10-checkpoint suite)
+        run: npm run stress:hermetic
+      - name: Build production bundle & verify secrets
+        run: npm run build
 
   backend:
-    name: WhatsApp bot
+    name: WhatsApp Bot Quality Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,10 +51,31 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: whatsapp/package-lock.json
-      - run: npm ci --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
         working-directory: whatsapp
       # Hermetic by construction: no .env, no credentials, throwaway stores.
-      - run: npm test
+      - name: Run bot unit tests
+        run: npm test
         working-directory: whatsapp
-      - run: npm run test:reliability
+      - name: Run pipeline reliability tests (1,400 scenarios)
+        run: npm run test:reliability
         working-directory: whatsapp
+
+  deploy:
+    name: Trigger Vercel Production Deploy
+    needs: [frontend, backend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Vercel via Deploy Hook
+        env:
+          DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::warning title=Deploy Hook Missing::VERCEL_DEPLOY_HOOK secret is not set. If Vercel Git integration is active, configure branch protection or add VERCEL_DEPLOY_HOOK in repo secrets."
+            exit 0
+          fi
+          echo "All quality checks passed! Triggering Vercel deployment..."
+          curl -X POST -sS -f "$DEPLOY_HOOK"
+          echo "Deployment triggered successfully on Vercel."

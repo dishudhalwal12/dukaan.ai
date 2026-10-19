@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { CONFIRM_TYPES, readEmailConfirmParams, parseConfirmationStatus, confirmTokenOnce } from '../src/utils/confirmLink.ts';
+import { CONFIRM_TYPES, readEmailConfirmParams, parseConfirmationStatus, confirmTokenOnce, cleanConfirmUrl } from '../src/utils/confirmLink.ts';
 
 console.log('--- RUNNING EMAIL-CONFIRM LINK TESTS ---');
 
@@ -92,6 +92,46 @@ const other = await confirmTokenOnce('hash-2', 'signup', run);
 assert.strictEqual(other.run, 2, 'a different token gets its own attempt');
 assert.strictEqual(runs, 2, 'two tokens, two attempts');
 ok('a token is spent once and its outcome is shared');
+
+// ── Test 8: the token is wiped out of the address bar ───────────────────────
+console.log('\nTest 8: cleanConfirmUrl');
+{
+  // The exact shape of the link the mail template sends.
+  const query = 'https://app.example/?token_hash=pkce_c9c7310dd31c&type=signup';
+  assert.strictEqual(cleanConfirmUrl(query), 'https://app.example/', 'token_hash and type are both removed');
+
+  // A fragment-delivered token, which Supabase also uses.
+  const fragment = 'https://app.example/#token_hash=pkce_abc123&type=signup';
+  assert.strictEqual(cleanConfirmUrl(fragment), 'https://app.example/', 'a spent token is gone and the empty # with it');
+
+  // Unrelated parameters survive: the app routes on ?tab= and on the hash.
+  assert.strictEqual(
+    cleanConfirmUrl('https://app.example/app?tab=orders&token_hash=pkce_abc&type=signup'),
+    'https://app.example/app?tab=orders'
+  );
+  assert.strictEqual(
+    cleanConfirmUrl('https://app.example/?token_hash=pkce_abc&type=signup#orders'),
+    'https://app.example/#orders',
+    'a hash that is a route rather than auth params is kept'
+  );
+
+  // A refused callback leaves error params behind that re-raise the toast on
+  // every reload, so those go too.
+  assert.strictEqual(
+    cleanConfirmUrl('https://app.example/?error=access_denied&error_description=nope'),
+    'https://app.example/'
+  );
+
+  // A URL with nothing to clean is returned untouched, and a broken one is not
+  // mangled into something that navigates somewhere else.
+  assert.strictEqual(cleanConfirmUrl('https://app.example/#sales'), 'https://app.example/#sales');
+  assert.strictEqual(cleanConfirmUrl('not a url'), 'not a url');
+
+  // Reading the payload from the cleaned URL must find nothing, which is the
+  // whole point: a reload cannot replay a spent token.
+  assert.strictEqual(readEmailConfirmParams(cleanConfirmUrl(query)), null);
+}
+ok('the real token is stripped from the query and the fragment, and nothing else is');
 
 console.log('\n========================================');
 console.log('🎉 ALL CONFIRM-LINK TESTS PASSED! 🎉');
