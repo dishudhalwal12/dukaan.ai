@@ -92,6 +92,14 @@ export const saveBusinessProfileToCloud = async (
     // the shopkeeper to stand in it again.
     const storeLocation = getStoredStoreLocation();
 
+    const localName = typeof localStorage !== 'undefined' ? localStorage.getItem('dukan-profile-name') : null;
+    const authOwnerCols = ownerColumnsFromAuthUser(await currentAuthUser());
+    if (!authOwnerCols.owner_first_name && localName) {
+      const parts = localName.trim().split(/\s+/).filter(Boolean);
+      authOwnerCols.owner_first_name = parts[0] || 'Store';
+      authOwnerCols.owner_last_name = parts.length > 1 ? parts.slice(1).join(' ') : 'Owner';
+    }
+
     const { error } = await supabase
       .from('business_profiles')
       .upsert({
@@ -103,7 +111,7 @@ export const saveBusinessProfileToCloud = async (
         // Owner identity, mirrored from the auth session: first/last name, picture,
         // provider and language. Without this the dashboard has only the raw
         // profile_data blob and these columns stay NULL.
-        ...nonNullColumns(ownerColumnsFromAuthUser(await currentAuthUser())),
+        ...nonNullColumns(authOwnerCols),
         ...(storeLocation ? {
           store_lat: storeLocation.lat,
           store_lng: storeLocation.lng,
@@ -488,6 +496,17 @@ export const saveUserIdentityToCloud = async (explicitUserId?: string): Promise<
     if (!userId) return;
 
     const identity = identityRowFromAuthUser(user);
+    const localName = typeof localStorage !== 'undefined' ? localStorage.getItem('dukan-profile-name') : null;
+    const emailName = user?.email && user.email.includes('@') ? user.email.split('@')[0].replace(/[._+]/g, ' ') : null;
+    const fallbackName = (localName || emailName || '').trim();
+
+    if (!identity.owner_first_name && fallbackName) {
+      const parts = fallbackName.split(/\s+/).filter(Boolean);
+      identity.owner_first_name = parts[0] || 'Store';
+      identity.owner_last_name = parts.length > 1 ? parts.slice(1).join(' ') : 'Owner';
+      identity.display_name = `${identity.owner_first_name} ${identity.owner_last_name}`.trim();
+    }
+
     const row = {
       user_id: userId,
       last_sign_in_at: new Date().toISOString(),

@@ -110,7 +110,8 @@ export const signInWithGoogle = async (): Promise<AuthResult> => {
  */
 export const signUpWithEmail = async (
   email: string, 
-  password: string
+  password: string,
+  fullName?: string
 ): Promise<AuthResult> => {
   try {
     if (!isSupabaseConfigured()) {
@@ -125,10 +126,33 @@ export const signUpWithEmail = async (
     // late — and leaves the marker behind for a later reload to consume.
     markFreshSignIn();
 
+    let derived = fullName?.trim();
+    if (!derived && typeof localStorage !== 'undefined') {
+      derived = localStorage.getItem('dukan-profile-name') || '';
+    }
+    if (!derived && email.includes('@')) {
+      const userPart = email.split('@')[0].replace(/[._+]/g, ' ');
+      derived = userPart.charAt(0).toUpperCase() + userPart.slice(1);
+    }
+    const parts = (derived || 'Store Owner').split(/\s+/).filter(Boolean);
+    const firstName = parts[0] || 'Store';
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : 'Owner';
+    const cleanFullName = `${firstName} ${lastName}`.trim();
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('dukan-profile-name', cleanFullName);
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        data: {
+          full_name: cleanFullName,
+          name: cleanFullName,
+          first_name: firstName,
+          last_name: lastName,
+        },
         emailRedirectTo: window.location.origin + window.location.pathname,
       },
     });
@@ -463,6 +487,44 @@ export const confirmEmail = async (
   } catch (error: any) {
     console.warn('Supabase Auth Exception (ConfirmEmail):', error);
     return { user: null, error: error?.message || 'Failed to confirm this email link.' };
+  }
+};
+
+/**
+ * Verifies a 6-digit email confirmation code directly without opening any link.
+ */
+export const verifyEmailOtp = async (
+  email: string,
+  token: string
+): Promise<AuthResult> => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return { user: null, error: 'Supabase credentials not configured.' };
+    }
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      return { user: null, error: 'Please enter the 6-digit confirmation code.' };
+    }
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: cleanToken,
+      type: 'signup',
+    });
+    if (error) {
+      console.warn('Supabase Auth Error (VerifyEmailOtp):', error.message);
+      return failure(error);
+    }
+    if (data.session && data.user) {
+      localStorage.setItem('dukan-auth-user', JSON.stringify({
+        id: data.user.id,
+        email: data.user.email,
+      }));
+      localStorage.removeItem('dukan-guest-mode');
+    }
+    return { user: data.user, error: null, session: data.session };
+  } catch (error: any) {
+    console.warn('Supabase Auth Exception (VerifyEmailOtp):', error);
+    return { user: null, error: error?.message || 'Failed to verify confirmation code.' };
   }
 };
 

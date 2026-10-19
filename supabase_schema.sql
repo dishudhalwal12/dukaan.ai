@@ -348,13 +348,22 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    meta      jsonb := coalesce(NEW.raw_user_meta_data, '{}'::jsonb);
-    app       jsonb := coalesce(NEW.raw_app_meta_data, '{}'::jsonb);
-    raw_name  text  := coalesce(nullif(meta->>'full_name', ''), nullif(meta->>'name', ''));
+    meta       jsonb := coalesce(NEW.raw_user_meta_data, '{}'::jsonb);
+    app        jsonb := coalesce(NEW.raw_app_meta_data, '{}'::jsonb);
+    email_name text  := initcap(regexp_replace(split_part(coalesce(NEW.email, ''), '@', 1), '[._+]+', ' ', 'g'));
+    raw_name   text  := coalesce(
+        nullif(meta->>'full_name', ''),
+        nullif(meta->>'name', ''),
+        nullif(email_name, ''),
+        'Store Owner'
+    );
     -- Collapse runs of whitespace so the split agrees with the client builder;
     -- otherwise ' Ramesh  Kumar' would seed a last name of ' Kumar'.
-    full_name text  := nullif(regexp_replace(trim(coalesce(raw_name, '')), '\s+', ' ', 'g'), '');
-    first     text  := nullif(split_part(full_name, ' ', 1), '');
+    full_name  text  := nullif(regexp_replace(trim(raw_name), '\s+', ' ', 'g'), '');
+    first      text  := coalesce(nullif(split_part(full_name, ' ', 1), ''), 'Store');
+    last_raw   text  := nullif(substr(full_name, length(first) + 2), '');
+    last       text  := coalesce(last_raw, 'Owner');
+    prov       text  := coalesce(nullif(app->>'provider', ''), 'email');
 BEGIN
     INSERT INTO public.user_identities (
         user_id, email, email_verified, owner_first_name, owner_last_name,
@@ -365,16 +374,22 @@ BEGIN
         NEW.email,
         (NEW.email_confirmed_at IS NOT NULL),
         first,
-        nullif(substr(full_name, length(coalesce(first, '')) + 2), ''),
-        nullif(full_name, ''),
+        last,
+        full_name,
         coalesce(nullif(meta->>'picture', ''), nullif(meta->>'avatar_url', '')),
-        nullif(app->>'provider', ''),
+        prov,
         nullif(meta->>'locale', ''),
         NEW.phone,
         NEW.created_at,
         NEW.last_sign_in_at
     )
-    ON CONFLICT (user_id) DO NOTHING;   -- idempotent: a re-run never duplicates
+    ON CONFLICT (user_id) DO UPDATE SET
+        owner_first_name = EXCLUDED.owner_first_name,
+        owner_last_name  = EXCLUDED.owner_last_name,
+        display_name     = EXCLUDED.display_name,
+        email_verified   = EXCLUDED.email_verified,
+        auth_provider    = EXCLUDED.auth_provider,
+        last_sign_in_at  = coalesce(EXCLUDED.last_sign_in_at, public.user_identities.last_sign_in_at);
     RETURN NEW;
 END;
 $$;
