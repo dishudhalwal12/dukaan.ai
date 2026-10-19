@@ -21,8 +21,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            whatsapp/package-lock.json
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+      # The hermetic stress suite drives the real bot, so the bot's own
+      # dependencies (dotenv first) must exist in this job too. On a clean
+      # runner the root install alone left dukanBot.js unable to import.
+      - name: Install bot dependencies for the stress suite
+        run: npm ci --no-audit --no-fund
+        working-directory: whatsapp
       - name: Run client & UI test suites (16 suites)
         run: npm test
       - name: Static type checking (TypeScript)
