@@ -131,5 +131,17 @@
   "category_grocery": "કિરાણા અને જનરલ સ્ટોર",
   "category_electronics": "ઇલેક્ટ્રોનિક્સ",
   "category_fashion": "ફેશન",
-  "category_other": "અન્ય"
+  "category_other": "અન્ય",
+  "onboarding_personalizing_title": "તમારો અનુભવ તમારા માટે ખાસ બનાવવામાં આવી રહ્યો છે...",
+  "onboarding_personalizing_hint": "અમે તમારી દુકાન માટે થોડા પ્રશ્નો તૈયાર કરી રહ્યા છીએ. થોડી સેકન્ડ લાગશે.",
+  "insights_empty_title": "તમારું પહેલું ઉત્પાદન ઉમેરો",
+  "insights_empty_description": "AI સૂચનો મેળવવા માટે તમારા કેટલોગમાં ઉત્પાદનો ઉમેરો.",
+  "insights_low_stock_title": "{{product}}નો સ્ટોક ઓછો છે",
+  "insights_low_stock_description": "ફક્ત {{count}} એકમો બાકી છે. જલદી રીસ્ટોક ઓર્ડર કરો.",
+  "insights_healthy_title": "સ્ટોક યોગ્ય છે",
+  "insights_healthy_description": "બધા {{count}} ઉત્પાદનો પૂરતા પ્રમાણમાં છે. આજની વેચાણ માટે તૈયાર.",
+  "insights_error_title": "સૂચનો મેળવી શકાયા નથી",
+  "insights_error_description": "AI સેવા સાથે જોડાવામાં સમસ્યા આવી. પછી ફરી પ્રયાસ કરો.",
+  "insights_quota_title": "AI કોટા પૂરો થઈ ગયો",
+  "insights_quota_description": "તમારો દૈનિક AI સૂચન કોટા પૂરો થઈ ગયો છે. અપગ્રેડ માટે તમારો પ્લાન જુઓ."
 }

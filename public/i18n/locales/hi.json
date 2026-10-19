@@ -131,5 +131,17 @@
   "manage_store_location_captured": "आपके फ़ोन से सेव हुई",
   "manage_store_location_missing": "अभी सेव नहीं हुई",
   "manage_store_location_capture": "जोड़ें",
-  "manage_store_location_update": "बदलें"
+  "manage_store_location_update": "बदलें",
+  "onboarding_personalizing_title": "आपका अनुभव व्यक्तिगत बनाया जा रहा है...",
+  "onboarding_personalizing_hint": "हम आपकी दुकान के लिए कुछ सवाल तैयार कर रहे हैं। इसमें कुछ सेकंड लगेंगे।",
+  "insights_empty_title": "अपना पहला उत्पाद जोड़ें",
+  "insights_empty_description": "AI सुझाव पाने के लिए अपने कैटलॉग में उत्पाद जोड़ें।",
+  "insights_low_stock_title": "{{product}} का स्टॉक कम है",
+  "insights_low_stock_description": "सिर्फ {{count}} इकाइयाँ बची हैं। जल्दी रीस्टॉक ऑर्डर करें।",
+  "insights_healthy_title": "स्टॉक ठीक है",
+  "insights_healthy_description": "सभी {{count}} उत्पाद पर्याप्त मात्रा में हैं। आज की बिक्री के लिए तैयार।",
+  "insights_error_title": "सुझाव नहीं मिल सके",
+  "insights_error_description": "AI सेवा से जुड़ने में समस्या हुई। कृपया बाद में फिर कोशिश करें।",
+  "insights_quota_title": "AI कोटा पूरा हो गया",
+  "insights_quota_description": "आपका आज का AI सुझाव कोटा पूरा हो गया है। अपग्रेड के लिए अपना प्लान देखें।"
 }

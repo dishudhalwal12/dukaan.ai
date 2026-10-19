@@ -131,5 +131,17 @@
   "manage_store_location_captured": "Saved from your phone",
   "manage_store_location_missing": "Not saved yet",
   "manage_store_location_capture": "Add",
-  "manage_store_location_update": "Change"
+  "manage_store_location_update": "Change",
+  "onboarding_personalizing_title": "Personalizing your experience...",
+  "onboarding_personalizing_hint": "We're writing a few questions just for your shop. This takes a few seconds.",
+  "insights_empty_title": "Add Your First Product",
+  "insights_empty_description": "Add products to your catalog to start getting AI insights.",
+  "insights_low_stock_title": "{{product}} Low Stock",
+  "insights_low_stock_description": "Only {{count}} units remaining. Place restock order soon.",
+  "insights_healthy_title": "Healthy Inventory",
+  "insights_healthy_description": "All {{count}} items are well-stocked. Ready for daily store sales.",
+  "insights_error_title": "Could Not Fetch Insights",
+  "insights_error_description": "There was an issue connecting to the AI service. Please try again later.",
+  "insights_quota_title": "AI Quota Exceeded",
+  "insights_quota_description": "You have used your daily AI insights quota. Please check your plan to upgrade."
 }

@@ -172,7 +172,22 @@ console.log('\nTest 5: questionnaire localisation');
       assert.ok(question.options && question.options.length > 0, 'a select question has options');
     }
   }
-  assert.strictEqual(localizedFallbackQuestions('ta'), null, 'other languages use the English set');
+  // Every shipped language has its own offline set, so the fallback question is
+  // never English in a non-English UI.
+  for (const { code } of LANGUAGES) {
+    const fallback = localizedFallbackQuestions(code);
+    assert.ok(Array.isArray(fallback) && fallback.length >= 3, `${code} has a fallback set`);
+    assert.deepStrictEqual(
+      fallback.map((question) => question.intent),
+      hindi.map((question) => question.intent),
+      `${code} asks the same intents as Hindi`,
+    );
+  }
+  assert.deepStrictEqual(
+    localizedFallbackQuestions('xx').map((question) => question.title),
+    localizedFallbackQuestions('en').map((question) => question.title),
+    'an unknown code falls back to English',
+  );
   ok('the questionnaire follows the chosen language, with English intents');
 }
 

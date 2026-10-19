@@ -131,5 +131,17 @@
   "category_grocery": "کرانہ اور جنرل اسٹور",
   "category_electronics": "الیکٹرانکس",
   "category_fashion": "فیشن",
-  "category_other": "دیگر"
+  "category_other": "دیگر",
+  "onboarding_personalizing_title": "آپ کا تجربہ آپ کے لیے خاص بنایا جا رہا ہے...",
+  "onboarding_personalizing_hint": "ہم آپ کی دکان کے لیے چند سوالات تیار کر رہے ہیں۔ اس میں کچھ سیکنڈ لگیں گے۔",
+  "insights_empty_title": "اپنی پہلی مصنوعات شامل کریں",
+  "insights_empty_description": "AI مشورے حاصل کرنے کے لیے اپنے کیٹلاگ میں مصنوعات شامل کریں۔",
+  "insights_low_stock_title": "{{product}} کا اسٹاک کم ہے",
+  "insights_low_stock_description": "صرف {{count}} یونٹ باقی ہیں۔ جلد ری اسٹاک آرڈر کریں۔",
+  "insights_healthy_title": "اسٹاک ٹھیک ہے",
+  "insights_healthy_description": "تمام {{count}} مصنوعات کافی مقدار میں ہیں۔ آج کی فروخت کے لیے تیار۔",
+  "insights_error_title": "مشورے حاصل نہیں ہو سکے",
+  "insights_error_description": "AI سروس سے رابطے میں مسئلہ ہوا۔ براہ کرم بعد میں دوبارہ کوشش کریں۔",
+  "insights_quota_title": "AI کوٹہ ختم ہو گیا",
+  "insights_quota_description": "آپ کا روزانہ AI مشورہ کوٹہ ختم ہو گیا ہے۔ اپ گریڈ کے لیے اپنا پلان دیکھیں۔"
 }

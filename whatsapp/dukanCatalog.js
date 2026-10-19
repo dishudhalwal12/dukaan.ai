@@ -188,7 +188,15 @@ export function searchInCatalog(products, query) {
  * ask which one — ordering the wrong variant is worse than one extra question.
  */
 export function resolveCatalogItem(products, rawName) {
-  const list = Array.isArray(products) ? products : [];
+  // The exact-name shortcut below used to bypass searchInCatalog's in-stock
+  // filter, so a product with stock 0 was still added to the cart. Drop
+  // unavailable products before any matching, exact or fuzzy.
+  const list = (Array.isArray(products) ? products : []).filter((p) => {
+    if (!p) return false;
+    if (p.inStock === false) return false;
+    if (typeof p.stock === 'number') return p.stock > 0;
+    return true;
+  });
   const q = String(rawName || '').toLowerCase().trim();
   if (!q || list.length === 0) return { status: 'missing' };
 

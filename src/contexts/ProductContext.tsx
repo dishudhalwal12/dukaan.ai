@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
 import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
 import { presetProductsByDisplayName } from '../data/presetProducts.ts';
@@ -37,7 +37,11 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   const [insights, setInsights] = useState<Insight[]>([]);
   const [isLoadingInsights, setIsLoadingInsights] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { language, t } = useLanguage();
+  const { language, t, languageReady, translationsLanguage } = useLanguage();
+  // Every generation gets an id. A language change starts a new generation, and
+  // the old stream's remaining chunks are ignored instead of being appended to
+  // the new (possibly different-language) list.
+  const insightsRequestId = useRef(0);
 
   /* ─── [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable ───
   // ─── Neutral fallback for "Other" — mirrors OnboardingFlow's constant ──────
@@ -185,20 +189,25 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   }, [products, loading]);
 
   const refreshInsights = useCallback(async () => {
+    const requestId = ++insightsRequestId.current;
     setIsLoadingInsights(true);
     setError(null);
     setInsights([]); // Clear previous insights for streaming
 
     try {
       for await (const insight of generateDynamicInsights(products, language, t)) {
+        if (requestId !== insightsRequestId.current) return;
         setInsights(prevInsights => [...prevInsights, insight]);
       }
     } catch (err) {
+      if (requestId !== insightsRequestId.current) return;
       const errorMessage = 'Failed to load insights due to a network or client error.';
       setError(errorMessage);
       console.error(err);
     } finally {
-      setIsLoadingInsights(false);
+      if (requestId === insightsRequestId.current) {
+        setIsLoadingInsights(false);
+      }
     }
   }, [products, language, t]);
 
@@ -207,11 +216,20 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     // the insights are model-written prose, so the only way to localise them is
     // to ask again. Deliberately NOT dependent on `products` (that would re-ask
     // on every stock edit) or on `refreshInsights` (same reason).
-    if (!loading) {
+    //
+    // `languageReady` is the first-load fix: on a new device the provider starts
+    // with English and only learns the account's language after the profile
+    // sync. Generating before that paints English insights first and then
+    // replaces them — the "refresh fixes it" bug.
+    //
+    // `translationsLanguage` closes the other half: changing `language` starts
+    // the bundle fetch, so without this the generator would run once with the
+    // previous language's strings and never re-run when the new bundle landed.
+    if (!loading && languageReady && translationsLanguage === language) {
       refreshInsights();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, language]);
+  }, [loading, language, languageReady, translationsLanguage]);
 
   /**
    * The single choke point for stock.

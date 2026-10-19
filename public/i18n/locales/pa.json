@@ -131,5 +131,17 @@
   "category_grocery": "ਕਿਰਾਨਾ ਅਤੇ ਜਨਰਲ ਸਟੋਰ",
   "category_electronics": "ਇਲੈਕਟ੍ਰਾਨਿਕਸ",
   "category_fashion": "ਫੈਸ਼ਨ",
-  "category_other": "ਹੋਰ"
+  "category_other": "ਹੋਰ",
+  "onboarding_personalizing_title": "ਤੁਹਾਡਾ ਅਨੁਭਵ ਤੁਹਾਡੇ ਲਈ ਖ਼ਾਸ ਬਣਾਇਆ ਜਾ ਰਿਹਾ ਹੈ...",
+  "onboarding_personalizing_hint": "ਅਸੀਂ ਤੁਹਾਡੀ ਦੁਕਾਨ ਲਈ ਕੁਝ ਸਵਾਲ ਤਿਆਰ ਕਰ ਰਹੇ ਹਾਂ। ਇਸ ਵਿੱਚ ਕੁਝ ਸਕਿੰਟ ਲੱਗਣਗੇ।",
+  "insights_empty_title": "ਆਪਣਾ ਪਹਿਲਾ ਉਤਪਾਦ ਜੋੜੋ",
+  "insights_empty_description": "AI ਸੁਝਾਅ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਆਪਣੇ ਕੈਟਾਲਾਗ ਵਿੱਚ ਉਤਪਾਦ ਜੋੜੋ।",
+  "insights_low_stock_title": "{{product}} ਦਾ ਸਟਾਕ ਘੱਟ ਹੈ",
+  "insights_low_stock_description": "ਸਿਰਫ਼ {{count}} ਇਕਾਈਆਂ ਬਚੀਆਂ ਹਨ। ਜਲਦੀ ਰੀਸਟਾਕ ਆਰਡਰ ਕਰੋ।",
+  "insights_healthy_title": "ਸਟਾਕ ਠੀਕ ਹੈ",
+  "insights_healthy_description": "ਸਾਰੇ {{count}} ਉਤਪਾਦ ਕਾਫ਼ੀ ਮਾਤਰਾ ਵਿੱਚ ਹਨ। ਅੱਜ ਦੀ ਵਿਕਰੀ ਲਈ ਤਿਆਰ।",
+  "insights_error_title": "ਸੁਝਾਅ ਨਹੀਂ ਮਿਲ ਸਕੇ",
+  "insights_error_description": "AI ਸੇਵਾ ਨਾਲ ਜੁੜਨ ਵਿੱਚ ਸਮੱਸਿਆ ਆਈ। ਕਿਰਪਾ ਕਰਕੇ ਬਾਅਦ ਵਿੱਚ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।",
+  "insights_quota_title": "AI ਕੋਟਾ ਪੂਰਾ ਹੋ ਗਿਆ",
+  "insights_quota_description": "ਤੁਹਾਡਾ ਰੋਜ਼ਾਨਾ AI ਸੁਝਾਅ ਕੋਟਾ ਪੂਰਾ ਹੋ ਗਿਆ ਹੈ। ਅੱਪਗ੍ਰੇਡ ਲਈ ਆਪਣਾ ਪਲਾਨ ਵੇਖੋ।"
 }

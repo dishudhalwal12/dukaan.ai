@@ -7,7 +7,7 @@ import { sanitizeForPrompt } from '../utils/sanitize.ts';
 import LocationModal from '../components/LocationModal.tsx';
 import { saveStoreLocation } from '../utils/location.ts';
 import { LANGUAGES } from '../data/languages.ts';
-import { localizedFallbackQuestions } from '../data/onboardingQuestions.ts';
+import { localizedFallbackQuestions, type FallbackQuestion } from '../data/onboardingQuestions.ts';
 import { languageInstruction, languageName } from '../utils/languageName.ts';
 
 interface OnboardingFlowProps {
@@ -52,7 +52,7 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeC
   const [storeName, setStoreName] = useState('');
   const [storeCategory, setStoreCategory] = useState('');
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const { language, setLanguage, t } = useLanguage();
+  const { t } = useLanguage();
 
   // The store's position is asked for once the shop's identity is known, and
   // "Setup later" is offered because a shopkeeper who is not in the shop right
@@ -133,11 +133,12 @@ const StoreDetailsStep: React.FC<{ onNext: (details: { storeName: string; storeC
 };
 
 /**
- * Language preference, asked right after the shop's position.
+ * Language preference, asked before the store details.
  *
  * Applying the choice immediately — rather than on Continue — is deliberate: the
  * heading and the button below it change language under the shopkeeper's finger,
- * which is the clearest possible confirmation that the choice took effect.
+ * which is the clearest possible confirmation that the choice took effect. Every
+ * screen after this one, including the AI questionnaire, opens in that language.
  */
 const LanguageStep: React.FC<{ onNext: () => void }> = ({ onNext }) => {
   const { language, setLanguage, t } = useLanguage();
@@ -236,22 +237,64 @@ const BusinessContextStep: React.FC<{
   details: { storeName: string; storeCategory: string };
   onComplete: (answers: any) => void;
 }> = ({ details, onComplete }) => {
+  const { language, t } = useLanguage();
   const [stepIndex, setStepIndex] = useState(0);
   const [answers, setAnswers] = useState<any[]>([]);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [currentSelection, setCurrentSelection] = useState<string[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [isOptionsExpanded, setIsOptionsExpanded] = useState(false);
-  const [dynamicConfig, setDynamicConfig] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const { language, t } = useLanguage();
+  // The localized fallback is painted first. The model's questionnaire replaces
+  // only the questions the shopkeeper has not reached yet.
+  const [questionSet, setQuestionSet] = useState<FallbackQuestion[]>(() =>
+    localizedFallbackQuestions(language),
+  );
+  const [isPersonalizing, setIsPersonalizing] = useState(true);
+  const answersRef = React.useRef<any[]>([]);
+
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+
+  // A deliberately short splash. The shopkeeper should never watch a spinner
+  // while a model decides whether it can answer at all.
+  React.useEffect(() => {
+    const id = setTimeout(() => setIsPersonalizing(false), 3500);
+    return () => clearTimeout(id);
+  }, []);
+
+  const mergeAiQuestions = (
+    base: FallbackQuestion[],
+    ai: FallbackQuestion[],
+  ): FallbackQuestion[] => {
+    // Answers already given, and the question on screen, are never rewritten:
+    // swapping a question after it was answered would file the answer under the
+    // wrong heading. Only the unanswered tail is personalized.
+    const answeredCount = answersRef.current.length;
+    const protectedCount = Math.min(answeredCount + 1, base.length);
+    const head = base.slice(0, protectedCount);
+    const tail = base.slice(protectedCount);
+
+    // On the last fallback question: let them finish rather than moving the
+    // finish line under their finger.
+    if (tail.length === 0) return base;
+
+    const answeredIntents = new Set(
+      base
+        .slice(0, answeredCount)
+        .map((q) => q.intent)
+        .filter((intent) => intent && intent !== 'unknown'),
+    );
+    const next = ai.filter(
+      (q) => !q.intent || q.intent === 'unknown' || !answeredIntents.has(q.intent),
+    );
+
+    return next.length > 0 ? [...head, ...next] : base;
+  };
 
   React.useEffect(() => {
     let mounted = true;
     const fetchGeminiData = async () => {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
 
         const userName = sanitizeForPrompt(localStorage.getItem('dukan-profile-name') || 'the owner');
         const safeCategory = sanitizeForPrompt(details.storeCategory);
@@ -288,16 +331,19 @@ EXAMPLE OF THE STYLE (English, for illustration only — do not copy it, and do 
 Return ONLY this JSON, with no markdown and no explanation:
 {"questions":[{"type":"select","title":"string","options":["string"],"intent":"english_snake_case","subtext":"string","multiSelect":false}]}`;
 
-        const response = await withGeminiFailover((client) =>
-          client.models.generateContent({
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-            },
-          })
-        );
-
-        clearTimeout(timeoutId);
+        const response = await Promise.race([
+          withGeminiFailover((client) =>
+            client.models.generateContent({
+              contents: prompt,
+              config: {
+                responseMimeType: 'application/json',
+              },
+            })
+          ),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('questionnaire-timeout')), 10000);
+          }),
+        ]);
 
         const text = response.text;
         if (text && mounted) {
@@ -307,7 +353,16 @@ Return ONLY this JSON, with no markdown and no explanation:
           // options) is treated as no questionnaire at all, so the fallback set
           // appears instead of a blank card.
           if (questions.length >= 3) {
-            setDynamicConfig(questions);
+            const normalized: FallbackQuestion[] = questions.map((q) => ({
+              title: q.title,
+              subtext: q.subtext ?? (q.multiSelect ? t('onboarding_select_all') : undefined),
+              type: q.type,
+              options: q.options,
+              multiSelect: !!q.multiSelect,
+              intent: q.intent || 'unknown',
+              placeholder: q.type === 'input' ? t('onboarding_type_answer') : undefined,
+            }));
+            setQuestionSet((prev) => mergeAiQuestions(prev, normalized));
           } else {
             console.warn('[Onboarding] AI questionnaire rejected as incomplete', questions.length);
           }
@@ -315,108 +370,26 @@ Return ONLY this JSON, with no markdown and no explanation:
       } catch (e) {
         console.warn('OpenRouter AI failed, falling back to preset', e);
       } finally {
-        if (mounted) setIsLoading(false);
+        if (timeoutId) clearTimeout(timeoutId);
       }
     };
     fetchGeminiData();
     return () => { mounted = false; };
   }, [details, language]);
 
-  // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
-  // const isOtherCategory = details.storeCategory === 'Other' || details.storeCategory === 'Other Grocery' || details.storeCategory === 'category_other';
-
-  const q1Options = (() => {
-    switch (details.storeCategory) {
-      case 'Grocery / Kirana':
-      case 'Pharmacy':
-        return ['Managing expired inventory', 'Tracking customer credit (Udhar)', 'Competing with quick commerce', 'Managing multiple suppliers'];
-      case 'Salon':
-        return ['Empty slots during weekdays', 'Managing staff schedules', 'Retaining loyal clients', 'No-shows on appointments'];
-      case 'Restaurant':
-      case 'Cafe':
-        return ['Food wastage', 'Managing rush hours', 'High delivery commissions', 'Inconsistent food quality'];
-      default:
-        return ['Getting new customers', 'Managing cash flow', 'Hiring good staff', 'Tracking inventory'];
-    }
-  })();
-
+  // The set is already localized; there is no second fallback ladder to keep in
+  // sync. This only adapts it to the card's render shape.
   const getQuestionConfig = (index: number) => {
-    if (dynamicConfig && Array.isArray(dynamicConfig) && index < dynamicConfig.length) {
-      const q = dynamicConfig[index];
-      // Ensure specific structure matches existing UI expectations
-      return {
-        title: q.title || `Question ${index + 1}`,
-        subtext: q.subtext || (q.multiSelect ? t('onboarding_select_all') : undefined),
-        type: q.type === 'input' ? 'input' : 'select',
-        options: q.options || [],
-        multiSelect: !!q.multiSelect,
-        intent: q.intent || 'unknown',
-        placeholder: q.type === 'input' ? t('onboarding_type_answer') : undefined
-      };
-    }
-
-    // Offline floor for languages that ship their own fixed questions, so a
-    // failed AI call does not drop a Hindi user back into English.
-    const localized = localizedFallbackQuestions(language);
-    if (localized) {
-      const preset = localized[index];
-      if (!preset) return null;
-      return {
-        ...preset,
-        placeholder: preset.type === 'input' ? t('onboarding_type_answer') : undefined,
-      };
-    }
-
-    // Fallback Preset Logic
-    if (index === 0) {
-      return {
-        title: "1. What is your biggest challenge right now?",
-        subtext: "(Select up to 2)",
-        type: 'select',
-        options: [...q1Options, "Other"],
-        multiSelect: true,
-        intent: 'primary_challenge'
-      };
-    }
-    if (index === 1) {
-      const q1Answers = answers[0] || [];
-      const mainChallenge = q1Answers[0] || '';
-
-      if (mainChallenge.includes('expired') || mainChallenge.includes('wastage') || mainChallenge.includes('inventory')) {
-        return { title: "2. How do you track your waste/inventory?", type: 'select', options: ["Manual counts", "Basic POS", "No tracking yet", "Supplier handles it"], intent: 'inventory_tracking' };
-      }
-      if (mainChallenge.includes('credit') || mainChallenge.includes('cash flow') || mainChallenge.includes('Udhar')) {
-        return { title: "2. How do you manage payments & credit?", type: 'select', options: ["Paper diary", "Accounting App", "Memory", "Cash only"], intent: 'credit_management' };
-      }
-      if (mainChallenge.includes('slots') || mainChallenge.includes('no-shows') || mainChallenge.includes('retention')) {
-        return { title: "2. How do clients book your services?", type: 'select', options: ["Phone calls", "Walk-ins only", "WhatsApp", "Booking platform"], intent: 'booking_method' };
-      }
-      return { title: "2. How do you primarily serve customers?", type: 'select', options: ["Walk-in", "Appointment-based", "Online", "Mix"], intent: 'service_method' };
-    }
-    if (index === 2) {
-      return {
-        title: "3. What do you want to improve the most?",
-        type: 'select',
-        options: ['Increase sales', 'Reduce losses', 'Improve retention', 'Improve efficiency', 'Better financial visibility'],
-        intent: 'primary_goal'
-      };
-    }
-    // [MULTI-BUSINESS] commented for grocery-only build — restore to re-enable.
-    // if (index === 3 && isOtherCategory) {
-    //    return {
-    //      title: "4. Describe your business in one line",
-    //      type: 'input',
-    //      placeholder: "e.g. A boutique selling handmade jewelry",
-    //      intent: 'business_description'
-    //    };
-    // }
-    return null;
+    const q = questionSet[index];
+    if (!q) return null;
+    return {
+      ...q,
+      placeholder: q.type === 'input' ? t('onboarding_type_answer') : undefined,
+    };
   };
 
   const currentQ = getQuestionConfig(stepIndex);
-  // [MULTI-BUSINESS] grocery-only build: preset step count is 3 (the "Other" 4th step is disabled).
-  // const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : (isOtherCategory ? 4 : 3);
-  const totalSteps = dynamicConfig && Array.isArray(dynamicConfig) ? dynamicConfig.length : 3;
+  const totalSteps = questionSet.length;
 
   const handleToggle = (opt: string) => {
     // @ts-ignore
@@ -568,8 +541,6 @@ Return format:
     
     const newAnswers = [...answers, finalSelection];
     if (stepIndex >= totalSteps - 1) {
-      setIsLoading(true);
-      
       const completeData = {
         businessContext: details,
         timestamp: new Date().toISOString(),
@@ -607,12 +578,13 @@ Return format:
     }
   };
 
-  if (isLoading) {
+  if (isPersonalizing) {
     return (
       <div className="bg-[#1A1A1A] rounded-2xl p-6 max-w-sm w-full shadow-lg flex flex-col h-[65vh] max-h-[550px] overflow-hidden justify-center items-center">
-         <div className="animate-pulse flex flex-col items-center">
+         <div className="animate-pulse flex flex-col items-center px-4">
            <div className="w-8 h-8 rounded-full border-2 border-neutral-600 border-t-[#E6E6FA] animate-spin mb-6" />
-           <p className="text-neutral-400 text-sm font-medium">Personalizing your experience...</p>
+           <p className="text-neutral-300 text-sm font-medium text-center">{t('onboarding_personalizing_title')}</p>
+           <p className="text-neutral-500 text-xs mt-2 text-center leading-relaxed">{t('onboarding_personalizing_hint')}</p>
          </div>
       </div>
     );
@@ -747,11 +719,17 @@ Return format:
 
 
 const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
-  const [step, setStep] = useState<'name' | 'storeDetails' | 'language' | 'businessContext'>('name');
+  const [step, setStep] = useState<'name' | 'language' | 'storeDetails' | 'businessContext'>('name');
   const [storeDetails, setStoreDetails] = useState<{storeName: string, storeCategory: string} | null>(null);
 
   const handleNameNext = (name: string) => {
     localStorage.setItem('dukan-profile-name', name);
+    // Language comes before the store details so every screen after this point,
+    // including the AI questionnaire, is already in the chosen language.
+    setStep('language');
+  };
+
+  const handleLanguageNext = () => {
     setStep('storeDetails');
   };
 
@@ -759,9 +737,7 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
     localStorage.setItem('dukan-store-name', details.storeName);
     localStorage.setItem('dukan-store-category', details.storeCategory);
     setStoreDetails(details);
-    // Language comes straight after the position, so the questionnaire that
-    // follows is written in the language that was just picked.
-    setStep('language');
+    setStep('businessContext');
   };
 
   const handleContextComplete = (answers: any) => {
@@ -798,8 +774,8 @@ const OnboardingFlow: React.FC<OnboardingFlowProps> = ({ onComplete }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
         {step === 'name' && <NameStep onNext={handleNameNext} />}
+        {step === 'language' && <LanguageStep onNext={handleLanguageNext} />}
         {step === 'storeDetails' && <StoreDetailsStep onNext={handleStoreDetailsNext} />}
-        {step === 'language' && <LanguageStep onNext={() => setStep('businessContext')} />}
         {step === 'businessContext' && storeDetails && <BusinessContextStep details={storeDetails} onComplete={handleContextComplete} />}
     </div>
   );

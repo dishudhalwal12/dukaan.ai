@@ -131,5 +131,17 @@
   "category_grocery": "ದಿನಸಿ ಮತ್ತು ಜನರಲ್ ಅಂಗಡಿ",
   "category_electronics": "ಎಲೆಕ್ಟ್ರಾನಿಕ್ಸ್",
   "category_fashion": "ಫ್ಯಾಷನ್",
-  "category_other": "ಇತರೆ"
+  "category_other": "ಇತರೆ",
+  "onboarding_personalizing_title": "ನಿಮ್ಮ ಅನುಭವವನ್ನು ನಿಮಗಾಗಿ ವೈಯಕ್ತಿಕಗೊಳಿಸಲಾಗುತ್ತಿದೆ...",
+  "onboarding_personalizing_hint": "ನಿಮ್ಮ ಅಂಗಡಿಗಾಗಿ ಕೆಲವು ಪ್ರಶ್ನೆಗಳನ್ನು ಸಿದ್ಧಪಡಿಸುತ್ತಿದ್ದೇವೆ. ಕೆಲವು ಸೆಕೆಂಡುಗಳು ತೆಗೆದುಕೊಳ್ಳುತ್ತದೆ.",
+  "insights_empty_title": "ನಿಮ್ಮ ಮೊದಲ ಉತ್ಪನ್ನವನ್ನು ಸೇರಿಸಿ",
+  "insights_empty_description": "AI ಒಳನೋಟಗಳನ್ನು ಪಡೆಯಲು ನಿಮ್ಮ ಕ್ಯಾಟಲಾಗ್ಗೆ ಉತ್ಪನ್ನಗಳನ್ನು ಸೇರಿಸಿ.",
+  "insights_low_stock_title": "{{product}} ಸ್ಟಾಕ್ ಕಡಿಮೆಯಿದೆ",
+  "insights_low_stock_description": "ಕೇವಲ {{count}} ಘಟಕಗಳು ಉಳಿದಿವೆ. ಶೀಘ್ರವಾಗಿ ಮರುಸ್ಟಾಕ್ ಆರ್ಡರ್ ಮಾಡಿ.",
+  "insights_healthy_title": "ಸ್ಟಾಕ್ ಸರಿಯಾಗಿದೆ",
+  "insights_healthy_description": "ಎಲ್ಲಾ {{count}} ಉತ್ಪನ್ನಗಳು ಸಾಕಷ್ಟು ಪ್ರಮಾಣದಲ್ಲಿವೆ. ಇಂದಿನ ಮಾರಾಟಕ್ಕೆ ಸಿದ್ಧ.",
+  "insights_error_title": "ಒಳನೋಟಗಳನ್ನು ಪಡೆಯಲಾಗಲಿಲ್ಲ",
+  "insights_error_description": "AI ಸೇವೆಗೆ ಸಂಪರ್ಕಿಸುವಲ್ಲಿ ಸಮಸ್ಯೆ. ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.",
+  "insights_quota_title": "AI ಕೋಟಾ ಮುಗಿದಿದೆ",
+  "insights_quota_description": "ನಿಮ್ಮ ದೈನಂದಿನ AI ಒಳನೋಟ ಕೋಟಾ ಮುಗಿದಿದೆ. ಅಪ್ಗ್ರೇಡ್ಗಾಗಿ ನಿಮ್ಮ ಯೋಜನೆಯನ್ನು ನೋಡಿ."
 }

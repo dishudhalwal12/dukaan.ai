@@ -90,7 +90,7 @@ export const saveBusinessProfileToCloud = async (
     const effectiveProfile = profileData || {
       storeDetails: {
         storeName,
-        category: localStorage.getItem('dukan-store-category') ?? null,
+        category: localStorage.getItem('dukan-store-category') ?? 'Kirana / General Store',
       },
       ownerName: localStorage.getItem('dukan-profile-name') || undefined,
       preferredLanguage: localStorage.getItem('dukan-language') || 'en',
@@ -114,7 +114,7 @@ export const saveBusinessProfileToCloud = async (
       .upsert({
         user_id: userId,
         store_name: storeName,
-        category: effectiveProfile?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? null,
+        category: effectiveProfile?.storeDetails?.category ?? localStorage.getItem('dukan-store-category') ?? 'Kirana / General Store',
         profile_data: effectiveProfile,
         onboarding: onboarding ?? {},
         // Owner identity, mirrored from the auth session: first/last name, picture,
@@ -162,19 +162,25 @@ export const saveLanguagePreferenceToCloud = async (
       return;
     }
 
-    // 1. Update or upsert business_profiles
-    const storeName = localStorage.getItem('dukan-store-name') || 'My Kirana Store';
-    const { error: bpError } = await supabase
-      .from('business_profiles')
-      .upsert(
-        {
-          user_id: userId,
-          store_name: storeName,
-          preferred_language: lang,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
+    // 1. Update or upsert business_profiles. Language is chosen before the
+    // store name in onboarding, so at that point there is no profile row yet —
+    // an upsert would create a placeholder store that marks onboarding done.
+    const storeName = localStorage.getItem('dukan-store-name');
+    const profilePatch = {
+      preferred_language: lang,
+      updated_at: new Date().toISOString(),
+    };
+    const { error: bpError } = storeName
+      ? await supabase
+          .from('business_profiles')
+          .upsert(
+            { user_id: userId, store_name: storeName, ...profilePatch },
+            { onConflict: 'user_id' }
+          )
+      : await supabase
+          .from('business_profiles')
+          .update(profilePatch)
+          .eq('user_id', userId);
 
     if (bpError) {
       console.warn('Supabase DB Error (saveLanguagePreferenceToCloud - business_profiles):', bpError.message);
@@ -302,6 +308,10 @@ export const fetchBusinessProfileFromCloud = async (storeName?: string): Promise
           ...data.profile_data,
           category: data.category,
           onboarding: data.onboarding,
+          // Exposed on the profile so callers that already have this round trip
+          // can adopt the account's language without a second query — and so a
+          // missing merchant_preferences row falls back to the profile column.
+          preferredLanguage: data.preferred_language ?? data.profile_data.preferredLanguage ?? null,
           // Absent when the shop has not set a position yet; the catalog gate
           // then asks for one on this device.
           storeLocation: typeof data.store_lat === 'number' && typeof data.store_lng === 'number'
@@ -608,7 +618,7 @@ export const saveMerchantPreferencesToCloud = async (explicitUserId?: string): P
       .upsert(
         {
           user_id: userId,
-          preferred_language: localStorage.getItem('dukan-language') || null,
+          preferred_language: localStorage.getItem('dukan-language') || 'en',
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'user_id' }
@@ -788,7 +798,7 @@ export const syncOnLogin = async (
     const cloudProducts = await fetchProductsFromCloud();
     const cloudOrders = await fetchOrdersFromCloud();
     const cloudPreferences = await fetchMerchantPreferencesFromCloud(userId);
-    const language = cloudPreferences?.preferred_language ?? null;
+    const language = cloudPreferences?.preferred_language ?? cloudProfile?.preferredLanguage ?? null;
 
     const hasCloudData = Boolean(
       cloudProfile || 

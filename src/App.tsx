@@ -55,7 +55,7 @@ const AppContent: React.FC = () => {
   // The translator is needed here, not only in the screens: the bottom-bar labels
   // are built by `resolveTabsFromBusinessType`, which used to return English
   // literals and so never followed a language change.
-  const { t, applyRemoteLanguage } = useLanguage();
+  const { t, applyRemoteLanguage, markLanguageResolved } = useLanguage();
   const [activeScreen, setActiveScreen] = useState<Screen>(getInitialScreen);
   const [orders, setOrders] = useState<Order[]>(() => {
     // The cache is per-device but orders are per-account: drop another
@@ -179,6 +179,11 @@ const AppContent: React.FC = () => {
 
       setCurrentUser(user);
       currentUserRef.current = user;
+      if (!user) {
+        // A confirmed sign-out leaves this device on its stored language; there
+        // is no account left to restore from.
+        markLanguageResolved();
+      }
 
       // Local store data belongs to one account. If this device still holds a
       // different account's data, drop it and reboot clean so nothing leaks
@@ -230,7 +235,7 @@ const AppContent: React.FC = () => {
         // Adopt the account's language BEFORE the boot-time preferences write.
         // The other order wrote this device's default English over the stored
         // choice, which is why a Hindi user kept finding English again.
-        applyRemoteLanguage(cloudData.language);
+        applyRemoteLanguage(cloudData.language ?? cloudData.profile?.preferredLanguage ?? null);
         void syncMerchantPreferencesOnceForAppLoad();
         if (cloudData.orders && cloudData.orders.length > 0) {
           setOrders(cloudData.orders);
@@ -302,6 +307,14 @@ const AppContent: React.FC = () => {
     return () => unsubscribe();
   }, [loadProducts]);
 
+  // Safety net for a stalled restore: insights must not wait forever for a
+  // language that is never going to arrive. Ten seconds is longer than any
+  // healthy profile sync.
+  useEffect(() => {
+    const id = setTimeout(markLanguageResolved, 10000);
+    return () => clearTimeout(id);
+  }, [markLanguageResolved]);
+
   useEffect(() => {
     const handleHash = () => {
       const hash = window.location.hash.toLowerCase().replace('#', '');
@@ -344,12 +357,16 @@ const AppContent: React.FC = () => {
         }
 
         if (isOrdersRoute || hasOAuthParams || isOAuthInProgress) {
+            // The OAuth callback still owns the language decision; the auth
+            // listener resolves it when the session arrives.
+            if (!hasOAuthParams && !isOAuthInProgress) markLanguageResolved();
             setInteractionDone(true);
             return;
         }
 
         if (isGuest) {
             // Guests onboard locally — no account, no cloud writes.
+            markLanguageResolved();
             if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') {
                 setShowOnboarding(true);
             } else {
@@ -367,12 +384,14 @@ const AppContent: React.FC = () => {
         // Onboarding is no longer a mount-time gate. Sign in / sign up comes
         // first; the auth listener starts onboarding only for accounts that
         // have not completed it. See the listener below.
+        markLanguageResolved();
         if (!authChecked.current) {
             authChecked.current = true;
             setShowAuthModal(true);
         }
     } catch (error) {
         console.error("Failed to check onboarding status from localStorage", error);
+        markLanguageResolved();
         setError("Failed to load onboarding status.");
         setShowAuthModal(true);
     }

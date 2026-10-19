@@ -18,6 +18,21 @@ interface LanguageContextType {
    * already holds a choice of its own, so a second device never overrides it.
    */
   applyRemoteLanguage: (language?: string | null) => void;
+  /**
+   * False until the boot-time language decision is final. Content that is
+   * generated in the language (the AI insights, above all) must wait for it,
+   * otherwise it is written in the default English before the account's choice
+   * has been restored.
+   */
+  languageReady: boolean;
+  /** Marks the boot-time language decision final (guest, signed-out, or synced). */
+  markLanguageResolved: () => void;
+  /**
+   * The language whose bundle is currently in `t`. It trails `language` while a
+   * newly chosen bundle is being fetched, and content generated in the language
+   * must wait for the two to match or it is written with the previous strings.
+   */
+  translationsLanguage: string | null;
   t: (key: string, options?: { [key: string]: string | number }) => string;
 }
 
@@ -53,7 +68,9 @@ const hasLocalChoice = (): boolean => {
 // The provider component
 export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<string>(readStoredLanguage);
+  const [languageReady, setLanguageReady] = useState(false);
   const [translations, setTranslations] = useState<Translations>({});
+  const [translationsLanguage, setTranslationsLanguage] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTranslations = async (lang: string) => {
@@ -64,22 +81,33 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
         }
         const data = await response.json();
         setTranslations(data);
+        setTranslationsLanguage(lang);
       } catch (error) {
         console.error(`Could not load translations for ${lang}`, error);
         // Fallback to English if fetch fails
         if (lang !== 'en') {
             await fetchTranslations('en');
+            // The English bundle is the best text available; let language-bound
+            // generation proceed rather than wait forever for a bundle that is
+            // not coming.
+            setTranslationsLanguage(lang);
         }
       }
     };
     fetchTranslations(language);
   }, [language]);
 
+  const markLanguageResolved = useCallback(() => {
+    setLanguageReady(true);
+  }, []);
+
   const setLanguage = (lang: string) => {
     try {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
       localStorage.setItem(LANGUAGE_CHOSEN_KEY, 'true');
       setLanguageState(lang);
+      // A deliberate choice is final: nothing restored later may override it.
+      setLanguageReady(true);
     } catch (error) {
       console.error("Could not save language to localStorage", error);
     }
@@ -92,7 +120,10 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const applyRemoteLanguage = (remote?: string | null) => {
-    if (!shouldAdoptRemoteLanguage(remote, hasLocalChoice())) return;
+    if (!shouldAdoptRemoteLanguage(remote, hasLocalChoice())) {
+      setLanguageReady(true);
+      return;
+    }
 
     const next = String(remote).trim().toLowerCase();
     try {
@@ -101,6 +132,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
       // Storage unavailable: the value still applies to this session.
     }
     setLanguageState(next);
+    setLanguageReady(true);
   };
 
   const t = useCallback((key: string, options?: { [key: string]: string | number }): string => {
@@ -118,7 +150,7 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     return value;
   }, [translations]);
 
-  const value = { language, setLanguage, applyRemoteLanguage, t };
+  const value = { language, setLanguage, applyRemoteLanguage, languageReady, markLanguageResolved, translationsLanguage, t };
 
   // Only render children when translations are loaded to avoid flicker
   return (
