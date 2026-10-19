@@ -103,7 +103,13 @@ export function SlideToConfirm({
   /* the live grab. A ref rather than state for the reason every
      drag on this bench uses one: it changes on every frame of a
      gesture, which is exactly the value that must not render. */
-  const grip = useRef<{ id: number; grab: number | null; moved: boolean } | null>(null);
+  const grip = useRef<{
+    id: number;
+    grab: number | null;
+    moved: boolean;
+    left: number;
+    k: number;
+  } | null>(null);
   const beat = useRef(0);
 
   const x = useMotionValue(0);
@@ -325,19 +331,6 @@ export function SlideToConfirm({
   const sx = useTransform(squash, (q) => q * (hot && !held && !done ? SWELL : 1));
   const sy = useTransform(squash, (q) => (1 / q) * (hot && !held && !done ? SWELL : 1));
 
-  const local = (clientX: number) => {
-    const box = track.current?.getBoundingClientRect();
-    if (!box) return 0;
-    /* the block is drawn at a fraction of its own size on the
-       wall and larger in the overlay, so a pointer delta in
-       screen pixels is not a delta in the component's own. The
-       rect's width against the width it is laid out at IS that
-       scale, and dividing by it puts the finger back into the
-       coordinates the geometry above is written in. */
-    const k = box.width / span;
-    return (clientX - box.left) / (k || 1);
-  };
-
   const finish = () => {
     setDone(true);
     /* ── x goes to ZERO, and that is the whole morph ────────
@@ -346,17 +339,8 @@ export function SlideToConfirm({
        directions: x loses TRAVEL, width gains it. Their sum is
        the right edge, so the right edge does not move — the
        handle plants itself where it arrived and opens out
-       behind it.
-
-       Sending x to TRAVEL instead was the first version and it
-       is worth recording, because it looked plausible in the
-       comment and was measurably wrong: the handle stayed at
-       the end AND grew to the full width, so its right edge
-       came out at 675 against a 375px track and the block
-       spilled over its own frame. Both values ride the same
-       spring, which is what keeps them in step frame by frame
-       rather than merely landing together. */
-    anchor.set(x.get());
+       behind it. */
+    anchor.set(TRAVEL);
     animate(shown, 0, { duration: 0.16 });
     animate(x, 0, spring);
     animate(pulse, [1, 0.974, 1], {
@@ -389,14 +373,17 @@ export function SlideToConfirm({
   const down = (e: React.PointerEvent) => {
     if (done) return;
     e.stopPropagation();
-    /* ── NO OFFSET YET, it is taken at the first MOVE ───────
-       Deciding it here is what made the toggle teleport: a
-       press away from the handle would set the offset to the
-       handle's own middle, and the first move then jumped it
-       the whole way in one frame. Taken at the first move, that
-       move asks for exactly the position the handle already
-       has, and every one after it is a delta. */
-    grip.current = { id: e.pointerId, grab: null, moved: false };
+    /* Cache track bounding rect on press so move never forces layout reflow */
+    const box = track.current?.getBoundingClientRect();
+    const left = box ? box.left : 0;
+    const k = box && span > 0 ? box.width / span : 1;
+    grip.current = {
+      id: e.pointerId,
+      grab: null,
+      moved: false,
+      left,
+      k: k || 1,
+    };
     setHeld(true);
     /* it throws if the id is not a live pointer — a synthetic
        event from a test or a rehearsal is exactly that — and
@@ -412,11 +399,19 @@ export function SlideToConfirm({
   const move = (e: PointerEvent | React.PointerEvent) => {
     const g = grip.current;
     if (!g || g.id !== e.pointerId) return;
-    const at = local(e.clientX);
+    const at = (e.clientX - g.left) / g.k;
     if (g.grab === null) { g.grab = at - x.get(); return; }
     const next = clamp(at - g.grab, 0, TRAVEL);
     if (Math.abs(next - x.get()) > 0.5) g.moved = true;
     x.set(next);
+
+    // If dragged all the way to the end, commit smoothly without waiting for release
+    if (next >= TRAVEL) {
+      grip.current = null;
+      try { track.current?.releasePointerCapture?.(e.pointerId); } catch { /* never captured */ }
+      setHeld(false);
+      finish();
+    }
   };
 
   const up = (e: PointerEvent | React.PointerEvent) => {
@@ -431,8 +426,23 @@ export function SlideToConfirm({
        exact bug; both halves of the pair throw. */
     try { track.current?.releasePointerCapture?.(e.pointerId); } catch { /* never captured */ }
     setHeld(false);
-    if (x.get() >= mark) finish();
-    else {
+
+    const currentX = x.get();
+    // If released past 75% of travel, glide smoothly to end and confirm
+    if (currentX >= TRAVEL * 0.75) {
+      if (currentX < TRAVEL) {
+        animate(x, TRAVEL, {
+          type: "spring",
+          stiffness: 500,
+          damping: 32,
+          onComplete: () => {
+            finish();
+          },
+        });
+      } else {
+        finish();
+      }
+    } else {
       animate(x, 0, home);
     }
   };
@@ -482,7 +492,6 @@ export function SlideToConfirm({
               width: wide,
               borderRadius: gripR,
             }}
-            transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.7 }}
             aria-label={done ? confirmedLabel : label}
           >
             <motion.span className="sld-arrow" style={{ opacity: arrow }} aria-hidden="true">

@@ -80,6 +80,8 @@ const AppContent: React.FC = () => {
     }
   });
   const [newOrderForPopup, setNewOrderForPopup] = useState<Order | null>(null);
+  const newOrderForPopupRef = useRef<Order | null>(newOrderForPopup);
+  const pendingPopupQueueRef = useRef<Order[]>([]);
   const [isInteractionDone, setInteractionDone] = useState(false);
   const [isOtherModalShowing, setIsOtherModalShowing] = useState(false);
   const { products, updateProduct, loadProducts } = useProducts();
@@ -374,13 +376,68 @@ const AppContent: React.FC = () => {
 
   const newOrderCount = orders.filter(o => isNewOrder(o.status)).length;
 
+  const isMatchForCurrentOwner = useCallback((order: Order): boolean => {
+    const myId = currentUserRef.current?.id;
+    if (myId) {
+      return orderBelongsTo(order, myId) || !order.userId;
+    }
+    const isDevOrLocal = Boolean(
+      import.meta.env.DEV ||
+      (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+    );
+    const isGuest = Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('dukan-guest-mode'));
+    return isDevOrLocal || isGuest;
+  }, []);
+
+  const tryShowNextPopup = useCallback(() => {
+    if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current || newOrderForPopupRef.current) {
+      return;
+    }
+    while (pendingPopupQueueRef.current.length > 0) {
+      const candidate = pendingPopupQueueRef.current.shift();
+      if (candidate && isNewOrder(candidate.status)) {
+        setNewOrderForPopup(candidate);
+        break;
+      }
+    }
+  }, []);
+
+  const queueOrShowPopup = useCallback((order: Order) => {
+    if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current || newOrderForPopupRef.current) {
+      console.log('[WhatsApp Order] Received new order, queued for popup when modal/screen clears:', order.id);
+      if (!pendingPopupQueueRef.current.some(o => o.id === order.id)) {
+        pendingPopupQueueRef.current.push(order);
+      }
+    } else {
+      setNewOrderForPopup(order);
+    }
+  }, []);
+
+  useEffect(() => {
+    newOrderForPopupRef.current = newOrderForPopup;
+    if (!newOrderForPopup) {
+      const tId = setTimeout(() => {
+        tryShowNextPopup();
+      }, 50);
+      return () => clearTimeout(tId);
+    }
+  }, [newOrderForPopup, tryShowNextPopup]);
+
   const handleNavigation = useCallback((screen: Screen) => {
     setActiveScreen(screen);
-  }, []);
+    activeScreenRef.current = screen;
+    if (screen !== Screen.SETTINGS) {
+      setTimeout(() => tryShowNextPopup(), 50);
+    }
+  }, [tryShowNextPopup]);
 
   const handleModalStateChange = useCallback((isOpen: boolean) => {
     setIsOtherModalShowing(isOpen);
-  }, []);
+    isOtherModalShowingRef.current = isOpen;
+    if (!isOpen) {
+      setTimeout(() => tryShowNextPopup(), 50);
+    }
+  }, [tryShowNextPopup]);
 
   /**
    * Applies one order's lines to stock in a single pass.
@@ -521,14 +578,18 @@ const AppContent: React.FC = () => {
   // depth, drop anything the response returns that isn't explicitly ours.
   useEffect(() => {
     const myId = currentUserRef.current?.id;
-    if (!myId) return; // No account → no backend orders (guests stay local).
+    const isDevOrLocal = Boolean(
+      import.meta.env.DEV ||
+      (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+    );
+    const isGuest = Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('dukan-guest-mode'));
+    if (!myId && !isDevOrLocal && !isGuest) return;
 
     whatsappService.fetchOrders().then(res => {
       if (res?.orders && res.orders.length > 0) {
-        const backendOrders: Order[] = ownedOrdersOnly(
-          res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
-          myId,
-        );
+        const backendOrders: Order[] = res.orders
+          .map((o: any) => normalizeIncomingOrder(o))
+          .filter((o: Order) => Boolean(o.id) && isMatchForCurrentOwner(o));
         setOrders(prev => {
           const prevMap = new Map(prev.map(p => [p.id, p]));
           const merged: Order[] = [];
@@ -565,7 +626,7 @@ const AppContent: React.FC = () => {
     }).catch(err => {
       console.warn('[Dukan] Failed to fetch backend orders on mount:', err);
     });
-  }, [normalizeIncomingOrder, currentUser?.id]);
+  }, [normalizeIncomingOrder, isMatchForCurrentOwner, currentUser?.id]);
 
   // Real-time WhatsApp Baileys SSE listener + 2.5s robust polling fallback
   useEffect(() => {
@@ -574,9 +635,8 @@ const AppContent: React.FC = () => {
         const incomingOrder = normalizeIncomingOrder(event.order);
         if (!incomingOrder.id) return;
 
-        // Shared backend: an event may concern another shop. Ignore anything
-        // that isn't explicitly owned by the signed-in account.
-        if (!orderBelongsTo(incomingOrder, currentUserRef.current?.id)) return;
+        // Shared backend: verify order matches current account or dev environment
+        if (!isMatchForCurrentOwner(incomingOrder)) return;
 
         // Dedup: already alerted/seen
         if (seenOrderIds.current.has(incomingOrder.id)) return;
@@ -584,28 +644,21 @@ const AppContent: React.FC = () => {
         // Play dual-tone chime
         playOrderChime();
 
+        seenOrderIds.current.add(incomingOrder.id);
+        localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+
         setOrders(prevOrders => {
           if (prevOrders.some(o => o.id === incomingOrder.id)) {
             return prevOrders;
           }
-
-          seenOrderIds.current.add(incomingOrder.id);
-          localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
-
-          // Trigger popup unless suppressed by active subscreen or another open modal
-          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
-            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
-          } else {
-            setTimeout(() => {
-              setNewOrderForPopup(incomingOrder);
-            }, 0);
-          }
-
           return [incomingOrder, ...prevOrders];
         });
+
+        // Trigger popup immediately or queue if another modal/settings is active
+        queueOrShowPopup(incomingOrder);
       } else if (event.type === 'dukan_order_updated' && event.order) {
         const updated = normalizeIncomingOrder(event.order);
-        if (updated.id && orderBelongsTo(updated, currentUserRef.current?.id)) {
+        if (updated.id && isMatchForCurrentOwner(updated)) {
           setOrders(prev => prev.map(o => {
             if (o.id !== updated.id) return o;
             const effectiveStatus = (o.status === OrderStatus.COMPLETED && updated.status !== OrderStatus.COMPLETED)
@@ -627,14 +680,18 @@ const AppContent: React.FC = () => {
     pollPrimedRef.current = false;
     const pollInterval = setInterval(() => {
       const myId = currentUserRef.current?.id;
-      if (!myId) return; // No account → nothing to reconcile.
+      const isDevOrLocal = Boolean(
+        import.meta.env.DEV ||
+        (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'))
+      );
+      const isGuest = Boolean(typeof localStorage !== 'undefined' && localStorage.getItem('dukan-guest-mode'));
+      if (!myId && !isDevOrLocal && !isGuest) return;
 
       whatsappService.fetchOrders().then(res => {
         if (!res?.orders || !Array.isArray(res.orders)) return;
-        const freshOrders: Order[] = ownedOrdersOnly(
-          res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
-          myId,
-        );
+        const freshOrders: Order[] = res.orders
+          .map((o: any) => normalizeIncomingOrder(o))
+          .filter((o: Order) => Boolean(o.id) && isMatchForCurrentOwner(o));
 
         // The SSE stream is the alerting path, but it can be slow or dropped
         // behind a proxy. The poll therefore also raises the popup — once per
@@ -654,12 +711,9 @@ const AppContent: React.FC = () => {
 
           playOrderChime();
 
-          // Trigger popup unless suppressed by active subscreen or another open modal.
-          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
-            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
-          } else {
-            const first = appeared.find(o => electedIds.includes(o.id));
-            if (first) setTimeout(() => setNewOrderForPopup(first), 0);
+          const candidates = appeared.filter(o => electedIds.includes(o.id));
+          for (const cand of candidates) {
+            queueOrShowPopup(cand);
           }
         }
 
