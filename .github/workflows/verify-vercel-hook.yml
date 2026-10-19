@@ -1,0 +1,26 @@
+name: Verify Vercel Deploy Hook
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/ui-enhancement]
+
+jobs:
+  verify:
+    name: Verify Hook Secret
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Secret Configuration
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "❌ ERROR: VERCEL_DEPLOY_HOOK is NOT set in Repository Secrets."
+            exit 1
+          fi
+          echo "✅ Secret VERCEL_DEPLOY_HOOK detected!"
+          if [[ "$HOOK" == https://api.vercel.com/v1/integrations/deploy/* ]]; then
+            echo "✅ Valid Vercel Deploy Hook URL format."
+          else
+            echo "⚠️ Secret is present but does not start with https://api.vercel.com/v1/integrations/deploy/"
+          fi
