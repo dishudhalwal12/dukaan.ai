@@ -80,6 +80,8 @@ const AppContent: React.FC = () => {
     }
   });
   const [newOrderForPopup, setNewOrderForPopup] = useState<Order | null>(null);
+  const newOrderForPopupRef = useRef<Order | null>(null);
+  useEffect(() => { newOrderForPopupRef.current = newOrderForPopup; }, [newOrderForPopup]);
   const [isInteractionDone, setInteractionDone] = useState(false);
   const [isOtherModalShowing, setIsOtherModalShowing] = useState(false);
   const { products, updateProduct, loadProducts } = useProducts();
@@ -161,7 +163,20 @@ const AppContent: React.FC = () => {
 
   // Listen to Auth State and sync data to/from Supabase backend
   useEffect(() => {
-    const unsubscribe = listenToAuthState(async (user) => {
+    const unsubscribe = listenToAuthState(async (user, report) => {
+      /**
+       * An UNCONFIRMED "no user yet" answer is not a sign-out.
+       *
+       * The shell boots from the cached identity, and a session check that has
+       * not resolved yet can answer "null" after the page has painted as signed
+       * in. Treating that as a sign-out made ownership drop the cache and
+       * hard-reload the page underneath an order popup — the shopkeeper watched
+       * the popup appear and vanish for no visible reason. Only a session the
+       * server accepted, or an explicit SIGNED_OUT, carries that proof.
+       */
+      const confirmed = report?.confirmed !== false;
+      if (!user && !confirmed) return;
+
       setCurrentUser(user);
       currentUserRef.current = user;
 
@@ -187,8 +202,15 @@ const AppContent: React.FC = () => {
           console.debug('[auth-flow] ownership drop', { signInInFlight, hasUser: Boolean(user) });
         }
         if (!signInInFlight && claimOwnershipReboot()) {
-          window.location.reload();
-          return;
+          // A reload destroys the React tree, taking an order popup with it.
+          // The cache has already been dropped, so the caller re-hydrates
+          // below; defer the reload while a shopkeeper is answering an order.
+          if (newOrderForPopupRef.current) {
+            console.warn('[auth-flow] ownership drop while an order popup is open — deferring reload');
+          } else {
+            window.location.reload();
+            return;
+          }
         }
       }
 

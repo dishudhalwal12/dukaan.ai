@@ -285,14 +285,30 @@ export const getCurrentUser = async (): Promise<User | null> => {
   }
 };
 
+export interface AuthReport {
+  /**
+   * Whether this report is proof of who the user is.
+   *
+   * A `getSession()` answer of "no session" is NOT proof. The shell boots from
+   * the cached identity, and that request can answer long after the page has
+   * painted as signed in — or after a session it has not seen yet was stored by
+   * a token refresh. Treating that answer as a sign-out made the app drop its
+   * cache and hard-reload underneath an order popup. Only a session Supabase
+   * accepted, or an explicit SIGNED_OUT, is proof.
+   */
+  confirmed: boolean;
+}
+
 /**
  * Listen to auth state changes in Supabase and notify callbacks.
  * Automatically cleans OAuth query/hash tokens from URL and caches active user.
  */
-export const listenToAuthState = (callback: (user: User | null) => void): (() => void) => {
+export const listenToAuthState = (
+  callback: (user: User | null, report?: AuthReport) => void,
+): (() => void) => {
   try {
     if (!isSupabaseConfigured()) {
-      callback(null);
+      callback(null, { confirmed: true });
       return () => {};
     }
 
@@ -312,7 +328,7 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
     let lastUserId: string | null = null;
 
     /** Caches the identity, reports it, and remembers it. */
-    const deliver = (user: User | null) => {
+    const deliver = (user: User | null, confirmed = true) => {
       lastUserId = user?.id ?? null;
       if (user) {
         localStorage.setItem('dukan-auth-user', JSON.stringify({
@@ -321,13 +337,17 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
         }));
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
-      } else {
+      } else if (confirmed) {
+        // Only a confirmed sign-out may erase the cached identity. An
+        // unconfirmed "no session yet" must leave it alone: it is what the
+        // shell reads on the next boot, and wiping it made a signed-in
+        // shopkeeper look like a guest.
         localStorage.removeItem('dukan-auth-user');
       }
       // Cleaned on both branches. A refused callback leaves `error=...` in the
       // URL, and leaving it there re-raised the same toast on every reload.
       cleanOAuthUrl();
-      callback(user);
+      callback(user, { confirmed });
     };
 
     // 1. Initial session check
@@ -335,14 +355,15 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
       if (session?.user) {
         deliver(session.user);
       } else {
-        // If no active session and not in the middle of OAuth redirect, notify null
+        // If no active session and not in the middle of OAuth redirect, notify
+        // null — unconfirmed, because this answer only says "not yet here".
         const isOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
         if (!isOAuth) {
-          deliver(null);
+          deliver(null, false);
         }
       }
     }).catch(() => {
-      deliver(null);
+      deliver(null, false);
     });
 
     // 2. Realtime auth state listener
@@ -376,7 +397,10 @@ export const listenToAuthState = (callback: (user: User | null) => void): (() =>
           return;
         }
         if ((user?.id ?? null) === lastUserId) return;
-        deliver(user);
+        // Unconfirmed when there is no user: a foreground re-check that finds no
+        // session may merely have raced a refresh, and must not be read as a
+        // sign-out. A session it does find is proof.
+        deliver(user, Boolean(user));
       }).catch(() => {});
     };
     document.addEventListener('visibilitychange', onForeground);
