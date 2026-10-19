@@ -8,6 +8,19 @@
  * allowlist below narrows that to the origins this app is actually served from.
  */
 
+/**
+ * Origins this deployment owns, kept in code rather than only in the panel env.
+ *
+ * `dukaan-ai-beta.vercel.app` redirects (307) to the project domain, and the
+ * browser evaluates CORS against the URL it lands on — not the one it typed. A
+ * panel whose CORS_ORIGINS only lists the beta alias therefore breaks every
+ * `/api` and `/events` call after the redirect.
+ */
+export const FIRST_PARTY_ORIGINS = [
+  'https://dukaan-ai-beta.vercel.app',
+  'https://dukaan-ai-hypnexis.vercel.app',
+];
+
 /** "a, b , c/" -> ["a","b","c"] */
 export function parseOrigins(raw) {
   return String(raw == null ? '' : raw)

@@ -434,6 +434,10 @@ if (!HERMETIC_ONLY) {
     await check('live', '13. POS app is live and wired to the backend', async () => {
       const page = await withTimeout(retryFetch(posUrl, { headers: sockHeader }), 30000, 'POS page');
       assert(page.ok, `the POS page answered HTTP ${page.status}`);
+      // Vercel 307s the beta alias to the project domain. The browser judges
+      // CORS on the final origin, so this check must too — otherwise a stale
+      // allowlist looks healthy while every real request is blocked.
+      const finalPosUrl = page.url || posUrl;
       const html = await page.text();
       assert(/<div id="root"/.test(html) || /<script/.test(html), 'the POS page is not the app shell');
 
@@ -441,13 +445,13 @@ if (!HERMETIC_ONLY) {
       // look at every same-origin bundle and require the backend to appear in one
       // of them, rather than trusting the first <script src> on the page.
       const srcs = [...html.matchAll(/<script[^>]*src="([^"]+\.js)"/g)].map((m) => m[1])
-        .filter((s) => !/^https?:\/\//.test(s) || s.startsWith(new URL(posUrl).origin));
+        .filter((s) => !/^https?:\/\//.test(s) || s.startsWith(new URL(finalPosUrl).origin));
       assert(srcs.length > 0, 'the POS page loads no application bundle');
       const host = apiBase.replace(/^https?:\/\//, '');
       let sawBackend = false;
       let sawSupabase = false;
       for (const s of srcs) {
-        const bundle = await withTimeout(retryFetch(new URL(s, posUrl).toString(), { headers: sockHeader }), 30000, 'POS bundle');
+        const bundle = await withTimeout(retryFetch(new URL(s, finalPosUrl).toString(), { headers: sockHeader }), 30000, 'POS bundle');
         assert(bundle.ok, `the app bundle ${s} answered HTTP ${bundle.status}`);
         const code = await bundle.text();
         if (code.includes(host)) sawBackend = true;
@@ -457,7 +461,7 @@ if (!HERMETIC_ONLY) {
       assert(sawSupabase, 'the deployed app carries no Supabase URL, so sign in cannot work');
 
       // and the browser's preflight must be allowed, or the POS never reaches it
-      const origin = new URL(posUrl).origin;
+      const origin = new URL(finalPosUrl).origin;
       const pre = await withTimeout(retryFetch(`${apiBase}/api/ai/chat/completions`, {
         method: 'OPTIONS',
         headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' },
