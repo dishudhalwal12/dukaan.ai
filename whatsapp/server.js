@@ -1046,29 +1046,16 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
   // Notify customer on WhatsApp
-  let whatsappSent = false;
-  let whatsappWarning = null;
-
-  if (!sock || connectionStatus !== 'connected') {
-    whatsappWarning = 'WhatsApp is not connected. Scan QR code in Settings to connect.';
-    console.warn(`[Dukan] Order #${order.id} accepted, but WhatsApp is not connected.`);
-  } else if (!order.customerJid) {
-    whatsappWarning = 'Order has no customer WhatsApp JID.';
-    console.warn(`[Dukan] Order #${order.id} accepted, but customer has no WhatsApp JID.`);
-  } else {
-    try {
-      const sentText = await notifyCustomer(sock, order, 'accepted');
-      whatsappSent = Boolean(sentText);
-    } catch (e) {
-      whatsappWarning = e.message;
-      console.error('Failed to notify customer of acceptance:', e.message);
-    }
+  try {
+    await notifyCustomer(sock, order, 'accepted');
+  } catch (e) {
+    console.error('Failed to notify customer of acceptance:', e.message);
   }
 
   await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
-  console.log(`[Dukan] Order #${order.id} ACCEPTED by shopkeeper. (WhatsApp sent: ${whatsappSent})`);
-  res.json({ success: true, order, whatsappSent, ...(whatsappWarning ? { warning: whatsappWarning } : {}) });
+  console.log(`[Dukan] Order #${order.id} ACCEPTED by shopkeeper.`);
+  res.json({ success: true, order });
 });
 
 // Out for Delivery / At Doorstep

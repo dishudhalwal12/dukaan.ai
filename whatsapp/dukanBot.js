@@ -1114,7 +1114,8 @@ async function generateReply(messages, cfg) {
           messages,
           temperature: 0.6,
           max_completion_tokens: 800,
-          top_p: 0.95
+          top_p: 0.95,
+          reasoning_effort: 'default'
         }),
         signal: ctrl.signal
       });

@@ -80,9 +80,6 @@ const AppContent: React.FC = () => {
     }
   });
   const [newOrderForPopup, setNewOrderForPopup] = useState<Order | null>(null);
-  const newOrderForPopupRef = useRef<Order | null>(null);
-  useEffect(() => { newOrderForPopupRef.current = newOrderForPopup; }, [newOrderForPopup]);
-  const pendingPopupQueueRef = useRef<Order[]>([]);
   const [isInteractionDone, setInteractionDone] = useState(false);
   const [isOtherModalShowing, setIsOtherModalShowing] = useState(false);
   const { products, updateProduct, loadProducts } = useProducts();
@@ -377,30 +374,13 @@ const AppContent: React.FC = () => {
 
   const newOrderCount = orders.filter(o => isNewOrder(o.status)).length;
 
-  const tryShowNextPopup = useCallback(() => {
-    if (newOrderForPopupRef.current) return;
-    if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) return;
-    if (pendingPopupQueueRef.current.length === 0) return;
-
-    const nextOrder = pendingPopupQueueRef.current.shift();
-    if (nextOrder) {
-      setNewOrderForPopup(nextOrder);
-    }
-  }, []);
-
   const handleNavigation = useCallback((screen: Screen) => {
     setActiveScreen(screen);
-    if (screen !== Screen.SETTINGS) {
-      setTimeout(tryShowNextPopup, 50);
-    }
-  }, [tryShowNextPopup]);
+  }, []);
 
   const handleModalStateChange = useCallback((isOpen: boolean) => {
     setIsOtherModalShowing(isOpen);
-    if (!isOpen) {
-      setTimeout(tryShowNextPopup, 50);
-    }
-  }, [tryShowNextPopup]);
+  }, []);
 
   /**
    * Applies one order's lines to stock in a single pass.
@@ -436,13 +416,8 @@ const AppContent: React.FC = () => {
         applyStockDelta(orderToUpdate.items, -1);
 
         // Trigger real WhatsApp confirmation message via Baileys backend
-        whatsappService.acceptOrder(orderId).then(res => {
-            if (res.whatsappSent === false && res.warning) {
-                setError(res.warning);
-            }
-        }).catch(err => {
+        whatsappService.acceptOrder(orderId).catch(err => {
             console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
-            setError('Could not reach WhatsApp backend. Is the server running on port 5001?');
         });
     } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
         // Trigger doorstep / at pickup notification to customer via WhatsApp
@@ -469,7 +444,6 @@ const AppContent: React.FC = () => {
     setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
     if (newOrderForPopup?.id === orderId) {
         setNewOrderForPopup(null);
-        setTimeout(tryShowNextPopup, 50);
     }
   };
 
@@ -618,13 +592,9 @@ const AppContent: React.FC = () => {
           seenOrderIds.current.add(incomingOrder.id);
           localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
 
-          // Trigger popup immediately unless suppressed by active subscreen or another open modal;
-          // if suppressed, queue it so it pops up as soon as the modal/screen closes.
-          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current || newOrderForPopupRef.current) {
-            console.log('[WhatsApp Order] Received new order, queuing popup until modal/screen closes.');
-            if (!pendingPopupQueueRef.current.some(p => p.id === incomingOrder.id)) {
-              pendingPopupQueueRef.current.push(incomingOrder);
-            }
+          // Trigger popup unless suppressed by active subscreen or another open modal
+          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
+            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
           } else {
             setTimeout(() => {
               setNewOrderForPopup(incomingOrder);
@@ -684,16 +654,12 @@ const AppContent: React.FC = () => {
 
           playOrderChime();
 
-          const first = appeared.find(o => electedIds.includes(o.id));
-          if (first) {
-            if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current || newOrderForPopupRef.current) {
-              console.log('[WhatsApp Order] Polled new order, queuing popup until modal/screen closes.');
-              if (!pendingPopupQueueRef.current.some(p => p.id === first.id)) {
-                pendingPopupQueueRef.current.push(first);
-              }
-            } else {
-              setTimeout(() => setNewOrderForPopup(first), 0);
-            }
+          // Trigger popup unless suppressed by active subscreen or another open modal.
+          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
+            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
+          } else {
+            const first = appeared.find(o => electedIds.includes(o.id));
+            if (first) setTimeout(() => setNewOrderForPopup(first), 0);
           }
         }
 
