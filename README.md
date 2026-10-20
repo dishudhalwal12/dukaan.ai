@@ -16,9 +16,13 @@
 
 </div>
 
-![Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard](docs/demo.gif)
+<div align="center">
 
-<p align="center"><em>One order, start to finish. WhatsApp on the right, the shop dashboard on the left.</em></p>
+<img src="./docs/demo.gif" alt="Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard" width="100%" />
+
+<sub>One order, start to finish. WhatsApp on the right, the shop dashboard on the left.</sub>
+
+</div>
 
 ## Why this exists
 
