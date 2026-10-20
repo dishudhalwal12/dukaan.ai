@@ -76,7 +76,6 @@ const EditProfileScreen: React.FC<{
     onOpenAuth?: () => void;
 }> = ({ onBack, currentUser, onOpenAuth }) => {
     const [name, setName] = useState(() => localStorage.getItem('dukan-profile-name') || '');
-    const [email, setEmail] = useState(() => localStorage.getItem('dukan-profile-email') || '');
     const [profilePic, setProfilePic] = useState(() => localStorage.getItem('dukan-profile-pic') || null);
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingImage, setIsProcessingImage] = useState(false);
@@ -126,14 +125,13 @@ const EditProfileScreen: React.FC<{
         setIsSaving(true);
         try {
             localStorage.setItem('dukan-profile-name', name);
-            localStorage.setItem('dukan-profile-email', email);
             if (profilePic) {
                 localStorage.setItem('dukan-profile-pic', profilePic);
             } else {
                 localStorage.removeItem('dukan-profile-pic');
             }
 
-            console.log('Saving profile:', { name, email, language });
+            console.log('Saving profile:', { name, language });
 
             // Save language preference to Supabase cloud
             void saveLanguagePreferenceToCloud(language);
@@ -175,7 +173,7 @@ const EditProfileScreen: React.FC<{
     return (
         <div>
             <SettingsSubHeader title={t('edit_profile_title')} onBack={onBack} onSave={handleSave} isSaving={isSaving} />
-            <div className="p-4 space-y-8">
+            <div data-tour="edit-profile-tour" className="p-4 space-y-8">
                 <SyncStatusCard currentUser={currentUser} onOpenAuth={onOpenAuth} />
                 <div className="flex flex-col items-center">
                     <div className="relative">
@@ -204,8 +202,15 @@ const EditProfileScreen: React.FC<{
                 </div>
                 <div className="space-y-4">
                     <FormField label={t('label_full_name')} type="text" value={name} onChange={setName} placeholder={t('placeholder_your_full_name')} />
-                    <FormField label={t('label_mobile_number')} type="tel" value="+91 98765 43210" onChange={() => {}} disabled isVerified />
-                    <FormField label={t('label_email_address')} type="email" value={email} onChange={setEmail} placeholder={t('placeholder_your_email_address')} />
+                    <FormField
+                        label={t('label_email_address')}
+                        type="email"
+                        value={currentUser?.email ?? ''}
+                        onChange={() => {}}
+                        placeholder={t('placeholder_your_email_address')}
+                        disabled
+                        isVerified
+                    />
 
                     <div>
                         <label className="block text-sm font-medium text-neutral-400 mb-1.5 px-1">{t('settings_change_language') || 'Preferred Language'}</label>

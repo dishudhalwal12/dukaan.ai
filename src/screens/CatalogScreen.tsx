@@ -245,7 +245,7 @@ const CatalogScreen: React.FC<CatalogScreenProps> = ({ onModalStateChange }) => 
     return (
         <div>
             <CatalogHeader />
-            <div className="p-4">
+            <div data-tour="catalog-search-add" className="p-4">
                 <SearchAndAdd 
                     onAdd={handleAddProduct} 
                     onSearch={setSearchQuery} 

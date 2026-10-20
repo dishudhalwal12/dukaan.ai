@@ -122,6 +122,41 @@
           transform: translateX(200%);
         }
       }
+      .settings-banner {
+        background:
+          radial-gradient(120% 160% at 0% 0%, rgba(230, 230, 250, 0.3), transparent 58%),
+          radial-gradient(120% 180% at 100% 100%, rgba(74, 222, 128, 0.16), transparent 55%),
+          #101012;
+        background-size: 180% 180%, 180% 180%, 100% 100%;
+        animation: banner-drift 14s ease-in-out infinite alternate;
+      }
+      .settings-banner-sheen {
+        background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.12) 50%, transparent 62%);
+        background-size: 240% 100%;
+        animation: banner-sheen 7s linear infinite;
+      }
+      @keyframes banner-drift {
+        from {
+          background-position: 0% 0%, 100% 100%, 0 0;
+        }
+        to {
+          background-position: 100% 100%, 0% 0%, 0 0;
+        }
+      }
+      @keyframes banner-sheen {
+        from {
+          background-position: 200% 0;
+        }
+        to {
+          background-position: -100% 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .settings-banner,
+        .settings-banner-sheen {
+          animation: none;
+        }
+      }
     </style>
     <script type="importmap">
       {

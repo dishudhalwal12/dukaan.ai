@@ -1,8 +1,8 @@
-
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import { getInstallId, instrumentRequestFailures } from './utils/telemetry.ts';
+import './styles/walkthrough.css';
 
 // Before React mounts: count failed requests for the session row, and make sure
 // this device has an install id. Both are local-only — a guest's id is created

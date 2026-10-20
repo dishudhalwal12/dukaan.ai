@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
+import { isSignupAfterCutoff } from '../utils/walkthroughGate.js';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
 import {
@@ -63,6 +64,36 @@ const nonNullColumns = (columns: Record<string, unknown>): Record<string, unknow
     if (value !== null && value !== undefined) kept[key] = value;
   }
   return kept;
+};
+
+/**
+ * Decides whether this session belongs to a signup that happened after the
+ * walkthrough rollout. Reads `user_identities.signup_at`, which the signup
+ * trigger seeds for email and Google accounts alike. Guests, missing sessions,
+ * and failed lookups all fail closed: better to skip the tour than show it to
+ * an existing store.
+ */
+export const isNewSignupForWalkthrough = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+
+  const user = await currentAuthUser();
+  if (!user) return false;
+
+  let signupAt: string | null | undefined = user.created_at;
+
+  try {
+    const { data, error } = await supabase
+      .from('user_identities')
+      .select('signup_at')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) return false;
+    signupAt = data?.signup_at ?? user.created_at;
+  } catch {
+    return false;
+  }
+
+  return isSignupAfterCutoff(signupAt);
 };
 
 /**
