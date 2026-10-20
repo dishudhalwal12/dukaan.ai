@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
@@ -118,7 +117,6 @@ const EditProfileScreen: React.FC<{
     };
 
     const handleEditPhotoClick = () => {
-        if(isProcessingImage) return;
         fileInputRef.current?.click();
     };
 
@@ -129,21 +127,19 @@ const EditProfileScreen: React.FC<{
             localStorage.setItem('dukan-profile-email', email);
             if (profilePic) {
                 localStorage.setItem('dukan-profile-pic', profilePic);
-            } else {
-                localStorage.removeItem('dukan-profile-pic');
             }
+            saveLanguagePreferenceToCloud(language);
 
-            console.log('Saving profile:', { name, email, language });
-
-            // Save language preference to Supabase cloud
-            void saveLanguagePreferenceToCloud(language);
-
-            // Mirror the name into the cloud profile so the greeting survives a
-            // device change. Fire-and-forget: it never blocks the save.
+            // Sync with Firestore
             const storeName = localStorage.getItem('dukan-store-name');
             if (storeName) {
                 const readJson = (key: string) => {
-                    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
+                    try {
+                        const raw = localStorage.getItem(key);
+                        return raw ? JSON.parse(raw) : undefined;
+                    } catch {
+                        return undefined;
+                    }
                 };
                 saveBusinessProfileToCloud(storeName, {
                     storeDetails: {
@@ -175,7 +171,7 @@ const EditProfileScreen: React.FC<{
     return (
         <div>
             <SettingsSubHeader title={t('edit_profile_title')} onBack={onBack} onSave={handleSave} isSaving={isSaving} />
-            <div className="p-4 space-y-8">
+            <div data-tour="edit-profile-tour" className="p-4 space-y-8">
                 <SyncStatusCard currentUser={currentUser} onOpenAuth={onOpenAuth} />
                 <div className="flex flex-col items-center">
                     <div className="relative">

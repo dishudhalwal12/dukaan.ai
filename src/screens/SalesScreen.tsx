@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import Card from '../components/Card.tsx';
 import { Order } from '../types.ts';
@@ -299,8 +298,10 @@ const SalesScreen: React.FC<{ orders: Order[] }> = ({ orders }) => {
     <div>
       <SalesHeader />
       <div className="p-4 space-y-6">
-        <DateFilter activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
-        <SalesMetrics orders={filteredOrders} />
+        <div data-tour="sales-filters" className="space-y-4">
+          <DateFilter activeFilter={activeFilter} setActiveFilter={setActiveFilter} />
+          <SalesMetrics orders={filteredOrders} />
+        </div>
         <SalesChart data={chartData}/>
         <div>
             <h2 className="text-white text-lg font-bold tracking-tight px-2 pb-3">{t('sales_recent_transactions')}</h2>

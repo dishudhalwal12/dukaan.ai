@@ -36,6 +36,7 @@ import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboard
 import { PROFILE_NAME_KEY, resolveGreetingName } from './utils/greetingName.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 import { orderBelongsTo, ownedOrdersOnly } from './utils/orderOwnership.ts';
+import WalkthroughTour, { WALKTHROUGH_STORAGE_KEY, WALKTHROUGH_STATUS_KEY, isWalkthroughCompleted, markWalkthroughCompleted } from './components/Walkthrough/WalkthroughTour.tsx';
 
 const getInitialScreen = (): Screen => {
   if (typeof window !== 'undefined') {
@@ -105,6 +106,7 @@ const AppContent: React.FC = () => {
   const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+
   // Read once at boot. When a confirmation link is the reason this page loaded,
   // the shell is replaced by EmailConfirmScreen — the token is single-use, so
   // reading it in a lazy initializer is also what keeps a re-render from
@@ -128,6 +130,29 @@ const AppContent: React.FC = () => {
 
   // Auth state with local storage caching for immediate session persistence across page loads
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [settingsSubScreen, setSettingsSubScreen] = useState<string | null>(null);
+  const [isWalkthroughActive, setIsWalkthroughActive] = useState<boolean>(false);
+
+  // Auto-launch walkthrough right after signup & onboarding completes without needing browser refresh
+  useEffect(() => {
+    if (
+      !showAuthModal &&
+      !showOnboarding &&
+      !welcomeBackName &&
+      !newOrderForPopup &&
+      !isWalkthroughActive
+    ) {
+      const completed = isWalkthroughCompleted();
+      const onboardingDone = localStorage.getItem(ONBOARDING_COMPLETE_KEY) === 'true';
+
+      if (!completed && onboardingDone) {
+        const timer = setTimeout(() => {
+          setIsWalkthroughActive(true);
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [showAuthModal, showOnboarding, welcomeBackName, newOrderForPopup, isWalkthroughActive]);
   // Opened from the consent line on the sign-in sheet, which renders over the
   // modal rather than replacing the app.
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -724,7 +749,12 @@ const AppContent: React.FC = () => {
       case Screen.SALES:
         return <SalesScreen orders={orders} />;
       case Screen.ORDERS:
-        return <OrdersScreen orders={orders} onUpdateStatus={handleUpdateStatus} onModalStateChange={handleModalStateChange} />;
+        return <OrdersScreen 
+            orders={orders} 
+            onUpdateStatus={handleUpdateStatus} 
+            onModalStateChange={handleModalStateChange} 
+            isWalkthroughActive={isWalkthroughActive}
+          />;
       case Screen.CATALOG:
         return <CatalogScreen onModalStateChange={handleModalStateChange} />;
       case Screen.SETTINGS:
@@ -734,6 +764,15 @@ const AppContent: React.FC = () => {
             onLogout={handleLogout}
             currentUser={currentUser}
             onOpenAuth={() => setShowAuthModal(true)}
+            initialSubScreen={settingsSubScreen}
+            onStartWalkthrough={() => {
+              try {
+                localStorage.removeItem(WALKTHROUGH_STORAGE_KEY);
+              } catch (_) {}
+              setSettingsSubScreen(null);
+              setActiveScreen(Screen.DASHBOARD);
+              setTimeout(() => setIsWalkthroughActive(true), 150);
+            }}
           />
         );
       default:
@@ -831,6 +870,19 @@ const AppContent: React.FC = () => {
           </div>
         )}
         {error && <Toast message={error} onClose={() => setError(null)} />}
+        <WalkthroughTour
+          activeScreen={activeScreen}
+          onNavigate={handleNavigation}
+          isTourActive={isWalkthroughActive && !showOnboarding && !showAuthModal && !newOrderForPopup && !welcomeBackName}
+          onTourEnd={() => {
+            try {
+              localStorage.setItem(WALKTHROUGH_STORAGE_KEY, 'completed');
+            } catch (_) {}
+            setIsWalkthroughActive(false);
+            setSettingsSubScreen(null);
+          }}
+          onSetSettingsSubScreen={setSettingsSubScreen}
+        />
       </div>
     </div>
   );

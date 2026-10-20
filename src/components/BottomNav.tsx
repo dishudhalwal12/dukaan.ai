@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Screen } from '../types.ts';
 import { TabConfig } from '../utils/tabResolver.ts'; // Add explicit TS type import
@@ -25,6 +24,7 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, screen, isActive, onClic
   return (
     <button
       onClick={() => onClick(screen)}
+      data-tour={`nav-${screen.toLowerCase()}`}
       className={`relative flex flex-1 flex-col items-center justify-end gap-1 ${color} transition-colors duration-200`}
       aria-label={label}
     >
@@ -41,7 +41,10 @@ const NavItem: React.FC<NavItemProps> = ({ icon, label, screen, isActive, onClic
 
 const BottomNav: React.FC<BottomNavProps> = ({ activeScreen, onNavigate, newOrderCount, tabs }) => {
   return (
-    <footer className="fixed bottom-0 w-full max-w-[460px] mx-auto left-0 right-0 z-10">
+    <footer 
+      data-tour="bottom-nav" 
+      className="fixed bottom-0 w-full max-w-[460px] mx-auto left-0 right-0 z-10"
+    >
       <div className="flex justify-around border-t border-[#2D2D2D] bg-[#1A1A1A] px-2 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {tabs.map((tab) => (
           <NavItem

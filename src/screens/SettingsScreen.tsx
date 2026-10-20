@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { XIcon, WhatsAppIcon, GoogleIcon } from '../components/Icons.tsx';
 import type { User } from '../services/auth.ts';
@@ -128,7 +127,8 @@ const MainSettings: React.FC<{
   onLogout: () => void;
   currentUser?: User | null;
   onOpenAuth?: () => void;
-}> = ({ onNavigate, onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
+  onStartWalkthrough?: () => void;
+}> = ({ onNavigate, onModalStateChange, onLogout, currentUser, onOpenAuth, onStartWalkthrough }) => {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const { t } = useLanguage();
 
@@ -142,7 +142,7 @@ const MainSettings: React.FC<{
 
   return (
     <>
-      <div>
+      <div data-tour="settings-overview">
         <SettingsHeader />
         <div>
           <ProfileSummary />
@@ -162,6 +162,18 @@ const MainSettings: React.FC<{
                       <SettingsItem icon="language" label={t('settings_change_language')} onClick={() => onNavigate('language')} />
                   </div>
               </div>
+
+              <div>
+                  <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">Tour &amp; Walkthrough</h3>
+                  <div className="space-y-2">
+                      <SettingsItem 
+                        icon="explore" 
+                        label="App Walkthrough Guide" 
+                        onClick={onStartWalkthrough} 
+                      />
+                  </div>
+              </div>
+
               <div>
                   <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">{t('settings_support')}</h3>
                    <div className="space-y-2">
@@ -226,11 +238,26 @@ interface SettingsScreenProps {
   onLogout: () => void;
   currentUser?: User | null;
   onOpenAuth?: () => void;
+  onStartWalkthrough?: () => void;
+  initialSubScreen?: string | null;
 }
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
-  const [activeSubScreen, setActiveSubScreen] = useState<string | null>(null);
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ 
+  onModalStateChange, 
+  onLogout, 
+  currentUser, 
+  onOpenAuth,
+  onStartWalkthrough,
+  initialSubScreen = null,
+}) => {
+  const [activeSubScreen, setActiveSubScreen] = useState<string | null>(initialSubScreen);
   const [profileKey, setProfileKey] = useState(0);
+
+  useEffect(() => {
+    if (initialSubScreen !== undefined) {
+      setActiveSubScreen(initialSubScreen);
+    }
+  }, [initialSubScreen]);
 
   const renderContent = () => {
     const handleBack = () => {
@@ -264,6 +291,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
                 onLogout={onLogout}
                 currentUser={currentUser}
                 onOpenAuth={onOpenAuth}
+                onStartWalkthrough={onStartWalkthrough}
               />
             );
     }

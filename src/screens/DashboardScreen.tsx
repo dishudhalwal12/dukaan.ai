@@ -1,5 +1,3 @@
-
-
 import React, { useState, useMemo, useEffect } from 'react';
 import Card from '../components/Card.tsx';
 import UploadMenu from '../components/UploadMenu.tsx';
@@ -103,14 +101,19 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           </h1>
         </div>
         <div className="flex w-12 items-center justify-end">
-          <button onClick={toggleUploadMenu} className="flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#E6E6FA] text-black">
+          <button 
+            data-tour="dashboard-add-btn"
+            onClick={toggleUploadMenu} 
+            className="flex h-12 w-12 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-[#E6E6FA] text-black hover:opacity-90 transition-opacity"
+            aria-label="Add new order or menu"
+          >
             <span className="material-symbols-outlined text-3xl">add</span>
           </button>
         </div>
       </header>
 
       <div className="space-y-8 p-4">
-        <div>
+        <div data-tour="dashboard-today-metrics">
           <h2 className="px-2 pb-3 text-lg font-bold tracking-tight text-white">{t('dashboard_today')}</h2>
           <div className="grid grid-cols-2 gap-4">
             <Card>
@@ -124,7 +127,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           </div>
         </div>
 
-        <div>
+        <div data-tour="dashboard-month-metrics">
           <h2 className="px-2 pb-3 text-lg font-bold tracking-tight text-white">{t('dashboard_this_month')}</h2>
           <div className="grid grid-cols-2 gap-4">
             <Card>
@@ -138,7 +141,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           </div>
         </div>
 
-        <div>
+        <div data-tour="dashboard-insights">
           <div className="flex justify-between items-center px-2 pb-3">
             <h2 className="text-lg font-bold tracking-tight text-white">{t('dashboard_insights')}</h2>
              <button 
