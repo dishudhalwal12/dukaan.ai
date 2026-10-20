@@ -18,9 +18,11 @@
 
 <div align="center">
 
-<img src="./docs/demo.gif" alt="Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard" width="100%" />
+<a href="https://youtu.be/hz5WBK9tprw" title="Watch the Dukaan.AI demo">
+  <img src="./docs/demo-cover.jpg" alt="Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard" width="100%" />
+</a>
 
-<sub>One order, start to finish. WhatsApp on the right, the shop dashboard on the left.</sub>
+<sub><a href="https://youtu.be/hz5WBK9tprw">Watch the 51 second demo</a>. WhatsApp on the right, the shop dashboard on the left.</sub>
 
 </div>
 
@@ -220,7 +222,7 @@ dukaan.ai/
 │   └── functions/               # Edge Functions (capture-session, email-confirmation-status)
 ├── .env.example                 # The one environment template for the whole app
 ├── docs/
-│   └── demo.gif                 # Demo shown at the top of this file
+│   └── demo-cover.jpg           # Demo cover shown at the top of this file
 ├── public/                      # Static assets served as-is
 │   ├── logo.png                 # App mark (favicon, PWA, social card source)
 │   ├── favicon.ico
