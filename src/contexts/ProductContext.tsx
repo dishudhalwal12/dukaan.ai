@@ -1,13 +1,14 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode, useCallback, useRef } from 'react';
 import { Product, Insight } from '../types.ts';
 import { initialProducts } from '../data/initialProducts.ts';
-import { presetProductsByDisplayName } from '../data/presetProducts.ts';
+import { catalogPreset } from '../data/presetProducts.js';
 import { generateDynamicInsights } from '../services/ai.ts';
 import { currentIdentity, enforceDataOwnership } from '../utils/localStore.ts';
 import { syncProductsToCloud, deleteProductFromCloud } from '../services/cloudSync.ts';
 import { useLanguage } from './LanguageContext.tsx';
 import { whatsappService } from '../services/whatsappService.ts';
 import { normalizeStock } from '../utils/stock.ts';
+import { isOldPresetId, migratePresetCatalog, reconcileCatalog } from '../utils/catalogSync.js';
 
 interface ProductContextType {
   products: Product[];
@@ -126,31 +127,45 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
       }
       ── end [MULTI-BUSINESS] ── */
 
-      // ── Standard path for all preset categories (Grocery, Salon, etc.) ──────
+      // ── Standard path for every category ────────────────────────────────────
+      // The starter catalog is the same whatever the category, and old
+      // per-category seed rows are replaced with it. Products the shopkeeper
+      // added are kept; a catalog without any starter row is left alone.
       const categoryMismatch =
         storedProducts &&
         (seededForCategory === null || seededForCategory !== category);
 
-      if (storedProducts && !categoryMismatch) {
+      const seedOrPreserve = (stored: Product[]): Product[] => {
+        if (!Array.isArray(stored) || stored.length === 0) return catalogPreset;
+        const isStarter = (product: Product) =>
+          String(product?.id || '').startsWith('kirana_') || isOldPresetId(product?.id);
+        return stored.some(isStarter)
+          ? (migratePresetCatalog(stored, catalogPreset) as Product[])
+          : [...catalogPreset, ...stored];
+      };
+
+      if (storedProducts) {
         const parsed = JSON.parse(storedProducts);
         // Re-clamped on the way in: a build that predates the guard may have
         // left a negative count in storage, and it would otherwise persist for
         // ever because nothing rewrites an untouched row.
-        if (Array.isArray(parsed)) setProducts(parsed.map(p => ({ ...p, stock: normalizeStock(p?.stock) })));
-      } else {
-        let initialSeed: Product[] = initialProducts;
-
-        if (category) {
-          const presetSeed = presetProductsByDisplayName[category];
-          if (presetSeed && presetSeed.length > 0) {
-            initialSeed = presetSeed;
+        if (Array.isArray(parsed)) {
+          const base = categoryMismatch
+            ? seedOrPreserve(parsed)
+            : (migratePresetCatalog(parsed, catalogPreset) as Product[]);
+          const cleaned = reconcileCatalog(base) as Product[];
+          setProducts(cleaned.map(p => ({ ...p, stock: normalizeStock(p?.stock) })));
+          if (categoryMismatch || cleaned.length !== parsed.length) {
+            localStorage.setItem('dukan-products', JSON.stringify(cleaned));
+            localStorage.setItem('dukan-catalog-seeded-for', category ?? '');
           }
         }
-
-        setProducts(initialSeed);
-        localStorage.setItem('dukaan-catalog-seeded', 'true');
+      } else {
+        const cleanedSeed = reconcileCatalog(catalogPreset) as Product[];
+        setProducts(cleanedSeed);
+        localStorage.setItem('dukan-catalog-seeded', 'true');
         localStorage.setItem('dukaan-catalog-seeded-for', category ?? '');
-        localStorage.setItem('dukan-products', JSON.stringify(initialSeed));
+        localStorage.setItem('dukan-products', JSON.stringify(cleanedSeed));
       }
     } catch (error) {
       console.error('Failed to load products from localStorage', error);
@@ -266,10 +281,14 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
   
   const loadProducts = useCallback((newProducts: Product[]) => {
     // Also covers a restore from Supabase and anything an older build left in
-    // localStorage with a negative count.
-    setProducts(newProducts.map(withSafeStock));
+    // localStorage with a negative count. Old starter rows in the cloud are
+    // migrated to the shared preset; the account's own products are kept.
+    const migrated = migratePresetCatalog(newProducts, catalogPreset) as Product[];
+    const cleaned = reconcileCatalog(migrated) as Product[];
+    const safe = cleaned.map(p => ({ ...p, stock: normalizeStock(p.stock) }));
+    setProducts(safe);
     try {
-      localStorage.setItem('dukan-products', JSON.stringify(newProducts));
+      localStorage.setItem('dukan-products', JSON.stringify(safe));
     } catch (e) {
       console.error('Failed to cache products', e);
     }

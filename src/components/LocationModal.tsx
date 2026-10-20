@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { captureStoreLocation, StoreLocation } from '../utils/location.ts';
+import { captureApproximateLocation, captureStoreLocation, StoreLocation } from '../utils/location.ts';
 
 interface LocationModalProps {
   isOpen: boolean;
@@ -16,14 +16,16 @@ interface LocationModalProps {
   onClose?: () => void;
 }
 
-const MESSAGES: Record<string, string> = {
+const MESSAGES = {
   denied: 'Location is blocked. Turn it on for this site, then try again.',
   blocked_by_device:
-    'This site is allowed, but your device is blocking location. Turn it on in your system settings, then try again.',
+    'This site is allowed, but your device is blocking the browser. Enable Chrome (or your browser) in System Settings → Privacy & Security → Location Services, then quit and reopen it. If it stays blocked, use an approximate location below.',
   unavailable: 'We could not find your location. Move near a window and try again.',
   timeout: 'Your location took too long. Please try again.',
   unsupported: 'This browser cannot share a location. Please try another browser.',
 };
+
+type LocationMessage = keyof typeof MESSAGES;
 
 /**
  * One short line, one button, and the truth about why we want it.
@@ -41,7 +43,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
   onClose,
 }) => {
   const [isLocating, setIsLocating] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<LocationMessage | null>(null);
 
   // This component stays mounted while closed, so a failure from the previous
   // attempt would still be on screen the next time it opens — before the
@@ -65,7 +67,20 @@ const LocationModal: React.FC<LocationModalProps> = ({
       onCaptured(attempt.location);
       return;
     }
-    setFailure(MESSAGES[attempt.reason] ?? MESSAGES.unavailable);
+    setFailure(attempt.reason as LocationMessage);
+  };
+
+  const handleApproximate = async () => {
+    setIsLocating(true);
+    setFailure(null);
+    const attempt = await captureApproximateLocation();
+    setIsLocating(false);
+
+    if (attempt.status === 'captured') {
+      onCaptured(attempt.location);
+      return;
+    }
+    setFailure('unavailable');
   };
 
   const title = mode === 'required' ? 'Store location needed' : 'Store location';
@@ -92,7 +107,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
         </p>
 
         {failure && (
-          <p className="text-neutral-400 text-xs mb-4">{failure}</p>
+          <p className="text-neutral-400 text-xs mb-4 leading-relaxed">{MESSAGES[failure]}</p>
         )}
 
         <button
@@ -102,6 +117,20 @@ const LocationModal: React.FC<LocationModalProps> = ({
         >
           {isLocating ? 'Getting location...' : failure ? 'Try again' : 'Allow location'}
         </button>
+
+        {failure === 'blocked_by_device' && !isLocating && (
+          <div className="mt-3">
+            <button
+              onClick={handleApproximate}
+              className="w-full bg-[#2D2D2D] text-white font-semibold py-3 rounded-full text-sm hover:bg-neutral-700 transition-colors"
+            >
+              Use approximate location
+            </button>
+            <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+              Uses your network's city instead of GPS. You can update the exact spot later in Settings.
+            </p>
+          </div>
+        )}
 
         {mode === 'onboarding' && onSetupLater && (
           <button

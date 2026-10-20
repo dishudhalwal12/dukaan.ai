@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Order } from '../types.ts';
 import { XIcon } from './Icons.tsx';
 import CelebrationEffect from './CelebrationEffect.tsx';
+import { buildUpiQrUrl, STORE_UPI_ID } from '../utils/upi.ts';
 
 interface UpiQrCodeModalProps {
   isOpen: boolean;
@@ -13,27 +14,7 @@ interface UpiQrCodeModalProps {
 const UpiQrCodeModal: React.FC<UpiQrCodeModalProps> = ({ isOpen, onClose, onDone, order }) => {
   const [isCelebrating, setIsCelebrating] = useState(false);
 
-  const qrCodeUrl = useMemo(() => {
-    if (!order) return '';
-
-    const payeeName = "Dukan.AI Store"; // A generic name for the payee
-    const upiId = "divyarth12@ybl";
-    const amount = Number(order.total ?? 0).toFixed(2);
-    const transactionId = order.id.replace(/[^a-zA-Z0-9]/g, ''); // Alphanumeric TID is safer
-    const transactionNote = `Payment for Order ${order.id}`;
-
-    const upiParams = new URLSearchParams({
-      pa: upiId,
-      pn: payeeName,
-      am: amount,
-      tid: transactionId,
-      tn: transactionNote,
-      cu: 'INR',
-    });
-
-    const upiUrl = `upi://pay?${upiParams.toString()}`;
-    return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUrl)}`;
-  }, [order]);
+  const qrCodeUrl = useMemo(() => buildUpiQrUrl(order), [order]);
 
   const handleDoneClick = () => {
     setIsCelebrating(true);
@@ -83,7 +64,7 @@ const UpiQrCodeModal: React.FC<UpiQrCodeModalProps> = ({ isOpen, onClose, onDone
             <div className="text-center">
                 <p className="text-sm text-neutral-400">Amount to be paid</p>
                 <p className="text-3xl font-bold text-[#E6E6FA] tracking-tight">₹{Number(order.total ?? 0).toFixed(2)}</p>
-                <p className="text-xs text-neutral-500 mt-1">UPI ID: divyarth12@ybl</p>
+                <p className="text-xs text-neutral-500 mt-1">UPI ID: {STORE_UPI_ID}</p>
             </div>
         </div>
 

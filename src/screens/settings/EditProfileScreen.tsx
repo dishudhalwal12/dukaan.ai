@@ -4,6 +4,7 @@ import SettingsSubHeader from '../../components/SettingsSubHeader.tsx';
 import { resizeImage } from '../../utils/image.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
 import { saveBusinessProfileToCloud, saveLanguagePreferenceToCloud } from '../../services/cloudSync.ts';
+import { resolveProfileImage } from '../../utils/profileImage.ts';
 import type { User } from '../../services/auth.ts';
 import { languages } from './ChangeLanguageScreen.tsx';
 
@@ -77,6 +78,7 @@ const EditProfileScreen: React.FC<{
 }> = ({ onBack, currentUser, onOpenAuth }) => {
     const [name, setName] = useState(() => localStorage.getItem('dukan-profile-name') || '');
     const [profilePic, setProfilePic] = useState(() => localStorage.getItem('dukan-profile-pic') || null);
+    const displayPic = resolveProfileImage(currentUser, profilePic);
     const [isSaving, setIsSaving] = useState(false);
     const [isProcessingImage, setIsProcessingImage] = useState(false);
     const { language, setLanguage, t } = useLanguage();
@@ -175,29 +177,40 @@ const EditProfileScreen: React.FC<{
             <SettingsSubHeader title={t('edit_profile_title')} onBack={onBack} onSave={handleSave} isSaving={isSaving} />
             <div data-tour="edit-profile-tour" className="p-4 space-y-8">
                 <SyncStatusCard currentUser={currentUser} onOpenAuth={onOpenAuth} />
-                <div className="flex flex-col items-center">
-                    <div className="relative">
-                        <div className="h-28 w-28 rounded-full bg-[#1A1A1A] flex items-center justify-center overflow-hidden">
-                           {profilePic && !isProcessingImage && (
-                               <img src={profilePic} alt="Profile" className="h-full w-full object-cover" />
-                           )}
-                           {!profilePic && !isProcessingImage && (
-                               <span className="material-symbols-outlined text-7xl text-neutral-400">person</span>
-                           )}
-                           {isProcessingImage && (
-                             <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
-                           )}
+                <div className="relative h-48 overflow-hidden rounded-2xl border border-white/10 bg-[#101012]">
+                    <video
+                        className="absolute inset-0 h-full w-full object-cover"
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        preload="metadata"
+                        aria-hidden="true"
+                    >
+                        <source src="/banner.mp4" type="video/mp4" />
+                    </video>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    <div className="relative flex h-full items-center justify-center">
+                        <div className="relative">
+                            <div className="h-28 w-28 rounded-full border-2 border-white/80 bg-[#1A1A1A] flex items-center justify-center overflow-hidden">
+                               {!isProcessingImage && (
+                                   <img src={displayPic} alt="Profile" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                               )}
+                               {isProcessingImage && (
+                                 <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+                               )}
+                            </div>
+                            <button onClick={handleEditPhotoClick} className="absolute bottom-1 right-1 h-8 w-8 bg-[#E6E6FA] rounded-full flex items-center justify-center text-black">
+                                <span className="material-symbols-outlined text-lg">edit</span>
+                            </button>
+                            <input
+                                type="file"
+                                ref={fileInputRef}
+                                onChange={handleImageChange}
+                                accept="image/*"
+                                className="hidden"
+                            />
                         </div>
-                        <button onClick={handleEditPhotoClick} className="absolute bottom-1 right-1 h-8 w-8 bg-[#E6E6FA] rounded-full flex items-center justify-center text-black">
-                            <span className="material-symbols-outlined text-lg">edit</span>
-                        </button>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleImageChange}
-                            accept="image/*"
-                            className="hidden"
-                        />
                     </div>
                 </div>
                 <div className="space-y-4">

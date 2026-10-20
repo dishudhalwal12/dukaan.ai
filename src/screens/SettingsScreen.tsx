@@ -10,6 +10,7 @@ import PrivacyPolicyScreen from './settings/PrivacyPolicyScreen.tsx';
 import HelpCenterScreen from './settings/HelpCenterScreen.tsx';
 import { hasSupportWhatsApp, supportTelHref } from '../config/support.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
+import { resolveProfileImage } from '../utils/profileImage.ts';
 
 const SettingsHeader: React.FC = () => {
     const { t } = useLanguage();
@@ -20,30 +21,34 @@ const SettingsHeader: React.FC = () => {
     );
 };
 
-const ProfileSummary: React.FC<{ currentUser?: User | null }> = ({ currentUser }) => {
+const ProfileCover: React.FC<{ currentUser?: User | null }> = ({ currentUser }) => {
     const { t } = useLanguage();
     const name = localStorage.getItem('dukan-profile-name') || t('placeholder_your_name');
     const storeName = localStorage.getItem('dukan-store-name') || t('placeholder_store_name');
-    // A photo the shopkeeper picked wins; otherwise the Google account photo is
-    // shown so a fresh sign-in does not look like an empty placeholder.
-    const profilePic =
-        localStorage.getItem('dukan-profile-pic') ||
-        currentUser?.user_metadata?.avatar_url ||
-        currentUser?.user_metadata?.picture ||
-        null;
+    const profilePic = resolveProfileImage(currentUser, localStorage.getItem('dukan-profile-pic'));
 
     return (
-        <div className="flex items-center gap-4 p-4">
-            <div className="h-16 w-16 rounded-full bg-[#1A1A1A] flex items-center justify-center overflow-hidden">
-                {profilePic ? (
+        <div className="relative mx-4 mt-2 h-44 overflow-hidden rounded-2xl border border-white/10 bg-[#101012]">
+            <video
+                className="absolute inset-0 h-full w-full object-cover"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                aria-hidden="true"
+            >
+                <source src="/banner.mp4" type="video/mp4" />
+            </video>
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
+            <div className="relative flex h-full items-end gap-3 p-4">
+                <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border-2 border-white/80 bg-[#1A1A1A]">
                     <img src={profilePic} alt="Profile" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                ) : (
-                    <span className="material-symbols-outlined text-4xl text-neutral-400">person</span>
-                )}
-            </div>
-            <div>
-                <p className="text-xl font-bold text-white">{name}</p>
-                <p className="text-sm text-neutral-400">{storeName}</p>
+                </div>
+                <div className="min-w-0">
+                    <p className="truncate text-lg font-bold leading-tight text-white">{name}</p>
+                    <p className="truncate text-sm text-white/70">{storeName}</p>
+                </div>
             </div>
         </div>
     );
@@ -150,16 +155,7 @@ const MainSettings: React.FC<{
       <div>
         <SettingsHeader />
         <div>
-          <div className="settings-banner relative mx-4 mt-2 h-24 overflow-hidden rounded-2xl border border-white/10">
-            <div className="settings-banner-sheen absolute inset-0" />
-            <div className="relative flex h-full flex-col justify-end p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#E6E6FA]/70">Dukaan.AI</p>
-              <p className="truncate text-base font-bold leading-tight text-white">
-                {localStorage.getItem('dukan-store-name') || t('placeholder_store_name')}
-              </p>
-            </div>
-          </div>
-          <ProfileSummary currentUser={currentUser} />
+          <ProfileCover currentUser={currentUser} />
           <div className="p-4 space-y-4">
               <div>
                   <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">{t('settings_account')}</h3>

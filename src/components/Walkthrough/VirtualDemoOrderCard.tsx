@@ -5,6 +5,9 @@ import refresh from 'react-useanimations/lib/refresh';
 import { playOrderChime } from '../../utils/audioAlert.ts';
 import { useLanguage } from '../../contexts/LanguageContext.tsx';
 import { WhatsAppIcon } from '../Icons.tsx';
+import { buildUpiQrUrl, STORE_UPI_ID } from '../../utils/upi.ts';
+
+const DEMO_QR_URL = buildUpiQrUrl({ id: 'DKN-DEMO-0001', total: 580 });
 
 export type DemoOrderStep = 'new_order' | 'order_details' | 'scan_to_pay' | 'completed';
 
@@ -254,48 +257,13 @@ export const VirtualDemoOrderCard: React.FC<VirtualDemoOrderCardProps> = ({
 
           <div className="flex flex-col items-center space-y-4">
             <div className="bg-white p-4 rounded-2xl shadow-inner w-56 h-56 flex flex-col items-center justify-center">
-              <svg className="w-full h-full" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="5" y="5" width="28" height="28" rx="4" fill="black" />
-                <rect x="9" y="9" width="20" height="20" rx="2" fill="white" />
-                <rect x="13" y="13" width="12" height="12" fill="black" />
-
-                <rect x="67" y="5" width="28" height="28" rx="4" fill="black" />
-                <rect x="71" y="9" width="20" height="20" rx="2" fill="white" />
-                <rect x="75" y="13" width="12" height="12" fill="black" />
-
-                <rect x="5" y="67" width="28" height="28" rx="4" fill="black" />
-                <rect x="9" y="71" width="20" height="20" rx="2" fill="white" />
-                <rect x="13" y="75" width="12" height="12" fill="black" />
-
-                <rect x="38" y="10" width="6" height="6" fill="black" />
-                <rect x="48" y="10" width="6" height="6" fill="black" />
-                <rect x="42" y="22" width="6" height="6" fill="black" />
-                <rect x="52" y="22" width="6" height="6" fill="black" />
-                <rect x="10" y="42" width="6" height="6" fill="black" />
-                <rect x="22" y="42" width="6" height="6" fill="black" />
-                <rect x="16" y="52" width="6" height="6" fill="black" />
-                <rect x="38" y="38" width="8" height="8" fill="black" />
-                <rect x="54" y="38" width="8" height="8" fill="black" />
-                <rect x="42" y="52" width="12" height="6" fill="black" />
-                <rect x="68" y="42" width="6" height="6" fill="black" />
-                <rect x="78" y="42" width="8" height="8" fill="black" />
-                <rect x="68" y="56" width="10" height="6" fill="black" />
-                <rect x="82" y="56" width="6" height="6" fill="black" />
-                <rect x="38" y="68" width="6" height="6" fill="black" />
-                <rect x="48" y="68" width="6" height="6" fill="black" />
-                <rect x="42" y="78" width="8" height="8" fill="black" />
-                <rect x="54" y="78" width="8" height="8" fill="black" />
-                <rect x="68" y="68" width="12" height="6" fill="black" />
-                <rect x="84" y="68" width="6" height="6" fill="black" />
-                <rect x="72" y="80" width="8" height="8" fill="black" />
-                <rect x="84" y="80" width="6" height="6" fill="black" />
-              </svg>
+              <img src={DEMO_QR_URL} alt="UPI QR Code" className="w-full h-full object-contain" />
             </div>
 
             <div className="text-center space-y-1">
               <p className="text-sm font-normal text-neutral-400">{t('tour_demo_amount')}</p>
               <p className="text-3xl font-extrabold text-white tracking-tight">₹580.00</p>
-              <p className="text-xs font-mono text-neutral-400">{t('tour_demo_upi')}: divyarth12@ybl</p>
+              <p className="text-xs font-mono text-neutral-400">{t('tour_demo_upi')}: {STORE_UPI_ID}</p>
             </div>
 
             <button

@@ -121,18 +121,17 @@ async function classifyFailure(code: number | undefined): Promise<LocationFailur
  * location or a named reason, because the modal has to say something different
  * for "you said no" than for "we could not get a fix".
  */
-export function captureStoreLocation(): Promise<LocationAttempt> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      resolve({ status: 'failed', reason: 'unsupported' });
-      return;
-    }
+type PositionOutcome =
+  | { outcome: 'captured'; location: StoreLocation }
+  | { outcome: 'failed'; code?: number };
 
+function requestPosition(): Promise<PositionOutcome> {
+  return new Promise((resolve) => {
     try {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           resolve({
-            status: 'captured',
+            outcome: 'captured',
             location: {
               lat: position.coords.latitude,
               lng: position.coords.longitude,
@@ -144,15 +143,74 @@ export function captureStoreLocation(): Promise<LocationAttempt> {
             },
           });
         },
-        async (error) => {
-          resolve({ status: 'failed', reason: await classifyFailure(error?.code) });
-        },
+        (error) => resolve({ outcome: 'failed', code: error?.code }),
         // A shopkeeper standing in the shop rarely gets an instant fix indoors,
         // but waiting longer than this looks like a frozen screen.
         { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
       );
     } catch {
-      resolve({ status: 'failed', reason: 'unavailable' });
+      resolve({ outcome: 'failed' });
     }
   });
+}
+
+const RETRY_DELAY_MS = 1200;
+
+export async function captureStoreLocation(): Promise<LocationAttempt> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return { status: 'failed', reason: 'unsupported' };
+  }
+
+  const first = await requestPosition();
+  if (first.outcome === 'captured') return { status: 'captured', location: first.location };
+
+  let reason = await classifyFailure(first.code);
+
+  // Chrome can report code 1 for a moment right after the site permission is
+  // granted, before the operating system's grant propagates. One short retry
+  // turns that transient refusal into a captured position.
+  if (reason === 'blocked_by_device') {
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    const retry = await requestPosition();
+    if (retry.outcome === 'captured') return { status: 'captured', location: retry.location };
+    reason = await classifyFailure(retry.code);
+  }
+
+  return { status: 'failed', reason };
+}
+
+/**
+ * A city-level position from the network, used only when the operating system
+ * refuses to give the browser a GPS fix. Explicitly labelled `ip_approximate`
+ * so it is never mistaken for a measured position.
+ */
+export async function captureApproximateLocation(timeoutMs = 6000): Promise<LocationAttempt> {
+  if (typeof fetch !== 'function') return { status: 'failed', reason: 'unsupported' };
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch('https://ipwho.is/?fields=success,latitude,longitude,city', {
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return { status: 'failed', reason: 'unavailable' };
+    const data = await res.json();
+    if (!data?.success || !isFiniteNumber(data.latitude) || !isFiniteNumber(data.longitude)) {
+      return { status: 'failed', reason: 'unavailable' };
+    }
+    return {
+      status: 'captured',
+      location: {
+        lat: data.latitude,
+        lng: data.longitude,
+        accuracy_m: 10000,
+        source: 'ip_approximate',
+        captured_at: new Date().toISOString(),
+      },
+    };
+  } catch {
+    return { status: 'failed', reason: 'unavailable' };
+  } finally {
+    clearTimeout(timer);
+  }
 }
