@@ -5,35 +5,44 @@
 
 # Dukaan.AI
 
-The shop around the corner, now taking orders on WhatsApp.
+**The shop around the corner, now taking orders on WhatsApp.**
 
 [![React](https://img.shields.io/badge/React-19.1-blue?style=flat-square&logo=react)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js->=20-3c873a?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Languages](https://img.shields.io/badge/languages-7-8b5cf6?style=flat-square)](#what-it-does)
 [![Status](https://img.shields.io/badge/status-beta-orange?style=flat-square)](#the-live-beta)
+
+[Try the beta](https://dukaan-ai-hypnexis.vercel.app) · [How it works](#how-it-works) · [Run it locally](#run-it-locally) · [Configuration](#configuration)
 
 </div>
 
-<!-- Demo video goes here. GitHub will not play an mp4 inside a README, so use one
-     of these two, and keep a GIF under about 10 MB or the page loads slowly:
+![Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard](docs/demo.gif)
 
-       1. Looping GIF:   ![Dukaan.AI demo](docs/demo.gif)
-       2. Thumbnail that opens YouTube or Loom:
-          [![Watch the demo](docs/demo-thumb.png)](https://youtu.be/XXXXXXXX)
--->
+<p align="center"><em>One order, start to finish. WhatsApp on the right, the shop dashboard on the left.</em></p>
 
-## A corner shop cannot beat Blinkit on speed
+## Why this exists
 
-Blinkit, Zepto and Instamart keep opening dark stores inside Indian neighbourhoods. A family kirana cannot win that fight on ten minute delivery or on price. It does not need to. It already has two things no warehouse can buy: it stands a few hundred metres from the customer, and the customer has trusted it for twenty years.
+Blinkit, Zepto and Instamart keep opening dark stores inside Indian neighbourhoods. A family kirana cannot beat them on ten minute delivery or on price. It does not need to: it stands a few hundred metres from the customer, and that customer has trusted it for twenty years.
 
-What the shop does not have is a way to take an order online. An app of its own is too expensive to build. Customers do not want one either. Nobody installs a 100 MB app to order milk.
+What the shop lacks is a way to take an order online. An app of its own costs too much to build, and customers do not want one. Nobody installs a 100 MB app to order milk.
 
-WhatsApp is already on more than 500 million Indian phones. So that is where we put the shop.
+WhatsApp is already on more than 500 million Indian phones. So that is where the shop lives.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Customer messages the shop] --> B[Bot asks about quantity and address]
+    B --> C[Order appears on the dashboard]
+    C --> D[Shopkeeper swipes to accept]
+    D --> E[Customer gets a WhatsApp confirmation]
+```
 
 ## What it does
 
-A customer sends a message to the shop on WhatsApp, by text or by voice note, in whatever language they speak. The bot asks about quantity when something is unclear, then writes the order down properly.
+The customer sends a message by text or voice note in whatever language they speak. The bot asks about quantity when something is unclear, then writes the order down properly.
 
-Inside the shop, a screen chimes and shows the new order. The shopkeeper swipes to accept it and the customer gets a confirmation on WhatsApp without anyone typing one. Orders are confirmed in under 15 minutes, which is the point when milk is needed right now.
+Inside the shop, a screen chimes and shows the new order. The shopkeeper swipes to accept and the customer gets a confirmation on WhatsApp without anyone typing one. Orders are confirmed in under 15 minutes, which is the point when milk is needed right now.
 
 The shopkeeper gets a live dashboard, a starter catalog for a kirana, stock that can be switched off with one tap, and sales numbers without a spreadsheet. When something runs low the app highlights it and drafts a reorder message for the distributor. The bill photo button works too: send a photo of the bill and the stock updates.
 
@@ -41,14 +50,13 @@ The screen and the bot both work in English, Hindi, Tamil, Punjabi, Kannada, Guj
 
 ## The live beta
 
-The beta is running at https://dukaan-ai-hypnexis.vercel.app. The older
-https://dukaan-ai-beta.vercel.app address redirects there. Open it on a phone or a laptop, sign in with an email or as a guest, and link your WhatsApp number from Settings. Nothing to download, for you or for your customer.
+The beta runs at https://dukaan-ai-hypnexis.vercel.app. The older https://dukaan-ai-beta.vercel.app address redirects there. Open it on a phone or a laptop, sign in with an email or as a guest, and link your WhatsApp number from Settings. Nothing to download, for you or for your customer.
 
-Being honest about a beta: the bot runs on one laptop at home, behind a tunnel, so it goes quiet when that machine sleeps. The AI still misreads a messy message now and then, and voice notes can take a few seconds to come back. If something breaks, tell us and we will fix it.
+A beta caveat: the bot runs on one laptop at home, behind a tunnel, so it goes quiet when that machine sleeps. The AI still misreads a messy message now and then, and voice notes can take a few seconds to come back. If something breaks, tell us and we will fix it.
 
 We want to hear whether an order came through right, whether the bot understood what you typed, and whether the dashboard made sense the first time you saw it.
 
-## Getting started
+## Run it locally
 
 ### What you need
 
@@ -157,82 +165,40 @@ Every key lives in the root `.env`. The complete list with the reasoning for eac
 
 ### Where the language preference lives
 
-The chosen language is kept in two places on purpose. `localStorage` under
-`dukan-language` is what the app reads first, so switching language is instant
-and works with no network. `merchant_preferences.preferred_language` is the copy
-that survives a reinstall, a cleared browser or a new phone.
+The chosen language is kept in two places on purpose. `localStorage` under `dukan-language` is what the app reads first, so switching language is instant and works with no network. `merchant_preferences.preferred_language` is the copy that survives a reinstall, a cleared browser or a new phone.
 
-A choice made on a device always wins over the stored value, which is why
-`dukan-language-chosen` exists: without it there is no way to tell "never chose,
-so English" apart from "chose English on purpose", and signing in would silently
-undo a deliberate choice. The stored value only fills the gap on a device that
-has not chosen yet. Logging out keeps the language and forgets the "chosen"
-marker, so the next account on that phone adopts its own saved language.
+A choice made on a device always wins over the stored value, which is why `dukan-language-chosen` exists. Without it there is no way to tell "never chose, so English" apart from "chose English on purpose", and signing in would silently undo a deliberate choice. The stored value only fills the gap on a device that has not chosen yet. Logging out keeps the language and forgets the "chosen" marker, so the next account on that phone adopts its own saved language.
 
 ### Email confirmation links
 
-When **Confirm email** is on, signup sends a link that has to confirm the account
-**wherever it is opened** — a mail app's browser, Chrome, or a different device.
-That takes a dashboard setting, one migration and one deploy; none of it lives in
-repo config:
+When **Confirm email** is on, signup sends a link that has to confirm the account **wherever it is opened**, whether that is a mail app's browser, Chrome, or a different device. That takes a dashboard setting, one migration and one deploy; none of it lives in repo config:
 
 1. Supabase dashboard → **Authentication → URL Configuration**.
 2. **Site URL** → the production app URL (e.g. `https://<app>.vercel.app`).
-3. **Redirect URLs** → allowlist the app origin and the dev server, so the
-   `emailRedirectTo` the app sends (`window.location.origin + pathname`) is allowed:
+3. **Redirect URLs** → allowlist the app origin and the dev server, so the `emailRedirectTo` the app sends (`window.location.origin + pathname`) is allowed:
    - `https://<app>.vercel.app/**`
    - `http://localhost:3000/**`
-4. **Authentication → Email Templates → Confirm signup** → replace the link with
-   `https://<app>.vercel.app/?token_hash={{ .TokenHash }}&type=signup`.
+4. **Authentication → Email Templates → Confirm signup** → replace the link with `https://<app>.vercel.app/?token_hash={{ .TokenHash }}&type=signup`.
 
-   The link must be **root-relative**: Vercel serves `dist/` as flat files, so
-   only `/` maps to `index.html` and any other path 404s before the app loads.
-   Vite's dev server hides this by serving an SPA fallback for every path, which
-   is why `scripts/test_repo_hygiene.js` asserts the documented link stays at the
-   root rather than trusting a local check.
-5. Apply `supabase/email_confirmation.sql` (SQL editor). It creates the
-   `is_email_confirmed` function the status endpoint calls.
+   The link must be **root-relative**: Vercel serves `dist/` as flat files, so only `/` maps to `index.html` and any other path 404s before the app loads. Vite's dev server hides this by serving an SPA fallback for every path, which is why `scripts/test_repo_hygiene.js` asserts the documented link stays at the root rather than trusting a local check.
+5. Apply `supabase/email_confirmation.sql` (SQL editor). It creates the `is_email_confirmed` function the status endpoint calls.
 6. `supabase functions deploy email-confirmation-status`.
 
-Step 4 is the one that makes the link work anywhere. The app verifies
-`token_hash` with `verifyOtp`, which needs no PKCE `code_verifier`; the default
-`{{ .ConfirmationURL }}` does need one, and that verifier lives in the browser
-that *started* the signup — so a link opened in Gmail's browser could never sign
-that account in.
+Step 4 is the one that makes the link work anywhere. The app verifies `token_hash` with `verifyOtp`, which needs no PKCE `code_verifier`. The default `{{ .ConfirmationURL }}` does need one, and that verifier lives in the browser that started the signup, so a link opened in Gmail's browser could never sign that account in.
 
-With steps 4–6 in place the confirmation page confirms in whatever browser opened
-it, and the "Check your email" panel polls the status endpoint every 3 seconds —
-so a confirmation on one device finishes the sign-in on every device, with no
-manual refresh and no second tap.
+With steps 4 to 6 in place the confirmation page confirms in whatever browser opened it, and the "Check your email" panel polls the status endpoint every 3 seconds. A confirmation on one device finishes the sign-in on every device, with no manual refresh and no second tap.
 
-The landing page never refreshes, redirects or opens a second tab. It used to
-offer an "Open in Chrome" hand-off for mail-app browsers, but that re-opened the
-same one-time link in another tab: the token was spent twice and the second tab
-painted "This link didn't work" over a confirmation that had actually succeeded.
-The link is also wiped out of the address bar the instant it is read, before the
-network round trip, so the one-time `token_hash` is not left on screen.
+The landing page never refreshes, redirects or opens a second tab. It used to offer an "Open in Chrome" hand-off for mail-app browsers, but that re-opened the same one-time link in another tab: the token was spent twice and the second tab painted "This link didn't work" over a confirmation that had actually succeeded. The link is also wiped out of the address bar the instant it is read, before the network round trip, so the one-time `token_hash` is not left on screen.
 
-One part of the Google/consent experience is not in this repo: what the Google
-account chooser itself shows. Set **Authentication → Providers → Google** in
-Supabase, and the OAuth consent screen in Google Cloud (app name, support email,
-homepage and privacy-policy URL — the production URL, e.g.
-`https://<app>.vercel.app`). The in-app half — the "By continuing you agree to
-our Privacy Policy" line and the address the service is served from — is in
-`AuthModal`.
+One part of the Google/consent experience is not in this repo: what the Google account chooser itself shows. Set **Authentication → Providers → Google** in Supabase, and the OAuth consent screen in Google Cloud (app name, support email, homepage and privacy-policy URL, using the production URL such as `https://<app>.vercel.app`). The in-app half lives in `AuthModal`.
 
-`emailRedirectTo` is still sent on signup and resend. Before step 4 it is what
-decides where the confirmation link lands; after step 4 it no longer affects
-confirmation. Skip step 3 and Supabase ignores `emailRedirectTo`, falls back to
-the Site URL, and the link opens the wrong page.
+`emailRedirectTo` is still sent on signup and resend. Before step 4 it is what decides where the confirmation link lands; after step 4 it no longer affects confirmation. Skip step 3 and Supabase ignores `emailRedirectTo`, falls back to the Site URL, and the link opens the wrong page.
 
 ## Deploying
 
 The web app is a static build, so it can live on Vercel. The bot has to run on a machine that stays awake, because it holds the WhatsApp session, and `VITE_API_BASE` points the browser at it.
 
-Everything about deploying is in [deploy/README.md](deploy/README.md): the
-production topology, day-2 operations, the security contract, and
-`./deploy/laptop/update.sh`, which builds, syncs, restarts, verifies, and puts
-the previous version back if a check fails.
+Everything about deploying is in [deploy/README.md](deploy/README.md): the production topology, day-2 operations, the security contract, and `./deploy/laptop/update.sh`, which builds, syncs, restarts, verifies, and puts the previous version back if a check fails.
 
 ## Project structure
 
@@ -249,11 +215,14 @@ dukaan.ai/
 │   ├── migrations/              # Idempotent, non-destructive migrations (date order)
 │   └── functions/               # Edge Functions (capture-session, email-confirmation-status)
 ├── .env.example                 # The one environment template for the whole app
+├── docs/
+│   └── demo.gif                 # Demo shown at the top of this file
 ├── public/                      # Static assets served as-is
 │   ├── logo.png                 # App mark (favicon, PWA, social card source)
 │   ├── favicon.ico
 │   ├── apple-touch-icon.png
 │   ├── og-image.png             # 1200x630 card for X/Open Graph
+│   ├── banner.mp4               # Settings cover video
 │   ├── site.webmanifest
 │   ├── index.css
 │   └── i18n/locales/            # Translation bundles (en, hi, gu, kn, pa, ta, ur)
