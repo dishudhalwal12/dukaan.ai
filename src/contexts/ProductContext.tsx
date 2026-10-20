@@ -240,7 +240,14 @@ export const ProductProvider: React.FC<{ children: ReactNode }> = ({ children })
     // `translationsLanguage` closes the other half: changing `language` starts
     // the bundle fetch, so without this the generator would run once with the
     // previous language's strings and never re-run when the new bundle landed.
-    if (!loading && languageReady && translationsLanguage === language) {
+    //
+    // `currentIdentity()` is the authentication gate: the bot's AI proxy rejects
+    // a request with no Supabase session, and a brand-new visitor spends more
+    // than ten seconds in the sign-in flow. Generating as a guest painted an
+    // error card that then survived into onboarding, which is why insights only
+    // appeared after one or two refreshes.
+    const signedIn = currentIdentity() !== 'guest';
+    if (!loading && signedIn && languageReady && translationsLanguage === language) {
       refreshInsights();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

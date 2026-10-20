@@ -28,7 +28,7 @@ import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
 import { playOrderChime } from './utils/audioAlert.ts';
 import { mergePolledOrders, electPopupCandidates } from './utils/orderPolling.ts';
-import { isNewOrder } from './utils/orderStatus.ts';
+import { isNewOrder, isFinalOrderStatus } from './utils/orderStatus.ts';
 import { claimOwnershipReboot, clearLocalStore, currentIdentity, enforceDataOwnership } from './utils/localStore.ts';
 import { normalizeQuantity } from './utils/stock.ts';
 import { consumeFreshSignIn, markFreshSignIn } from './utils/authOutcome.ts';
@@ -294,6 +294,12 @@ const AppContent: React.FC = () => {
           setTabs(resolveTabsFromBusinessType(cat, aiCtx, t));
         }
 
+        // The account's language is now adopted and the catalogue is restored,
+        // so insights may start. Waiting for the 10-second safety timer made a
+        // first-time shopkeeper watch an error card through the whole of
+        // onboarding and only see insights after a manual refresh.
+        markLanguageResolved();
+
         // An account that has already onboarded goes straight in — onboarding
         // is only for stores that have never been set up. The fresh-sign-in
         // marker is one-shot, so a silent session restore stays silent.
@@ -449,6 +455,14 @@ const AppContent: React.FC = () => {
 
   const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
     const orderToUpdate = orders.find(o => o.id === orderId);
+
+    // A finished order stays finished. The New Order popup keeps a 60-second
+    // auto-reject timer; after a delivery it used to fire anyway and send the
+    // customer a "declined" message for an order they had already received.
+    // Refusing every transition out of a final status is the one choke point.
+    if (orderToUpdate && isFinalOrderStatus(orderToUpdate.status)) {
+        return;
+    }
 
     // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
     if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {

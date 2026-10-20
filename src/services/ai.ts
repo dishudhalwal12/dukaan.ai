@@ -112,6 +112,13 @@ export async function* generateDynamicInsights(
     price,
   }));
 
+  // One compact line per item instead of a JSON array. The model has to read
+  // its way to the first token, so every field name and brace removed here is
+  // latency removed from the first insight.
+  const inventoryLines = simplifiedProducts
+    .map((item) => `${item.name} | ₹${item.price} | ${item.stock} left`)
+    .join('\n');
+
   const insightLanguage = languageName(language);
   
   const category = localStorage.getItem('dukan-store-category') || 'retail';
@@ -120,28 +127,33 @@ export async function* generateDynamicInsights(
   if (rawContext) {
     try {
        const parsed = JSON.parse(rawContext);
-       storeContextStr = `Store Context: ${JSON.stringify(parsed.qa || parsed)}`;
+       const compact = JSON.stringify(parsed.qa || parsed);
+       storeContextStr = `Store context: ${compact.slice(0, 500)}`;
     } catch(e) {}
   }
   
-  const systemInstruction = `You are an expert AI business advisor for a small ${category} business owner in India. Your task is to generate five creative, actionable, and ultra-concise insights based on their inventory. The owner needs quick, easily digestible advice. ${storeContextStr}
+  const systemInstruction = `You are a business advisor for a small ${category} shop in India. Write five short insights about the inventory below. ${storeContextStr}
 
-**RESPONSE FORMAT RULES (MANDATORY):**
-* You MUST provide EXACTLY FIVE insights.
-* Output valid JSON objects. Each JSON object must have three keys: "icon", "title", and "description".
-* The text for "title" and "description" MUST be in the ${insightLanguage} language. ${languageInstruction(language)}
-* For the "icon" key, you MUST use one of these Material Symbols Outlined names: 'warning', 'lightbulb', 'local_fire_department', 'trending_up', 'inventory', 'sell', 'groups'.
-* CRITICAL LENGTH RULE: Each "description" MUST be strictly under 3 lines (maximum 15 to 20 words). Keep it punchy, direct, and actionable. Avoid long background explanations or wordy sentences.
+OUTPUT CONTRACT (MANDATORY):
+* Start your reply with "{" immediately. No preamble, no reasoning, no markdown, no code fence.
+* Write exactly five minified JSON objects, one object per line, not an array, no blank lines.
+* Every object has exactly: "icon", "title", "description".
+* "icon" must be one of: warning, lightbulb, local_fire_department, trending_up, inventory, sell, groups.
+* "title" is at most 6 words.
+* "description" is 15 to 20 words: punchy, direct, actionable. No background explanation.
+* "title" and "description" must be in ${insightLanguage}. ${languageInstruction(language)}
 
-**INSIGHT GUIDELINES:**
-Generate a mix of insights tailored specifically for a ${category} business. At least one should be a low-stock alert if any item is running low (e.g. <=10). Think about combo deals, seasonal trends in India, service forecasts, or client engagement tips relevant to ${category}. Every insight must be crisp and under 3 lines.`;
+INSIGHT RULES:
+* At least one insight is a low-stock alert when an item has 10 or fewer left.
+* Mix restocking, combos, seasonal demand, and customer engagement, all specific to ${category}.
+* Never repeat an insight and never invent an item or price that is not in the inventory.`;
 
   let yieldedCount = 0;
 
   try {
     const responseStream = await withGeminiStreamFailover((client) =>
       client.models.generateContentStream({
-        contents: `Here is the current inventory data: ${JSON.stringify(simplifiedProducts)}. Generate 5 punchy insights. Remember: keep every description strictly under 3 lines (max 20 words).`,
+        contents: `INVENTORY\n${inventoryLines}\n\nWrite the five JSON objects now, starting with "{".`,
         config: {
           systemInstruction
         },
@@ -174,36 +186,28 @@ Generate a mix of insights tailored specifically for a ${category} business. At 
       }
     }
 
-    // If stream ended but 0 valid insights were generated, provide smart inventory insight
+    // No synthetic insight here. A model that returned nothing usable is an
+    // outage, and hiding it behind a guessed "stock looks healthy" card told the
+    // shopkeeper everything was fine when the AI had failed.
     if (yieldedCount === 0) {
-      const lowStockItem = simplifiedProducts.find(p => p.stock <= 10);
-      if (lowStockItem) {
-        yield {
-          icon: 'warning',
-          title: translate('insights_low_stock_title', { product: lowStockItem.name }),
-          description: translate('insights_low_stock_description', { count: lowStockItem.stock }),
-        };
-      } else {
-        yield {
-          icon: 'inventory',
-          title: translate('insights_healthy_title'),
-          description: translate('insights_healthy_description', { count: simplifiedProducts.length }),
-        };
-      }
+      throw new Error('The AI returned no usable insights.');
     }
 
   } catch (error) {
     console.error("Error generating AI insights:", error);
-    
+    const detail = String((error as { message?: string })?.message || error || 'unknown error')
+      .replace(/\s+/g, ' ')
+      .slice(0, 160);
+
     // Only show the error card if no insights at all were successfully yielded
     if (yieldedCount === 0) {
       const errorString = JSON.stringify(error);
       let title = translate('insights_error_title');
-      let description = translate('insights_error_description');
+      let description = `${translate('insights_error_description')} (${detail})`;
 
       if (errorString.includes('429') || errorString.includes('RESOURCE_EXHAUSTED')) {
         title = translate('insights_quota_title');
-        description = translate('insights_quota_description');
+        description = `${translate('insights_quota_description')} (${detail})`;
       }
       
       yield { icon: 'error', title, description };

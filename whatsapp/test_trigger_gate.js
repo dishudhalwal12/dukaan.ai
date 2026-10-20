@@ -22,6 +22,7 @@ import {
   isAwaitingLocation,
   activeShops,
   customerCarts,
+  completeLocationHandshake,
   SESSION_IDLE_TTL_MS,
   WELCOME_REPLY,
   LOCATION_HOWTO_REPLY,
@@ -382,6 +383,29 @@ ok('Test 25: mentionsProduct requires the brand token', () => {
   };
   assert.strictEqual(mentionsProduct('add 2 lifebuoy soap', soap), true);
   assert.strictEqual(mentionsProduct('just 2 maggi total, remove nothing', soap), false);
+});
+
+ok('Test 26: closeConversation silences a post-delivery "thank you"', () => {
+  const jid = JID('gate-closed-order');
+  activateSession(jid);
+  completeLocationHandshake(jid, { shopName: 'Test shop', userId: 'owner-1' });
+  customerCarts.set(jid, {
+    items: [{ id: 'p1', name: 'Maggi', price: 15, quantity: 1, total: 15 }],
+    totalAmount: 15,
+    customerName: 'Tester',
+    deliveryAddress: 'Somewhere',
+    location: null,
+    updatedAt: Date.now(),
+    status: 'staged',
+  });
+
+  dukanBot.closeConversation(jid);
+
+  assert.strictEqual(activeShops.has(jid), false, 'the matched shop must be cleared');
+  assert.strictEqual(customerCarts.has(jid), false, 'the cart must be cleared');
+  assert.strictEqual(dukanBot.shouldEngage(jid, 'Thank you'), false, 'a thank-you must not re-engage');
+  assert.strictEqual(dukanBot.shouldEngage(jid, 'ok'), false, 'nothing else may re-engage either');
+  assert.strictEqual(dukanBot.shouldEngage(jid, '/hey'), true, '"/hey" still starts a new order');
 });
 
 console.log(`\n✓✓ ALL ${passed} TRIGGER GATE TESTS PASSED`);

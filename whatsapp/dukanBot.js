@@ -139,13 +139,22 @@ export function endSession(jid) {
  * catalog) or a placed order means there is nothing left to say, and a chat that
  * stays engaged keeps running the model on every message the customer sends and
  * bills for it. The customer starts again with "/hey".
+ *
+ * A finished order closes everything, not just the idle timer. Otherwise the
+ * matched shop and the remembered pin could still make a later "thank you" look
+ * like an active customer.
  */
 function closeConversation(jid) {
   if (!jid) return;
   endSession(jid);
   clearLocationHandshake(jid);
   conversationHistories.delete(jid);
+  customerCarts.delete(jid);
+  activeShops.delete(jid);
+  customerLocations.delete(jid);
 }
+
+export { closeConversation };
 
 /**
  * A cart the customer is still actively working on (within the idle window).
@@ -1312,6 +1321,14 @@ export const dukanBot = {
    */
   endSession(jid) {
     endSession(jid);
+  },
+
+  /**
+   * Ends the whole conversation, not only the idle timer. The terminal order
+   * routes call this so a later "thank you" is ignored instead of answered.
+   */
+  closeConversation(jid) {
+    closeConversation(jid);
   },
 
   /** True while the chat is waiting for the customer's location pin. */

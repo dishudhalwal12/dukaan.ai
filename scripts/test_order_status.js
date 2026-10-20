@@ -5,6 +5,7 @@ import {
   isHistoryGroup,
   isCancelledOrRejected,
   isAcceptedSale,
+  isFinalOrderStatus,
 } from '../src/utils/orderStatus.ts';
 
 console.log('--- RUNNING ORDER-STATUS TESTS ---');
@@ -65,6 +66,15 @@ for (const s of [...new Set([...ENGINE, ...UI])]) {
 const unknownHits = [isNewOrder, isPreparingGroup, isHistoryGroup].filter((f) => f('garbage')).length;
 assert.strictEqual(unknownHits, 0, 'an unknown status lands in no tab group');
 console.log('✓ Test 6 Passed');
+
+console.log('\nTest 7: isFinalOrderStatus stops a finished order from changing');
+for (const s of ['COMPLETED', 'DELIVERED', 'REJECTED', 'CANCELLED']) {
+  assert.strictEqual(isFinalOrderStatus(s), true, `${s} is final`);
+}
+for (const s of ['NEW', 'PENDING', 'PREPARING', 'ACCEPTED', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', null, undefined, 'garbage']) {
+  assert.strictEqual(isFinalOrderStatus(s), false, `${String(s)} is not final`);
+}
+console.log('✓ Test 7 Passed');
 
 console.log('\n========================================');
 console.log('🎉 ALL ORDER-STATUS TESTS PASSED 🎉');

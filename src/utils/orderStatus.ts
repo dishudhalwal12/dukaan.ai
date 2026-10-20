@@ -32,6 +32,14 @@ export const isPreparingGroup = (status: RawOrderStatus): boolean =>
 export const isHistoryGroup = (status: RawOrderStatus): boolean =>
   HISTORY_GROUP.includes(String(status ?? ''));
 
+/**
+ * True when no further status change is legal. A delivered order cannot be
+ * rejected afterwards; the old auto-reject timer used to do exactly that and
+ * sent the customer a "declined" message minutes after delivery.
+ */
+export const isFinalOrderStatus = (status: RawOrderStatus): boolean =>
+  HISTORY_GROUP.includes(String(status ?? ''));
+
 /** True when nothing was sold: the order was rejected or cancelled. */
 export const isCancelledOrRejected = (status: RawOrderStatus): boolean =>
   DEAD.includes(String(status ?? ''));
