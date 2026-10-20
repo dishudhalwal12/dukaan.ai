@@ -138,7 +138,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ orders, onModalStateC
           </div>
         </div>
 
-        <div>
+        <div data-tour="dashboard-insights">
           <div className="flex justify-between items-center px-2 pb-3">
             <h2 className="text-lg font-bold tracking-tight text-white">{t('dashboard_insights')}</h2>
              <button 

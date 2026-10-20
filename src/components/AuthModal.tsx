@@ -18,7 +18,6 @@ const CONFIRMATION_POLL_MS = 3000;
 const GOOGLE_STUCK_MS = 10_000;
 
 interface AuthModalProps {
-  onClose: () => void;
   onSuccess: () => void;
   /** Opens the privacy policy over the sheet, for the consent line. */
   onOpenPrivacy?: () => void;
@@ -33,7 +32,7 @@ const serviceAddress = (): string => {
   }
 };
 
-const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy }) => {
+const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -280,14 +279,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-300">
       <div className="bg-[#1A1A1A] w-full max-w-sm rounded-2xl shadow-xl overflow-hidden border border-neutral-800">
         <div className="p-6 relative">
-          <button 
-            onClick={onClose} 
-            className="absolute top-4 right-4 text-neutral-400 hover:text-white transition-colors"
-            aria-label="Close"
-          >
-            <span className="material-symbols-outlined">close</span>
-          </button>
-          
           <div className="text-center mb-5 mt-1">
             <h2 className="text-2xl font-bold text-white mb-1.5">Sync Your Store</h2>
             <p className="text-neutral-400 text-xs leading-relaxed">
@@ -502,15 +493,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onClose, onSuccess, onOpenPrivacy
             </>
           )}
 
-          {/* Guest Mode Option */}
-          <div className="mt-5 pt-3 border-t border-neutral-800">
-            <button
-              onClick={onClose}
-              className="w-full bg-transparent border border-neutral-800 text-neutral-400 text-sm font-medium py-2 rounded-xl hover:bg-neutral-800/60 hover:text-white transition-all flex items-center justify-center"
-            >
-              Continue as Guest (Local Only)
-            </button>
-          </div>
         </div>
       </div>
     </div>

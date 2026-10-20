@@ -7,12 +7,18 @@ import { Product } from '../types.ts';
  */
 export const presetProductsByDisplayName: Record<string, Product[]> = {
   'Kirana / General Store': [
-    { id: 'kirana_1', name: 'Maggi 2-Minute Noodles (70g)', price: '₹15', stock: 120, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1585703900468-13c7a978ad86?w=600&h=600&fit=crop' },
-    { id: 'kirana_2', name: 'Tata Salt Vaccum Evaporated (1kg)', price: '₹28', stock: 80, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1576791128879-1e6a6d2c9f71?w=600&h=600&fit=crop' },
-    { id: 'kirana_3', name: 'Aashirvaad Shudh Chakki Atta (5kg)', price: '₹245', stock: 35, stockUnit: 'bags', imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&h=600&fit=crop' },
-    { id: 'kirana_4', name: 'Fortune Sunlite Sunflower Oil (1L)', price: '₹165', stock: 24, stockUnit: 'pouches', imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=600&h=600&fit=crop' },
-    { id: 'kirana_5', name: 'Parle-G Gold Biscuits (1kg)', price: '₹85', stock: 60, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=600&h=600&fit=crop' },
-    { id: 'kirana_6', name: 'Tata Tea Premium (500g)', price: '₹290', stock: 40, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&h=600&fit=crop' },
+    { id: 'kirana_1', name: 'Maggi 2-Minute Noodles (70g)', price: '₹15', stock: 120, stockUnit: 'packs', imageUrl: 'https://m.media-amazon.com/images/I/81x6KodxNZL.jpg' },
+    { id: 'kirana_2', name: 'Amul Gold Milk (1L)', price: '₹68', stock: 30, stockUnit: 'cartons', imageUrl: 'https://m.media-amazon.com/images/I/61STCwHWEuL._AC_UF894,1000_QL80_.jpg' },
+    { id: 'kirana_3', name: 'Parle-G Biscuits (Value Pack 1kg)', price: '₹85', stock: 60, stockUnit: 'packs', imageUrl: 'https://m.media-amazon.com/images/I/714PuAiIeeL._AC_UF894,1000_QL80_.jpg' },
+    { id: 'kirana_4', name: 'Tata Salt (1kg)', price: '₹28', stock: 80, stockUnit: 'packs', imageUrl: 'https://m.media-amazon.com/images/I/614mm2hYHyL.jpg' },
+    { id: 'kirana_5', name: 'Fortune Soyabean Oil (1L)', price: '₹165', stock: 24, stockUnit: 'pouches', imageUrl: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=600&h=600&fit=crop' },
+    { id: 'kirana_6', name: 'Surf Excel Matic Detergent (1kg)', price: '₹140', stock: 40, stockUnit: 'packs', imageUrl: 'https://m.media-amazon.com/images/I/41-o+au8vfL._SY300_SX300_QL70_FMwebp_.jpg' },
+    { id: 'kirana_7', name: 'Aashirvaad Shudh Chakki Atta (5kg)', price: '₹245', stock: 35, stockUnit: 'bags', imageUrl: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=600&h=600&fit=crop' },
+    { id: 'kirana_8', name: 'Tata Tea Premium (500g)', price: '₹290', stock: 40, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=600&h=600&fit=crop' },
+    { id: 'kirana_9', name: 'Colgate MaxFresh Toothpaste (150g)', price: '₹110', stock: 55, stockUnit: 'tubes', imageUrl: 'https://images.unsplash.com/photo-1559599101-f09722fb4948?w=600&h=600&fit=crop' },
+    { id: 'kirana_10', name: 'Dettol Original Soap (125g)', price: '₹55', stock: 90, stockUnit: 'bars', imageUrl: 'https://images.unsplash.com/photo-1605492453965-9e2a4c74df4c?w=600&h=600&fit=crop' },
+    { id: 'kirana_11', name: 'Vim Dishwash Bar (300g)', price: '₹30', stock: 110, stockUnit: 'bars', imageUrl: 'https://images.unsplash.com/photo-1585421514738-01798e348b17?w=600&h=600&fit=crop' },
+    { id: 'kirana_12', name: 'Good Knight Gold Flash Liquid Refill', price: '₹85', stock: 45, stockUnit: 'packs', imageUrl: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=600&h=600&fit=crop' },
   ],
 
   'Grocery / Kirana': [

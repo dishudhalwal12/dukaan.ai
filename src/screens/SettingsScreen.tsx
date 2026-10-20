@@ -1,10 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import { XIcon, WhatsAppIcon, GoogleIcon } from '../components/Icons.tsx';
+import { XIcon, GoogleIcon } from '../components/Icons.tsx';
 import type { User } from '../services/auth.ts';
 import EditProfileScreen from './settings/EditProfileScreen.tsx';
 import ManageStoreScreen from './settings/ManageStoreScreen.tsx';
-import WhatsAppSettingsScreen from './settings/WhatsAppSettingsScreen.tsx';
 import NotificationsScreen from './settings/NotificationsScreen.tsx';
 import ChangeLanguageScreen from './settings/ChangeLanguageScreen.tsx';
 import BrandGuideScreen from './settings/BrandGuideScreen.tsx';
@@ -22,17 +20,23 @@ const SettingsHeader: React.FC = () => {
     );
 };
 
-const ProfileSummary: React.FC = () => {
+const ProfileSummary: React.FC<{ currentUser?: User | null }> = ({ currentUser }) => {
     const { t } = useLanguage();
     const name = localStorage.getItem('dukan-profile-name') || t('placeholder_your_name');
     const storeName = localStorage.getItem('dukan-store-name') || t('placeholder_store_name');
-    const profilePic = localStorage.getItem('dukan-profile-pic');
+    // A photo the shopkeeper picked wins; otherwise the Google account photo is
+    // shown so a fresh sign-in does not look like an empty placeholder.
+    const profilePic =
+        localStorage.getItem('dukan-profile-pic') ||
+        currentUser?.user_metadata?.avatar_url ||
+        currentUser?.user_metadata?.picture ||
+        null;
 
     return (
         <div className="flex items-center gap-4 p-4">
             <div className="h-16 w-16 rounded-full bg-[#1A1A1A] flex items-center justify-center overflow-hidden">
                 {profilePic ? (
-                    <img src={profilePic} alt="Profile" className="h-full w-full object-cover" />
+                    <img src={profilePic} alt="Profile" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                     <span className="material-symbols-outlined text-4xl text-neutral-400">person</span>
                 )}
@@ -128,7 +132,8 @@ const MainSettings: React.FC<{
   onLogout: () => void;
   currentUser?: User | null;
   onOpenAuth?: () => void;
-}> = ({ onNavigate, onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
+  onStartWalkthrough?: () => void;
+}> = ({ onNavigate, onModalStateChange, onLogout, currentUser, onOpenAuth, onStartWalkthrough }) => {
   const [isContactModalOpen, setIsContactModalOpen] = useState(false);
   const { t } = useLanguage();
 
@@ -145,23 +150,38 @@ const MainSettings: React.FC<{
       <div>
         <SettingsHeader />
         <div>
-          <ProfileSummary />
+          <div className="settings-banner relative mx-4 mt-2 h-24 overflow-hidden rounded-2xl border border-white/10">
+            <div className="settings-banner-sheen absolute inset-0" />
+            <div className="relative flex h-full flex-col justify-end p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#E6E6FA]/70">Dukaan.AI</p>
+              <p className="truncate text-base font-bold leading-tight text-white">
+                {localStorage.getItem('dukan-store-name') || t('placeholder_store_name')}
+              </p>
+            </div>
+          </div>
+          <ProfileSummary currentUser={currentUser} />
           <div className="p-4 space-y-4">
               <div>
                   <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">{t('settings_account')}</h3>
                   <div className="space-y-2">
                       <SettingsItem icon="account_circle" label={t('settings_edit_profile')} onClick={() => onNavigate('profile')} />
                       <SettingsItem icon="store" label={t('settings_manage_store')} onClick={() => onNavigate('store')} />
-                      <SettingsItem
-                        icon="chat"
-                        customIcon={<WhatsAppIcon className="w-6 h-6 text-emerald-400" />}
-                        label="WhatsApp Store & Ordering"
-                        onClick={() => onNavigate('whatsapp')}
-                      />
                       <SettingsItem icon="notifications" label={t('settings_notifications')} onClick={() => onNavigate('notifications')} />
                       <SettingsItem icon="language" label={t('settings_change_language')} onClick={() => onNavigate('language')} />
                   </div>
               </div>
+
+              <div>
+                  <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">{t('settings_walkthrough_section')}</h3>
+                  <div className="space-y-2">
+                      <SettingsItem 
+                        icon="explore" 
+                        label={t('settings_walkthrough')} 
+                        onClick={onStartWalkthrough} 
+                      />
+                  </div>
+              </div>
+
               <div>
                   <h3 className="text-neutral-400 text-sm font-bold uppercase tracking-wider px-2 pb-2">{t('settings_support')}</h3>
                    <div className="space-y-2">
@@ -226,11 +246,26 @@ interface SettingsScreenProps {
   onLogout: () => void;
   currentUser?: User | null;
   onOpenAuth?: () => void;
+  onStartWalkthrough?: () => void;
+  initialSubScreen?: string | null;
 }
 
-const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onLogout, currentUser, onOpenAuth }) => {
-  const [activeSubScreen, setActiveSubScreen] = useState<string | null>(null);
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ 
+  onModalStateChange, 
+  onLogout, 
+  currentUser, 
+  onOpenAuth,
+  onStartWalkthrough,
+  initialSubScreen = null,
+}) => {
+  const [activeSubScreen, setActiveSubScreen] = useState<string | null>(initialSubScreen);
   const [profileKey, setProfileKey] = useState(0);
+
+  useEffect(() => {
+    if (initialSubScreen !== undefined) {
+      setActiveSubScreen(initialSubScreen);
+    }
+  }, [initialSubScreen]);
 
   const renderContent = () => {
     const handleBack = () => {
@@ -243,8 +278,6 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
             return <EditProfileScreen onBack={handleBack} currentUser={currentUser} onOpenAuth={onOpenAuth} />;
         case 'store':
             return <ManageStoreScreen onBack={handleBack} />;
-        case 'whatsapp':
-            return <WhatsAppSettingsScreen onBack={handleBack} />;
         case 'notifications':
             return <NotificationsScreen onBack={handleBack} />;
         case 'language':
@@ -264,6 +297,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ onModalStateChange, onL
                 onLogout={onLogout}
                 currentUser={currentUser}
                 onOpenAuth={onOpenAuth}
+                onStartWalkthrough={onStartWalkthrough}
               />
             );
     }

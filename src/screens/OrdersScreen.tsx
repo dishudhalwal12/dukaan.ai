@@ -5,6 +5,7 @@ import OrderDetailsModal from '../components/OrderDetailsModal.tsx';
 import Card from '../components/Card.tsx';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 import { useBusinessLabel } from '../hooks/useBusinessLabel.ts';
+import VirtualDemoOrderCard, { DemoOrderStep } from '../components/Walkthrough/VirtualDemoOrderCard.tsx';
 
 const OrdersHeader: React.FC = () => {
     const label = useBusinessLabel('ORDERS');
@@ -102,12 +103,28 @@ interface OrdersScreenProps {
     orders: Order[];
     onUpdateStatus: (orderId: string, status: OrderStatus) => void;
     onModalStateChange: (isOpen: boolean) => void;
+    isWalkthroughActive?: boolean;
+    demoStep: DemoOrderStep;
+    onDemoAdvance: (next: DemoOrderStep) => void;
 }
 
-const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onModalStateChange }) => {
+const OrdersScreen: React.FC<OrdersScreenProps> = ({ 
+  orders, 
+  onUpdateStatus, 
+  onModalStateChange,
+  isWalkthroughActive = false,
+  demoStep,
+  onDemoAdvance,
+}) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus>(OrderStatus.NEW);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [showDemoOrder, setShowDemoOrder] = useState<boolean>(isWalkthroughActive);
   const { t } = useLanguage();
+
+  useEffect(() => {
+    // The tour owns the sheet while it runs; closing the tour closes it too.
+    setShowDemoOrder(isWalkthroughActive);
+  }, [isWalkthroughActive]);
 
   useEffect(() => {
     onModalStateChange(!!selectedOrder);
@@ -134,11 +151,13 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
   }, [orders, activeFilter]);
 
   const filters = [OrderStatus.NEW, OrderStatus.PREPARING, OrderStatus.COMPLETED];
+  const demoVisible = showDemoOrder || isWalkthroughActive;
 
   return (
     <div>
       <OrdersHeader />
-      <div className="p-4 space-y-6">
+      <div className={`p-4 space-y-4 ${demoVisible ? 'pb-72' : ''}`}>
+        {/* Filter bar */}
         <div className="flex items-center justify-center bg-[#1A1A1A] p-1 rounded-full">
             {filters.map(filter => {
                 const count = orders.filter(o => {
@@ -161,7 +180,7 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
                 )
             })}
         </div>
-        
+
         {filteredOrders.length > 0 ? (
             <div className="space-y-3">
                 {filteredOrders.map(order => (
@@ -169,20 +188,45 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({ orders, onUpdateStatus, onM
                 ))}
             </div>
         ) : (
-            <div className="flex flex-col items-center justify-center pt-20 text-center">
-                <div className="flex flex-col items-center justify-center p-8 bg-[#1A1A1A] rounded-2xl w-full max-w-xs">
-                     <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#2D2D2D] mb-5">
-                        <span className="material-symbols-outlined text-4xl text-neutral-400">list_alt</span>
-                    </div>
-                    <h3 className="text-lg font-bold text-white">No Orders Here</h3>
-                    <p className="mt-1 text-sm text-neutral-400">
-                        New orders in this category will appear here.
-                    </p>
-                </div>
-            </div>
+            !demoVisible && (
+              <div className="flex flex-col items-center justify-center pt-16 text-center">
+                  <div className="flex flex-col items-center justify-center p-8 bg-[#1A1A1A] rounded-2xl w-full max-w-xs border border-neutral-800">
+                       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#2D2D2D] mb-5">
+                          <span className="material-symbols-outlined text-4xl text-neutral-400">list_alt</span>
+                      </div>
+                      <h3 className="text-lg font-bold text-white">No Orders Here</h3>
+                      <p className="mt-1 text-sm text-neutral-400">
+                          New orders in this category will appear here.
+                      </p>
+                      <button
+                        onClick={() => setShowDemoOrder(true)}
+                        className="mt-5 px-4 py-2 bg-[#E6E6FA] text-black text-xs font-bold rounded-full hover:bg-white transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(230,230,250,0.25)]"
+                      >
+                        <span className="material-symbols-outlined text-base">play_circle</span>
+                        Try Interactive Order Demo
+                      </button>
+                  </div>
+              </div>
+            )
         )}
 
       </div>
+
+      {demoVisible && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pointer-events-none">
+          <div
+            data-tour="orders-demo-container"
+            className="demo-sheet-enter w-full max-w-sm pointer-events-auto bg-[#1A1A1A] rounded-t-2xl border-t border-neutral-800 shadow-[0_-12px_40px_rgba(0,0,0,0.7)] max-h-[calc(100dvh-240px)] overflow-y-auto pb-[env(safe-area-inset-bottom)]"
+          >
+            <VirtualDemoOrderCard
+              step={demoStep}
+              onAdvance={onDemoAdvance}
+              onClose={isWalkthroughActive ? undefined : () => setShowDemoOrder(false)}
+            />
+          </div>
+        </div>
+      )}
+
        {selectedOrder && (
           <OrderDetailsModal 
             isOpen={!!selectedOrder}

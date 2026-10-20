@@ -22,7 +22,7 @@ import EmailConfirmScreen from './components/EmailConfirmScreen.tsx';
 import { captureEmailConfirmParams } from './utils/confirmLink.ts';
 import type { ConfirmParams } from './utils/confirmLink.ts';
 import { listenToAuthState, signOutUser, User, getAuthUrlError, isOAuthPending, clearOAuthPending } from './services/auth.ts';
-import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad } from './services/cloudSync.ts';
+import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad, isNewSignupForWalkthrough } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
@@ -36,6 +36,9 @@ import { hasCompletedOnboarding, ONBOARDING_COMPLETE_KEY } from './utils/onboard
 import { PROFILE_NAME_KEY, resolveGreetingName } from './utils/greetingName.ts';
 import { whatsappService, WhatsAppEvent } from './services/whatsappService.ts';
 import { orderBelongsTo, ownedOrdersOnly } from './utils/orderOwnership.ts';
+import WalkthroughTour, { WALKTHROUGH_STORAGE_KEY, isWalkthroughCompleted, WalkthroughTourHandle } from './components/Walkthrough/WalkthroughTour.tsx';
+import { demoStateForTourStep, tourStepForDemoState } from './components/Walkthrough/tourSteps.js';
+import type { DemoOrderStep } from './components/Walkthrough/VirtualDemoOrderCard.tsx';
 
 const getInitialScreen = (): Screen => {
   if (typeof window !== 'undefined') {
@@ -105,6 +108,7 @@ const AppContent: React.FC = () => {
   const [welcomeBackName, setWelcomeBackName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+
   // Read once at boot. When a confirmation link is the reason this page loaded,
   // the shell is replaced by EmailConfirmScreen — the token is single-use, so
   // reading it in a lazy initializer is also what keeps a re-render from
@@ -128,6 +132,12 @@ const AppContent: React.FC = () => {
 
   // Auth state with local storage caching for immediate session persistence across page loads
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [settingsSubScreen, setSettingsSubScreen] = useState<string | null>(null);
+  const [isWalkthroughActive, setIsWalkthroughActive] = useState<boolean>(false);
+  const [demoStep, setDemoStep] = useState<DemoOrderStep>('new_order');
+  const walkthroughRef = useRef<WalkthroughTourHandle>(null);
+  // One automatic eligibility check per page load, however many auth re-renders fire.
+  const walkthroughGateRef = useRef<'idle' | 'checking' | 'started'>('idle');
   // Opened from the consent line on the sign-in sheet, which renders over the
   // modal rather than replacing the app.
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -348,7 +358,6 @@ const AppContent: React.FC = () => {
         }
 
         const isAuthenticated = Boolean(currentUserRef.current || localStorage.getItem('dukan-auth-user'));
-        const isGuest = Boolean(localStorage.getItem('dukan-guest-mode'));
 
         // Returning from Google OAuth is an interactive sign-in, so the
         // welcome-back popup may fire once auth resolves.
@@ -361,17 +370,6 @@ const AppContent: React.FC = () => {
             // listener resolves it when the session arrives.
             if (!hasOAuthParams && !isOAuthInProgress) markLanguageResolved();
             setInteractionDone(true);
-            return;
-        }
-
-        if (isGuest) {
-            // Guests onboard locally — no account, no cloud writes.
-            markLanguageResolved();
-            if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') {
-                setShowOnboarding(true);
-            } else {
-                setInteractionDone(true);
-            }
             return;
         }
 
@@ -717,6 +715,54 @@ const AppContent: React.FC = () => {
     };
   }, [normalizeIncomingOrder]);
 
+  const handleDemoAdvance = useCallback((next: DemoOrderStep) => {
+    setDemoStep(next);
+    if (!isWalkthroughActive) return;
+    const stepIndex = tourStepForDemoState(next);
+    if (stepIndex === null) return;
+    if (next === 'completed') {
+      // Let the completed card stay on screen before the tour moves on.
+      window.setTimeout(() => walkthroughRef.current?.goToStep(stepIndex), 500);
+    } else {
+      walkthroughRef.current?.goToStep(stepIndex);
+    }
+  }, [isWalkthroughActive]);
+
+  const handleTourStepChange = useCallback((index: number) => {
+    setDemoStep(demoStateForTourStep(index));
+  }, []);
+
+  const startWalkthrough = useCallback(() => {
+    try {
+      localStorage.removeItem(WALKTHROUGH_STORAGE_KEY);
+    } catch (_) {}
+    setSettingsSubScreen(null);
+    setDemoStep('new_order');
+    setActiveScreen(Screen.DASHBOARD);
+    window.setTimeout(() => setIsWalkthroughActive(true), 150);
+  }, []);
+
+  const maybeStartWalkthrough = useCallback(async () => {
+    if (isWalkthroughCompleted()) return;
+    const eligible = await isNewSignupForWalkthrough();
+    if (!eligible) return;
+    walkthroughGateRef.current = 'started';
+    setDemoStep('new_order');
+    window.setTimeout(() => setIsWalkthroughActive(true), 500);
+  }, []);
+
+  // The tour is compulsory for eligible accounts, so a reload mid-tour brings it
+  // back instead of letting it be skipped. Eligibility is still the DB cutoff.
+  useEffect(() => {
+    if (!currentUser) return;
+    if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') return;
+    if (showOnboarding || isWalkthroughActive) return;
+    if (isWalkthroughCompleted()) return;
+    if (walkthroughGateRef.current !== 'idle') return;
+    walkthroughGateRef.current = 'checking';
+    void maybeStartWalkthrough();
+  }, [currentUser, showOnboarding, isWalkthroughActive, maybeStartWalkthrough]);
+
   const renderScreen = () => {
     switch (activeScreen) {
       case Screen.DASHBOARD:
@@ -724,7 +770,14 @@ const AppContent: React.FC = () => {
       case Screen.SALES:
         return <SalesScreen orders={orders} />;
       case Screen.ORDERS:
-        return <OrdersScreen orders={orders} onUpdateStatus={handleUpdateStatus} onModalStateChange={handleModalStateChange} />;
+        return <OrdersScreen 
+            orders={orders} 
+            onUpdateStatus={handleUpdateStatus} 
+            onModalStateChange={handleModalStateChange} 
+            isWalkthroughActive={isWalkthroughActive}
+            demoStep={demoStep}
+            onDemoAdvance={handleDemoAdvance}
+          />;
       case Screen.CATALOG:
         return <CatalogScreen onModalStateChange={handleModalStateChange} />;
       case Screen.SETTINGS:
@@ -734,6 +787,8 @@ const AppContent: React.FC = () => {
             onLogout={handleLogout}
             currentUser={currentUser}
             onOpenAuth={() => setShowAuthModal(true)}
+            initialSubScreen={settingsSubScreen}
+            onStartWalkthrough={startWalkthrough}
           />
         );
       default:
@@ -750,16 +805,8 @@ const AppContent: React.FC = () => {
     const category = localStorage.getItem('dukan-store-category');
     const aiContext = localStorage.getItem('dukan-business-intelligence-context');
     setTabs(resolveTabsFromBusinessType(category, aiContext, t));
-    // No auth prompt here any more: sign-in already happened before onboarding.
-  };
-
-  const handleGuestContinue = () => {
-    setShowAuthModal(false);
-    localStorage.setItem('dukan-guest-mode', 'true');
-    // Guests onboard locally; the auth-first gate no longer runs it for them.
-    if (localStorage.getItem(ONBOARDING_COMPLETE_KEY) !== 'true') {
-      setShowOnboarding(true);
-    }
+    // The tour starts from the resume effect once onboarding is out of the way,
+    // so completing onboarding and reloading mid-tour share one entry point.
   };
 
   const handleLogout = useCallback(async () => {
@@ -820,7 +867,6 @@ const AppContent: React.FC = () => {
         )}
         {showAuthModal && (
           <AuthModal 
-            onClose={handleGuestContinue} 
             onSuccess={() => setShowAuthModal(false)} 
             onOpenPrivacy={() => setShowPrivacy(true)}
           />
@@ -831,6 +877,19 @@ const AppContent: React.FC = () => {
           </div>
         )}
         {error && <Toast message={error} onClose={() => setError(null)} />}
+        <WalkthroughTour
+          ref={walkthroughRef}
+          activeScreen={activeScreen}
+          onNavigate={handleNavigation}
+          isTourActive={isWalkthroughActive && !showOnboarding && !showAuthModal && !newOrderForPopup && !welcomeBackName}
+          onTourEnd={() => {
+            setIsWalkthroughActive(false);
+            setSettingsSubScreen(null);
+            setDemoStep('new_order');
+          }}
+          onStepChange={handleTourStepChange}
+          onSetSettingsSubScreen={setSettingsSubScreen}
+        />
       </div>
     </div>
   );
