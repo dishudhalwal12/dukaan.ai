@@ -26,7 +26,10 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
 
 
   const handleCloseAndReject = useCallback(() => {
-    if (order) {
+    // Only an order nobody has touched may be auto-rejected. This popup can
+    // outlive its order (the shopkeeper opens Orders from under it), and the
+    // old unconditional reject is what sent "declined" after delivery.
+    if (order && order.status === OrderStatus.NEW) {
         onUpdateStatusRef.current(order.id, OrderStatus.REJECTED);
     }
   }, [order]);
@@ -47,7 +50,7 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
   }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && order) {
+    if (isOpen && order && order.status === OrderStatus.NEW) {
       setTimeLeft(600); // Reset timer to 60 seconds
 
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);

@@ -16,6 +16,12 @@ if (!fs.existsSync(DATA_DIR)) {
 
 let orders = [];
 
+const FINAL_STATUSES = ['DELIVERED', 'REJECTED', 'CANCELLED'];
+
+export function isFinalStatus(status) {
+  return FINAL_STATUSES.includes(String(status || ''));
+}
+
 try {
   if (fs.existsSync(ORDERS_FILE)) {
     orders = JSON.parse(fs.readFileSync(ORDERS_FILE, 'utf8'));
@@ -99,9 +105,20 @@ export const dukanOrders = {
     return newOrder;
   },
 
+  getById(id) {
+    return orders.find(o => o.id === id) || null;
+  },
+
+  isFinalStatus(status) {
+    return isFinalStatus(status);
+  },
+
   updateStatus(id, newStatus, extra = {}) {
     const order = orders.find(o => o.id === id);
     if (!order) return null;
+    // A terminal order is immutable. Without this, a stale browser tab could
+    // reject an order the shopkeeper already delivered.
+    if (isFinalStatus(order.status)) return null;
 
     order.status = newStatus;
     order.updatedAt = new Date().toISOString();

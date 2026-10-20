@@ -1044,6 +1044,11 @@ app.get('/api/dukan/stats', (req, res) => {
 
 // Accept Order
 app.post('/api/dukan/orders/:id/accept', async (req, res) => {
+  const existing = dukanOrders.getById(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Order not found' });
+  if (dukanOrders.isFinalStatus(existing.status)) {
+    return res.status(409).json({ error: 'order_already_final', status: existing.status });
+  }
   const order = dukanOrders.updateStatus(req.params.id, 'ACCEPTED');
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -1062,6 +1067,11 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
 
 // Out for Delivery / At Doorstep
 app.post('/api/dukan/orders/:id/ready', async (req, res) => {
+  const existing = dukanOrders.getById(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Order not found' });
+  if (dukanOrders.isFinalStatus(existing.status)) {
+    return res.status(409).json({ error: 'order_already_final', status: existing.status });
+  }
   const order = dukanOrders.updateStatus(req.params.id, 'OUT_FOR_DELIVERY');
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -1075,7 +1085,7 @@ app.post('/api/dukan/orders/:id/ready', async (req, res) => {
 
     // Order conversation is over, so close the bot chat now instead of leaving it
     // open for the full 12-minute idle window. Another order needs a fresh "/hey".
-    dukanBot.endSession(order.customerJid);
+    dukanBot.closeConversation(order.customerJid);
   }
 
   await mirrorOrderQuietly(order);
@@ -1085,6 +1095,11 @@ app.post('/api/dukan/orders/:id/ready', async (req, res) => {
 
 // Mark Delivered
 app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
+  const existing = dukanOrders.getById(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Order not found' });
+  if (dukanOrders.isFinalStatus(existing.status)) {
+    return res.status(409).json({ error: 'order_already_final', status: existing.status });
+  }
   const order = dukanOrders.updateStatus(req.params.id, 'DELIVERED');
   if (!order) return res.status(404).json({ error: 'Order not found' });
 
@@ -1096,7 +1111,7 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
       console.error('Failed to notify customer of delivery completion:', e.message);
     }
 
-    dukanBot.endSession(order.customerJid);
+    dukanBot.closeConversation(order.customerJid);
   }
 
   await mirrorOrderQuietly(order);
@@ -1106,6 +1121,11 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
 
 // Reject Order
 app.post('/api/dukan/orders/:id/reject', async (req, res) => {
+  const existing = dukanOrders.getById(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Order not found' });
+  if (dukanOrders.isFinalStatus(existing.status)) {
+    return res.status(409).json({ error: 'order_already_final', status: existing.status });
+  }
   const reason = req.body.reason || 'Item temporarily unavailable';
   const order = dukanOrders.updateStatus(req.params.id, 'REJECTED', { rejectReason: reason });
   if (!order) return res.status(404).json({ error: 'Order not found' });
@@ -1117,7 +1137,7 @@ app.post('/api/dukan/orders/:id/reject', async (req, res) => {
       console.error('Failed to notify customer of rejection:', e.message);
     }
 
-    dukanBot.endSession(order.customerJid);
+    dukanBot.closeConversation(order.customerJid);
   }
 
   await mirrorOrderQuietly(order);
