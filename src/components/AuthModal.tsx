@@ -23,15 +23,6 @@ interface AuthModalProps {
   onOpenPrivacy?: () => void;
 }
 
-/** Where this build is served from, shown so consent names a real address. */
-const serviceAddress = (): string => {
-  try {
-    return typeof window === 'undefined' ? '' : window.location.origin;
-  } catch {
-    return '';
-  }
-};
-
 const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -375,8 +366,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
 
           {/* Consent line. Google's own consent screen is configured in the
               Google/Supabase dashboards; this is the in-app half, so the person
-              signing in knows what they are agreeing to and where the service
-              actually lives. */}
+              signing in knows what they are agreeing to. */}
           <p className="mt-3 text-[11px] leading-relaxed text-neutral-500 text-center">
             By continuing you agree to our{' '}
             <button
@@ -386,11 +376,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
             >
               Privacy Policy
             </button>
-            {serviceAddress() && (
-              <>
-                {' '}· <span className="break-all">{serviceAddress()}</span>
-              </>
-            )}
           </p>
 
           {/* Divider */}

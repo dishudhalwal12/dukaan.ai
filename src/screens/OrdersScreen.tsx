@@ -118,13 +118,7 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({
 }) => {
   const [activeFilter, setActiveFilter] = useState<OrderStatus>(OrderStatus.NEW);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showDemoOrder, setShowDemoOrder] = useState<boolean>(isWalkthroughActive);
   const { t } = useLanguage();
-
-  useEffect(() => {
-    // The tour owns the sheet while it runs; closing the tour closes it too.
-    setShowDemoOrder(isWalkthroughActive);
-  }, [isWalkthroughActive]);
 
   useEffect(() => {
     onModalStateChange(!!selectedOrder);
@@ -151,7 +145,7 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({
   }, [orders, activeFilter]);
 
   const filters = [OrderStatus.NEW, OrderStatus.PREPARING, OrderStatus.COMPLETED];
-  const demoVisible = showDemoOrder || isWalkthroughActive;
+  const demoVisible = isWalkthroughActive;
 
   return (
     <div>
@@ -198,13 +192,6 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({
                       <p className="mt-1 text-sm text-neutral-400">
                           New orders in this category will appear here.
                       </p>
-                      <button
-                        onClick={() => setShowDemoOrder(true)}
-                        className="mt-5 px-4 py-2 bg-[#E6E6FA] text-black text-xs font-bold rounded-full hover:bg-white transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(230,230,250,0.25)]"
-                      >
-                        <span className="material-symbols-outlined text-base">play_circle</span>
-                        Try Interactive Order Demo
-                      </button>
                   </div>
               </div>
             )
@@ -221,7 +208,6 @@ const OrdersScreen: React.FC<OrdersScreenProps> = ({
             <VirtualDemoOrderCard
               step={demoStep}
               onAdvance={onDemoAdvance}
-              onClose={isWalkthroughActive ? undefined : () => setShowDemoOrder(false)}
             />
           </div>
         </div>

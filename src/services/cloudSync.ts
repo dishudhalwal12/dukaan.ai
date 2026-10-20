@@ -2,6 +2,7 @@ import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { isSignupAfterCutoff } from '../utils/walkthroughGate.js';
+import { staleExternalIds } from '../utils/catalogSync.js';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
 import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
 import {
@@ -403,6 +404,29 @@ export const syncProductsToCloud = async (
       console.warn('Supabase DB Error (syncProductsToCloud):', error.message);
     } else {
       console.log(`Synced ${products.length} products to Supabase for user: ${userId || 'guest'}`);
+
+      // The bot reads this table directly, so a product removed in the app has
+      // to be removed here too — an upsert alone would leave it orderable.
+      const { data: existingRows, error: readError } = await supabase
+        .from('products')
+        .select('external_id')
+        .eq('user_id', userId);
+
+      if (readError) {
+        console.warn('Supabase DB Error (catalog mirror read):', readError.message);
+      } else {
+        const stale = staleExternalIds(existingRows, products);
+        if (stale.length > 0) {
+          const { error: deleteError } = await supabase
+            .from('products')
+            .delete()
+            .eq('user_id', userId)
+            .in('external_id', stale);
+          if (deleteError) {
+            console.warn('Supabase DB Error (catalog mirror delete):', deleteError.message);
+          }
+        }
+      }
     }
   } catch (error) {
     console.warn('Failed to sync products to Supabase database.', error);
