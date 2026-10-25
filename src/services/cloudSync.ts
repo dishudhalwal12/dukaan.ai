@@ -542,7 +542,7 @@ export const syncOrdersToCloud = async (
 /**
  * Fetches orders from Supabase database for the logged-in user.
  */
-export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
+export const fetchOrdersFromCloud = async (limit = 200): Promise<Order[] | null> => {
   try {
     if (!isSupabaseConfigured()) return null;
 
@@ -553,7 +553,8 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
       .from('orders')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(Math.max(1, Math.min(Number(limit) || 200, 500)));
 
     if (error) {
       console.warn('Supabase DB Error (fetchOrdersFromCloud):', error.message);
@@ -569,11 +570,111 @@ export const fetchOrdersFromCloud = async (): Promise<Order[] | null> => {
       total: Number(item.total),
       paymentMethod: item.payment_method,
       status: item.status,
-      timestamp: item.created_at
+      timestamp: item.created_at,
+      // The dashboard's ownership filter drops rows without an explicit owner.
+      // The cloud read is already scoped by RLS, but the client still verifies.
+      userId: item.user_id,
+      customerUserId: item.customer_user_id,
+      channel: item.channel || 'whatsapp',
     }));
   } catch (error) {
     console.warn('Failed to fetch orders from Supabase database.', error);
     return null;
+  }
+};
+
+/**
+ * Updates the status of an order whose source of truth is Supabase.
+ *
+ * WhatsApp-era orders live in the bot's local engine; MCP orders go straight to
+ * Supabase. The dashboard calls this only for `MCP-` ids (or as a fallback when
+ * the backend says the order is unknown). It is scoped to the signed-in owner
+ * and reports whether a row actually changed.
+ */
+export const updateOrderStatusInCloud = async (externalId: string, status: string): Promise<boolean> => {
+  try {
+    if (!isSupabaseConfigured() || !externalId || !status) return false;
+    const userId = await resolveActiveUserId();
+    if (!userId) return false;
+
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .eq('external_id', externalId)
+      .select('external_id')
+      .maybeSingle();
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (updateOrderStatusInCloud):', error.message);
+      return false;
+    }
+    return Boolean(data);
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to update the order in Supabase.', error);
+    return false;
+  }
+};
+
+/** The shop's AI-ordering switch, radius, and pause state. */
+export interface McpSettings {
+  mcpEnabled: boolean;
+  deliveryRadiusKm: number;
+  ordersPaused: boolean;
+}
+
+export const fetchMcpSettingsFromCloud = async (): Promise<McpSettings | null> => {
+  try {
+    if (!isSupabaseConfigured()) return null;
+    const userId = await resolveActiveUserId();
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from('business_profiles')
+      .select('mcp_enabled, delivery_radius_km, orders_paused')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return {
+      mcpEnabled: Boolean(data.mcp_enabled),
+      deliveryRadiusKm: Number(data.delivery_radius_km) || 5,
+      ordersPaused: Boolean(data.orders_paused),
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const saveMcpSettingsToCloud = async (settings: McpSettings): Promise<boolean> => {
+  try {
+    if (!isSupabaseConfigured()) return false;
+    const userId = await resolveActiveUserId();
+    if (!userId) return false;
+
+    const radius = Math.min(10, Math.max(1, Number(settings.deliveryRadiusKm) || 5));
+    const { error } = await supabase
+      .from('business_profiles')
+      .update({
+        mcp_enabled: Boolean(settings.mcpEnabled),
+        delivery_radius_km: radius,
+        orders_paused: Boolean(settings.ordersPaused),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      noteSyncError();
+      console.warn('Supabase DB Error (saveMcpSettingsToCloud):', error.message);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    noteSyncError();
+    console.warn('Failed to save AI-ordering settings.', error);
+    return false;
   }
 };
 

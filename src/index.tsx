@@ -1,6 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
+import OAuthConsentScreen from './screens/OAuthConsentScreen.tsx';
+import ConnectScreen from './screens/ConnectScreen.tsx';
 import { getInstallId, instrumentRequestFailures } from './utils/telemetry.ts';
 import './styles/walkthrough.css';
 
@@ -25,6 +27,12 @@ if (!root) {
 
 root.render(
   <React.StrictMode>
-    <App />
+    {window.location.pathname.replace(/\/+$/, '') === '/oauth/consent' ? (
+      <OAuthConsentScreen />
+    ) : window.location.pathname.replace(/\/+$/, '') === '/connect' ? (
+      <ConnectScreen />
+    ) : (
+      <App />
+    )}
   </React.StrictMode>
 );

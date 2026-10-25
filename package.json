@@ -9,28 +9,40 @@
     "build": "vite build",
     "postbuild": "node scripts/check-secrets.mjs",
     "preview": "vite preview",
-    "test": "node scripts/test_order_status.js && node scripts/test_order_polling.js && node scripts/test_order_ownership_client.js && node scripts/test_cloud_rows.js && node scripts/test_catalog_reconcile.js && node scripts/test_upi_qr.js && node scripts/test_walkthrough_gate.js && node scripts/test_ai_fallback_gate.js && node scripts/test_api_client_auth.js && node scripts/test_no_key_in_bundle.js && node scripts/test_env_contract.js && node scripts/test_no_hardcoded_phone.js && node scripts/test_email_confirm_ux.js && node scripts/test_confirm_link.js && node scripts/test_email_confirmation_status.js && node scripts/test_auth_confirmation.js && node scripts/test_ui_fixes.js && node scripts/test_locale_usage.js && node scripts/test_repo_hygiene.js",
+    "test": "node scripts/test_order_status.js && node scripts/test_order_polling.js && node scripts/test_order_ownership_client.js && node scripts/test_cloud_rows.js && node scripts/test_catalog_reconcile.js && node scripts/test_upi_qr.js && node scripts/test_walkthrough_gate.js && node scripts/test_ai_fallback_gate.js && node scripts/test_api_client_auth.js && node scripts/test_no_key_in_bundle.js && node scripts/test_env_contract.js && node scripts/test_no_hardcoded_phone.js && node scripts/test_email_confirm_ux.js && node scripts/test_confirm_link.js && node scripts/test_email_confirmation_status.js && node scripts/test_auth_confirmation.js && node scripts/test_ui_fixes.js && node scripts/test_locale_usage.js && node scripts/test_repo_hygiene.js && npm run mcp:test",
     "terminal-chat": "node scripts/terminal_chat.js",
     "stress": "node whatsapp/test_master_stress.js",
-    "stress:hermetic": "node whatsapp/test_master_stress.js --hermetic"
+    "stress:hermetic": "node whatsapp/test_master_stress.js --hermetic",
+    "mcp:dev": "node --env-file-if-exists=.env mcp/dev-server.js",
+    "mcp:test": "node scripts/test_mcp_geometry.js && node scripts/test_mcp_catalog.js && node scripts/test_mcp_order_rules.js && node scripts/test_mcp_limits.js && node scripts/test_mcp_auth_config.js && node scripts/test_mcp_auth.js && node scripts/test_mcp_geo.js && node scripts/test_mcp_ids.js && node scripts/test_mcp_validation.js && node scripts/test_mcp_logging.js && node scripts/test_mcp_app.js && node scripts/test_mcp_schema.mjs && node scripts/test_mcp_vercel_entry.mjs && node scripts/test_mcp_http.js && node scripts/test_mcp_tools.js",
+    "mcp:check": "node scripts/mcp/check_oauth_config.mjs",
+    "build:mcp-app": "node scripts/build-mcp-app.mjs",
+    "mcp:smoke": "node scripts/mcp/smoke.mjs",
+    "mcp:cleanup": "node --env-file-if-exists=.env scripts/mcp/cleanup.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@supabase/supabase-js": "^2.117.3",
     "driver.js": "^1.10.2",
     "papaparse": "^5.5.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-useanimations": "^3.1.1"
+    "react-useanimations": "^3.1.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
-    "vite": "^6.4.4"
+    "vite": "^6.4.4",
+    "vite-plugin-singlefile": "^2.3.4"
   },
   "overrides": {
     "@grpc/grpc-js": "^1.14.6"

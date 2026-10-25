@@ -69,6 +69,10 @@ export interface Order {
   customerJid?: string;
   /** Owning account (Supabase user id). Absent on ownerless/legacy orders. */
   userId?: string;
+  /** The customer account for an order placed through MCP. */
+  customerUserId?: string;
+  /** Where the order came from. Older rows are WhatsApp orders. */
+  channel?: 'whatsapp' | 'mcp' | 'pos';
 }
 
 export interface UnityDeal {
