@@ -123,12 +123,12 @@ const config = {
   allowedOrigins: [],
 };
 
-async function connect(repo) {
-  const server = createServerFactory(config, {
+async function connect(repo, options = {}) {
+  const server = createServerFactory({ ...config, enabled: options.enabled !== false }, {
     repo,
     now: () => now,
     randomBytes: () => Buffer.from('a1b2c3', 'hex'),
-    fetchImpl: async () => { throw new Error('network should not be called'); },
+    fetchImpl: options.fetchImpl || (async () => { throw new Error('network should not be called'); }),
   })({ authInfo: { token: 't', clientId: 'test', scopes: [], expiresAt: 9e9, extra: { userId } } });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' }, { capabilities: {} });
@@ -207,8 +207,36 @@ const cancelledAgain = await client.callTool({ name: 'cancel_order', arguments: 
 assert.strictEqual(cancelledAgain.structuredContent.order.status, 'CANCELLED');
 ok('cancel_order is idempotent after cancellation');
 
+const retryCancelled = await client.callTool({ name: 'place_order', arguments: { quote_id: quoteId, confirmed: true } });
+assert.strictEqual(retryCancelled.isError, undefined);
+assert.strictEqual(retryCancelled.structuredContent.already_placed, true);
+assert.match(retryCancelled.content[0].text, /already placed/i);
+ok('a terminal replayed quote is not announced as a new order');
+
 await client.close();
 await server.close();
+
+const geoFetch = async (url) => {
+  assert.match(String(url), /nominatim\.openstreetmap\.org\/search/);
+  return new Response(JSON.stringify([
+    { lat: '26.9124', lon: '75.7873', display_name: 'Jaipur, Rajasthan, India', type: 'house', addresstype: 'house' },
+  ]), { status: 200 });
+};
+const geo = await connect(makeRepo(), { fetchImpl: geoFetch });
+const pincodeShops = await geo.client.callTool({ name: 'find_shops', arguments: { pincode: '302001' } });
+assert.strictEqual(pincodeShops.isError, undefined);
+assert.strictEqual(pincodeShops.structuredContent.shops.length, 1);
+ok('find_shops geocodes a pincode through the configured provider');
+
+const savedAddress = await geo.client.callTool({
+  name: 'save_address',
+  arguments: { line1: '12, MG Road', city: 'Jaipur', pincode: '302001' },
+});
+assert.strictEqual(savedAddress.isError, undefined);
+assert.strictEqual(savedAddress.structuredContent.address.match_type, 'house');
+ok('save_address geocodes address text instead of crashing on missing config');
+await geo.client.close();
+await geo.server.close();
 
 const noPhone = await connect(makeRepo({ phone: null }));
 const missingPhone = await noPhone.client.callTool({
@@ -220,5 +248,18 @@ assert.strictEqual(missingPhone.structuredContent.code, 'phone_required');
 await noPhone.client.close();
 await noPhone.server.close();
 ok('quote_order refuses to proceed without a delivery phone');
+
+const paused = await connect(makeRepo(), { enabled: false });
+const browsePaused = await paused.client.callTool({ name: 'find_shops', arguments: { latitude: 26.9124, longitude: 75.7873 } });
+assert.strictEqual(browsePaused.isError, undefined);
+const quotePaused = await paused.client.callTool({
+  name: 'quote_order',
+  arguments: { shop_id: 'shop_one', address_id: addressId, items: [{ product_id: 'milk', quantity: 1 }] },
+});
+assert.strictEqual(quotePaused.isError, true);
+assert.strictEqual(quotePaused.structuredContent.code, 'service_paused');
+await paused.client.close();
+await paused.server.close();
+ok('the kill switch pauses ordering while leaving discovery available');
 
 console.log(`\nAll ${n} MCP tool-flow checks passed.`);

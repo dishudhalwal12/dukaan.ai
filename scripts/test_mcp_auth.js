@@ -46,6 +46,53 @@ try {
 assert.match(code, /invalid|expired|token/i);
 ok('a rejected token throws');
 
+const audienceVerifier = createVerifier(
+  {
+    supabaseUrl: 'https://project.supabase.co',
+    serviceKey: 'service-key',
+    issuer: 'https://project.supabase.co/auth/v1',
+    expectedResource: 'https://mcp.dukaan.ai/mcp',
+  },
+  {
+    fetchImpl: async () => new Response(JSON.stringify({ id: 'user-3' }), { status: 200 }),
+  }
+);
+const audienceToken = `h.${Buffer.from(JSON.stringify({ exp, iss: 'https://project.supabase.co/auth/v1', aud: 'https://mcp.dukaan.ai/mcp' })).toString('base64url')}.s`;
+const audienceInfo = await audienceVerifier.verifyAccessToken(audienceToken);
+assert.strictEqual(audienceInfo.resource.href, 'https://mcp.dukaan.ai/mcp');
+ok('the configured resource audience is carried on AuthInfo');
+
+const wrongAudience = createVerifier(
+  {
+    supabaseUrl: 'https://project.supabase.co',
+    serviceKey: 'service-key',
+    issuer: 'https://project.supabase.co/auth/v1',
+    expectedResource: 'https://mcp.dukaan.ai/mcp',
+  },
+  { fetchImpl: async () => new Response(JSON.stringify({ id: 'user-3' }), { status: 200 }) }
+);
+const wrongToken = `h.${Buffer.from(JSON.stringify({ exp, iss: 'https://project.supabase.co/auth/v1', aud: 'https://other.example/mcp' })).toString('base64url')}.s`;
+assert.strictEqual((await wrongAudience.verifyAccessToken(wrongToken)).resource, undefined);
+ok('a token for another resource has no matching audience');
+
+const wrongIssuer = createVerifier(
+  {
+    supabaseUrl: 'https://project.supabase.co',
+    serviceKey: 'service-key',
+    issuer: 'https://project.supabase.co/auth/v1',
+  },
+  { fetchImpl: async () => new Response(JSON.stringify({ id: 'user-3' }), { status: 200 }) }
+);
+const wrongIssuerToken = `h.${Buffer.from(JSON.stringify({ exp, iss: 'https://evil.example/auth/v1' })).toString('base64url')}.s`;
+let issuerCode = '';
+try {
+  await wrongIssuer.verifyAccessToken(wrongIssuerToken);
+} catch (error) {
+  issuerCode = String(error.message || error);
+}
+assert.match(issuerCode, /different authorization server/);
+ok('a token from another issuer is rejected');
+
 const noExp = createVerifier(
   { supabaseUrl: 'https://project.supabase.co', serviceKey: 'service-key' },
   { fetchImpl: async () => new Response(JSON.stringify({ id: 'user-2' }), { status: 200 }) }

@@ -13,7 +13,7 @@ export function readConfig(env = process.env) {
   const supabaseUrl = trimUrl(env.SUPABASE_URL || env.VITE_SUPABASE_URL);
   const serviceKey = String(env.SUPABASE_SERVICE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '');
   const anonKey = String(env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '');
-  const publicUrl = trimUrl(env.MCP_PUBLIC_URL || 'http://localhost:8787/mcp');
+  const publicUrl = trimUrl(env.MCP_PUBLIC_URL || '');
   const issuer = trimUrl(env.MCP_AUTH_ISSUER || (supabaseUrl ? `${supabaseUrl}/auth/v1` : ''));
   const googleKey = String(env.GOOGLE_MAPS_API_KEY || '');
   const allowInsecure = String(env.MCP_ALLOW_INSECURE || '').toLowerCase() === 'true';

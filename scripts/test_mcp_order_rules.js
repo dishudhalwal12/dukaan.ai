@@ -17,6 +17,7 @@ const catalog = [
   { productId: 'milk', name: 'Amul Taaza Milk', pricePaise: 2700, price: '₹27', unit: '500ml', inStock: true },
   { productId: 'bread', name: 'Brown Bread', pricePaise: 4500, price: '₹45', unit: '400g', inStock: true },
   { productId: 'curd', name: 'Curd', pricePaise: 3500, price: '₹35', unit: '400g', inStock: false },
+  { productId: 'eggs', name: 'Eggs', pricePaise: 4200, price: '₹42', unit: 'pack of 6', inStock: true, stock: 1 },
 ];
 const now = Date.UTC(2026, 9, 26, 10, 0, 0);
 
@@ -58,6 +59,12 @@ assert.strictEqual(soldOut.ok, false);
 assert.strictEqual(soldOut.code, 'product_unavailable');
 assert.deepStrictEqual(soldOut.details.productIds, ['curd']);
 ok('unknown and unavailable products fail closed');
+
+const lowStock = buildQuote({ items: [{ product_id: 'eggs', quantity: 2 }], catalog, now });
+assert.strictEqual(lowStock.ok, false);
+assert.strictEqual(lowStock.code, 'insufficient_stock');
+assert.deepStrictEqual(lowStock.details.productIds, ['eggs']);
+ok('the requested quantity cannot exceed the shelf count');
 
 for (const quantity of [0, -1, 1.5, MAX_QUANTITY + 1, 'two']) {
   const bad = buildQuote({ items: [{ product_id: 'milk', quantity }], catalog, now });

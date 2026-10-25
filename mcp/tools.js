@@ -5,7 +5,7 @@ import { rankShops, serviceability, roundedKm, isShopAvailable } from './geometr
 import { searchCatalog, formatRupees } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
 import { geocodeAddress, formatAddress, needsExactAddress } from './geo.js';
-import { evaluateOrderLimits, checkOrderTotal } from './limits.js';
+import { evaluateOrderLimits, checkOrderTotal, allowRead } from './limits.js';
 import { mcpOrderId } from './ids.js';
 import { normalisePhone, normalisePincode, normaliseName } from './validation.js';
 import { publicOrder, addressSnapshot } from './data.js';
@@ -92,6 +92,42 @@ function validateItemsShape(items) {
  * fetch, clock, and randomness so tests can replace all three.
  */
 export function registerTools(server, { repo, config, deps }) {
+  // Kill switch: pause new orders and address/profile writes, while keeping
+  // discovery, existing-order status, and cancellation available.
+  const ALLOWED_WHEN_PAUSED = new Set([
+    'find_shops',
+    'get_shop',
+    'search_products',
+    'get_customer_profile',
+    'list_addresses',
+    'get_order',
+    'list_orders',
+    'show_checkout',
+    'cancel_order',
+  ]);
+  const READ_HEAVY = new Set([
+    'find_shops',
+    'search_products',
+    'get_shop',
+    'get_customer_profile',
+    'list_addresses',
+    'save_address',
+    'get_order',
+    'list_orders',
+    'show_checkout',
+  ]);
+  const originalRegisterTool = server.registerTool.bind(server);
+  server.registerTool = (name, toolConfig, callback) =>
+    originalRegisterTool(name, toolConfig, async (...args) => {
+      if (!config.enabled && !ALLOWED_WHEN_PAUSED.has(name)) {
+        return fail('service_paused', 'AI ordering is paused right now. Existing orders can still be read or cancelled.');
+      }
+      if (READ_HEAVY.has(name) && !allowRead(repo.userId)) {
+        return fail('rate_limited', 'Too many requests in a minute. Try again shortly.');
+      }
+      return callback(...args);
+    });
+
   registerAppResource(
     server,
     'Dukaan checkout card',
@@ -220,9 +256,12 @@ export function registerTools(server, { repo, config, deps }) {
         if (products.length === 0) {
           return ok(`No matching items at ${shop.name}.`, { shop: { shop_id: shop.shopId, name: shop.name }, products: [] });
         }
-        const lines = products.map(
-          (product) => `- ${product.name} (${product.unit}) — ${product.price}${product.inStock ? '' : ' — out of stock'} [${product.productId}]`
-        );
+        const lines = products.map((product) => {
+          const stock = product.inStock
+            ? Number.isFinite(product.stock) ? ` — ${product.stock} left` : ''
+            : ' — out of stock';
+          return `- ${product.name} (${product.unit}) — ${product.price}${stock} [${product.productId}]`;
+        });
         return ok(`Items at ${shop.name}:\n${lines.join('\n')}`, {
           shop: { shop_id: shop.shopId, name: shop.name },
           products,
@@ -548,7 +587,8 @@ export function registerTools(server, { repo, config, deps }) {
           const byId = new Map(catalog.map((product) => [product.productId, product]));
           const unavailable = (quote.items || []).filter((item) => {
             const product = byId.get(item.productId);
-            return !product || !product.inStock;
+            if (!product || !product.inStock) return true;
+            return Number.isFinite(product.stock) && Number(item.quantity) > product.stock;
           });
           if (unavailable.length > 0) {
             return fail(
@@ -557,6 +597,11 @@ export function registerTools(server, { repo, config, deps }) {
               { productIds: unavailable.map((item) => item.productId) }
             );
           }
+
+          const since = new Date(deps.now() - 60 * 60 * 1000).toISOString();
+          const counts = await repo.usageCounts(quote.shop_user_id, since);
+          const limits = evaluateOrderLimits(counts);
+          if (!limits.ok) return fail(limits.code, limits.message);
         }
 
         const externalId = mcpOrderId(new Date(deps.now()), deps.randomBytes);
@@ -564,6 +609,12 @@ export function registerTools(server, { repo, config, deps }) {
         if (!row) return fail('order_failed', 'The order could not be saved. Nothing was charged.');
 
         const order = publicOrder(row, shop || {});
+        if (String(row.status).toUpperCase() !== 'NEW') {
+          return ok(
+            `This quote was already placed. ${order.order_id} is ${order.status_label.toLowerCase()}.`,
+            { order, already_placed: true }
+          );
+        }
         return ok(
           `Order placed: ${order.order_id} with ${order.shop.name}. Total ${order.total_display}, cash on delivery. The shop will accept or reject it. Track it with get_order using this order id.`,
           { order }

@@ -61,6 +61,7 @@ export function buildQuote({ items, catalog, now = Date.now() }) {
   const byId = new Map((Array.isArray(catalog) ? catalog : []).map((product) => [product.productId, product]));
   const unknown = [];
   const unavailable = [];
+  const insufficient = [];
   const priced = [];
 
   for (const [productId, quantity] of merged.lines) {
@@ -71,6 +72,10 @@ export function buildQuote({ items, catalog, now = Date.now() }) {
     }
     if (!product.inStock) {
       unavailable.push(productId);
+      continue;
+    }
+    if (Number.isFinite(product.stock) && quantity > product.stock) {
+      insufficient.push(productId);
       continue;
     }
     const totalPaise = product.pricePaise * quantity;
@@ -91,6 +96,9 @@ export function buildQuote({ items, catalog, now = Date.now() }) {
   }
   if (unavailable.length > 0) {
     return fail('product_unavailable', 'Some items are out of stock.', { productIds: unavailable });
+  }
+  if (insufficient.length > 0) {
+    return fail('insufficient_stock', 'Some items do not have enough stock for that quantity.', { productIds: insufficient });
   }
 
   const totalPaise = priced.reduce((sum, line) => sum + line.totalPaise, 0);

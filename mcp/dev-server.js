@@ -12,6 +12,7 @@ import { toWebRequest, sendWebResponse } from './nodeAdapter.js';
  */
 const port = Number(process.env.MCP_PORT || 8787);
 const config = readConfig();
+config.publicUrl = config.publicUrl || 'http://localhost:8787/mcp';
 config.allowInsecure = config.publicUrl.startsWith('http://localhost') || config.publicUrl.startsWith('http://127.');
 
 let handler;

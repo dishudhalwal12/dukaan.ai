@@ -47,3 +47,33 @@ export function checkOrderTotal(totalPaise) {
   }
   return { ok: true };
 }
+
+
+export const READ_LIMIT = { max: 60, windowMs: 60_000 };
+const readWindows = new Map();
+
+/**
+ * Per-process sliding-window guard for discovery/geocoding tools.
+ *
+ * Serverless instances do not share this map, so it is a cost guard, not a
+ * billing boundary. Order writes have their own database-backed limits.
+ */
+export function allowRead(userId, now = Date.now()) {
+  const key = String(userId || '');
+  if (!key) return false;
+  const cutoff = now - READ_LIMIT.windowMs;
+  const recent = (readWindows.get(key) || []).filter((at) => at > cutoff);
+  if (recent.length >= READ_LIMIT.max) {
+    readWindows.set(key, recent);
+    return false;
+  }
+  recent.push(now);
+  readWindows.set(key, recent);
+  while (readWindows.size > 5000) readWindows.delete(readWindows.keys().next().value);
+  return true;
+}
+
+/** Test seam. */
+export function resetReadLimit() {
+  readWindows.clear();
+}

@@ -5,6 +5,15 @@
  * customer is charged. The display string is generated from the same integer.
  */
 
+/** Merchant-entered text is data, never instructions. */
+export function sanitiseCatalogText(value, max = 120) {
+  return String(value ?? '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+
 const ALIASES = {
   milk: ['doodh', 'dudh', 'taaza', 'taza'],
   curd: ['dahi', 'yogurt', 'yoghurt'],
@@ -54,7 +63,7 @@ export function formatRupees(paise) {
 /** Maps a Supabase `products` row to the public MCP product shape. */
 export function toPublicProduct(row) {
   if (!row || typeof row !== 'object') return null;
-  const name = String(row.name ?? '').trim();
+  const name = sanitiseCatalogText(row.name);
   if (!name) return null;
 
   const pricePaise = parsePriceToPaise(row.price);
@@ -69,8 +78,9 @@ export function toPublicProduct(row) {
     name,
     pricePaise,
     price: formatRupees(pricePaise),
-    unit: String(row.stock_unit ?? row.unit ?? 'unit'),
-    category: String(attributes.category ?? row.category ?? 'General'),
+    unit: sanitiseCatalogText(row.stock_unit ?? row.unit ?? 'unit', 40),
+    category: sanitiseCatalogText(attributes.category ?? row.category ?? 'General', 60),
+    stock: stock === null || stock === undefined ? null : Number(stock),
     imageUrl: row.image_url ?? row.imageUrl ?? null,
     inStock,
   };

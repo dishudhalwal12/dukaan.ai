@@ -72,8 +72,8 @@ if (issuerDiscovery.error) {
   }
 }
 
-const metadataUrl = pathInserted(config.publicUrl, 'oauth-protected-resource');
-const discovery = await getJson(metadataUrl);
+const metadataUrl = config.publicUrl ? pathInserted(config.publicUrl, 'oauth-protected-resource') : '';
+const discovery = metadataUrl ? await getJson(metadataUrl) : { error: 'MCP_PUBLIC_URL is empty' };
 if (discovery.error) {
   fail('MCP protected-resource metadata responds', `${metadataUrl} → ${discovery.error}. Deploy /mcp first, then rerun.`);
 } else {

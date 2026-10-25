@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
+import { isMcpOrderId } from '../utils/orderOwnership.ts';
 import { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { isSignupAfterCutoff } from '../utils/walkthroughGate.js';
@@ -503,7 +504,10 @@ export const syncOrdersToCloud = async (
   explicitUserId?: string
 ): Promise<void> => {
   try {
-    if (!orders || orders.length === 0) return;
+    // MCP orders are owned by the server. Writing a local, normalised copy back
+    // would overwrite authoritative status/items/notes with stale display data.
+    const writable = (Array.isArray(orders) ? orders : []).filter((order) => !isMcpOrderId(order?.id));
+    if (writable.length === 0) return;
     if (!isSupabaseConfigured()) return;
 
     const userId = await resolveActiveUserId(explicitUserId);
@@ -514,7 +518,7 @@ export const syncOrdersToCloud = async (
     // `orderRowFromOrder` adds the flat customer columns beside the JSONB, so a
     // dashboard reads a column instead of digging into JSON.
     const now = new Date().toISOString();
-    const rows = orders.map(order => orderRowFromOrder(order, userId, now));
+    const rows = writable.map(order => orderRowFromOrder(order, userId, now));
 
     let { error } = await supabase
       .from('orders')
@@ -532,7 +536,7 @@ export const syncOrdersToCloud = async (
     if (error) {
       console.warn('Supabase DB Error (syncOrdersToCloud):', error.message);
     } else {
-      console.log(`Synced ${orders.length} orders to Supabase for user: ${userId || 'guest'}`);
+      console.log(`Synced ${writable.length} orders to Supabase for user: ${userId || 'guest'}`);
     }
   } catch (error) {
     console.warn('Failed to sync orders to Supabase database.', error);
@@ -591,19 +595,21 @@ export const fetchOrdersFromCloud = async (limit = 200): Promise<Order[] | null>
  * the backend says the order is unknown). It is scoped to the signed-in owner
  * and reports whether a row actually changed.
  */
-export const updateOrderStatusInCloud = async (externalId: string, status: string): Promise<boolean> => {
+export const updateOrderStatusInCloud = async (externalId: string, status: string, expectedStatus?: string): Promise<boolean> => {
   try {
     if (!isSupabaseConfigured() || !externalId || !status) return false;
     const userId = await resolveActiveUserId();
     if (!userId) return false;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('orders')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('user_id', userId)
-      .eq('external_id', externalId)
-      .select('external_id')
-      .maybeSingle();
+      .eq('external_id', externalId);
+    // Compare-and-set: a stale dashboard must not overwrite a customer's
+    // cancellation or a status another tab already moved.
+    if (expectedStatus) query = query.eq('status', expectedStatus);
+    const { data, error } = await query.select('external_id').maybeSingle();
 
     if (error) {
       noteSyncError();
@@ -655,7 +661,7 @@ export const saveMcpSettingsToCloud = async (settings: McpSettings): Promise<boo
     if (!userId) return false;
 
     const radius = Math.min(10, Math.max(1, Number(settings.deliveryRadiusKm) || 5));
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('business_profiles')
       .update({
         mcp_enabled: Boolean(settings.mcpEnabled),
@@ -663,14 +669,18 @@ export const saveMcpSettingsToCloud = async (settings: McpSettings): Promise<boo
         orders_paused: Boolean(settings.ordersPaused),
         updated_at: new Date().toISOString(),
       })
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select('user_id')
+      .maybeSingle();
 
     if (error) {
       noteSyncError();
       console.warn('Supabase DB Error (saveMcpSettingsToCloud):', error.message);
       return false;
     }
-    return true;
+    // An update that matched no profile row reports no error; it also saved
+    // nothing. Do not tell the merchant it worked.
+    return Boolean(data);
   } catch (error) {
     noteSyncError();
     console.warn('Failed to save AI-ordering settings.', error);

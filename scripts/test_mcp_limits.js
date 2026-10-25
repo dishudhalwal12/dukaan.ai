@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { LIMITS, evaluateOrderLimits, checkOrderTotal } from '../mcp/limits.js';
+import { LIMITS, READ_LIMIT, evaluateOrderLimits, checkOrderTotal, allowRead, resetReadLimit } from '../mcp/limits.js';
 
 console.log('--- RUNNING MCP LIMIT TESTS ---');
 let n = 0;
@@ -18,5 +18,13 @@ assert.strictEqual(checkOrderTotal(LIMITS.maxOrderPaise + 1).code, 'order_too_la
 assert.strictEqual(checkOrderTotal(0).code, 'order_too_large');
 assert.strictEqual(checkOrderTotal(Number.NaN).code, 'order_too_large');
 ok('order total is capped and non-positive totals are rejected');
+
+resetReadLimit();
+for (let i = 0; i < READ_LIMIT.max; i++) assert.strictEqual(allowRead('u1', 1000), true);
+assert.strictEqual(allowRead('u1', 1000), false, 'the read limit closes at the boundary');
+assert.strictEqual(allowRead('u2', 1000), true, 'limits are per user');
+assert.strictEqual(allowRead('u1', 1000 + READ_LIMIT.windowMs + 1), true, 'the window drains');
+assert.strictEqual(allowRead(''), false);
+ok('read calls have a per-user sliding-window guard');
 
 console.log(`\nAll ${n} MCP limit checks passed.`);

@@ -159,15 +159,17 @@ Prices are computed in integer paise from the shop's catalog. The model cannot s
 ## 7. Security and privacy
 
 - OAuth 2.1 with PKCE and dynamic client registration. No password or token is a tool argument.
-- Bearer tokens are verified against Supabase `/auth/v1/user` and cached for 60 seconds.
-- The service role is server-only. Customer rows are read with the user-scoped client and RLS.
+- Bearer tokens are verified against Supabase `/auth/v1/user`, checked against the configured issuer, and cached for 60 seconds.
+- Optional audience binding: set `MCP_EXPECTED_RESOURCE` and add a Supabase custom access-token hook that puts that URL in `aud` for OAuth clients. Without the hook, leave it unset.
+- The service role is server-only. Profile and address rows use the user-scoped client and RLS; order/quote reads use the service role with explicit `customer_user_id`/`user_id` filters, and the customer SELECT policy remains a second layer.
 - `mcp_place_order` is `SECURITY DEFINER`, revoked from `anon`/`authenticated`, granted only to `service_role`, and locks the quote row.
 - One quote produces one order. Retries return the same order.
 - Rate limits: 20 quotes/hour, 5 orders/hour, 3 active orders per shop.
 - Order total is capped at ₹10,000.
 - Logs contain a hashed user id, tool name, status, and duration; not tokens, phones, emails, or addresses.
-- `MCP_ENABLED=false` pauses all tools without touching existing orders.
+- `MCP_ENABLED=false` pauses new quotes/orders and address/profile writes. Discovery, existing-order status, and cancellation remain available. Existing orders are never touched.
 - Customers can cancel only before the shop accepts.
+- Stock is checked against the shelf count at quote and placement, but it is not reserved. Two customers can race for the last unit; the shop can reject the second order.
 
 ## 8. Local development
 
@@ -198,6 +200,7 @@ Without the Supabase poll, MCP orders would only appear after a reload.
 
 - Cash on delivery only. Per-shop UPI settings do not exist yet.
 - No push notification to the customer; `get_order` is pull-based.
+- No stock reservation; the shelf count is a soft check, not an atomic hold.
 - No map-pin picker page. A host that exposes coordinates can pass them to `save_address`; otherwise the address text is geocoded.
 - In text-only hosts, the model is instructed to ask for confirmation, but there is no cryptographic user gesture behind `confirmed: true`. Hosts with MCP elicitation can add a stronger gate later.
 - No OpenAPI/REST facade. The model must be used through an MCP-capable client or `mcp-remote`.

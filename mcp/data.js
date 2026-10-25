@@ -63,7 +63,7 @@ export function publicOrder(row, shop = {}) {
     order_id: row.external_id,
     status: row.status,
     status_label: customerStatusLabel(row.status),
-    shop: { shop_id: shop.public_shop_id || null, shop_user_id: row.user_id, name: shop.store_name || 'Shop' },
+    shop: { shop_id: shop.public_shop_id || null, name: shop.store_name || 'Shop' },
     items: Array.isArray(row.items) ? row.items : [],
     total: Number(row.total) || 0,
     total_display: formatRupees(Math.round((Number(row.total) || 0) * 100)),
@@ -106,6 +106,7 @@ export async function getShopByPublicId(db, publicShopId) {
     .from('business_profiles')
     .select('user_id,store_name,store_lat,store_lng,store_location_source,public_shop_id,delivery_radius_km,mcp_enabled,orders_paused')
     .eq('public_shop_id', publicShopId)
+    .eq('mcp_enabled', true)
     .maybeSingle();
   if (error) fail('registry_unavailable', error.message);
   if (!data) return null;

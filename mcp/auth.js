@@ -31,6 +31,8 @@ export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = D
   if (!base || !apiKey) throw new Error('Supabase URL and key are required to verify MCP tokens');
 
   const cache = new Map();
+  const issuer = String(config.issuer || '').replace(/\/+$/, '');
+  const expectedResource = String(config.expectedResource || '').replace(/\/+$/, '');
 
   async function verifyAccessToken(token) {
     const raw = String(token || '').trim();
@@ -42,6 +44,9 @@ export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = D
     if (hit) cache.delete(key);
 
     const payload = parseJwtPayload(raw);
+    if (issuer && payload?.iss && String(payload.iss).replace(/\/+$/, '') !== issuer) {
+      throw new OAuthError('invalid_token', 'The token was issued by a different authorization server.');
+    }
     const expiresAt = Number.isFinite(payload?.exp)
       ? payload.exp
       : Math.floor(now() / 1000) + FALLBACK_EXPIRY_SECONDS;
@@ -71,11 +76,17 @@ export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = D
     const userId = user && user.id ? String(user.id) : '';
     if (!userId) throw new OAuthError('invalid_token', 'The token has no user.');
 
+    const audience = Array.isArray(payload?.aud) ? payload.aud.map(String) : payload?.aud ? [String(payload.aud)] : [];
+    const resource = expectedResource && audience.some((value) => value.replace(/\/+$/, '') === expectedResource)
+      ? new URL(expectedResource)
+      : undefined;
+
     const info = {
       token: raw,
       clientId: String(payload?.client_id || 'supabase-oauth'),
       scopes: String(payload?.scope || '').split(/\s+/).filter(Boolean),
       expiresAt,
+      ...(resource ? { resource } : {}),
       extra: { userId, email: user.email || null },
     };
     cache.set(key, { info, expiresAt: Math.min(expiresAt * 1000, now() + ttlMs) });

@@ -90,6 +90,8 @@ const AppContent: React.FC = () => {
   const { products, updateProduct, loadProducts } = useProducts();
   const ordersRef = useRef(orders);
   const productsRef = useRef(products);
+  // A second click must not run the stock arithmetic or the cloud write twice.
+  const statusUpdateInFlightRef = useRef(false);
   useEffect(() => { ordersRef.current = orders; }, [orders]);
   useEffect(() => { productsRef.current = products; }, [products]);
 
@@ -454,72 +456,77 @@ const AppContent: React.FC = () => {
   }, [products, updateProduct]);
 
   const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
-    const orderToUpdate = orders.find(o => o.id === orderId);
+    if (statusUpdateInFlightRef.current) return;
+    statusUpdateInFlightRef.current = true;
+    try {
+      const orderToUpdate = orders.find(o => o.id === orderId);
 
-    // A finished order stays finished. The New Order popup keeps a 60-second
-    // auto-reject timer; after a delivery it used to fire anyway and send the
-    // customer a "declined" message for an order they had already received.
-    // Refusing every transition out of a final status is the one choke point.
-    if (orderToUpdate && isFinalOrderStatus(orderToUpdate.status)) {
-        return;
-    }
+      // A finished order stays finished. The New Order popup keeps a 60-second
+      // auto-reject timer; after a delivery it used to fire anyway and send the
+      // customer a "declined" message for an order they had already received.
+      // Refusing every transition out of a final status is the one choke point.
+      if (orderToUpdate && isFinalOrderStatus(orderToUpdate.status)) {
+          return;
+      }
 
-    // MCP orders live in Supabase, not in the WhatsApp engine. Write the status
-    // there first; only then move the local row. A failed write must not leave
-    // the dashboard claiming an acceptance the customer cannot see.
-    const isMcpOrder = orderId.startsWith('MCP-');
-    if (isMcpOrder && orderToUpdate && orderToUpdate.status !== status) {
-        const saved = await updateOrderStatusInCloud(orderId, status);
-        if (!saved) {
-            setError('Could not update this order. Check your connection and try again.');
-            return;
-        }
-    }
+      // MCP orders live in Supabase, not in the WhatsApp engine. Write the status
+      // there first; only then move the local row. A failed write must not leave
+      // the dashboard claiming an acceptance the customer cannot see.
+      const isMcpOrder = orderId.startsWith('MCP-');
+      if (isMcpOrder && orderToUpdate && orderToUpdate.status !== status) {
+          const saved = await updateOrderStatusInCloud(orderId, status, orderToUpdate.status);
+          if (!saved) {
+              setError('This order changed elsewhere. Refresh and try again.');
+              return;
+          }
+      }
 
-    // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
-    if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
-        applyStockDelta(orderToUpdate.items, -1);
+      // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
+      if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
+          applyStockDelta(orderToUpdate.items, -1);
 
-        // Trigger real WhatsApp confirmation message via Baileys backend
-        if (!isMcpOrder) {
-            whatsappService.acceptOrder(orderId).catch(err => {
-                console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
-            });
-        }
-    } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
-        // Trigger doorstep / at pickup notification to customer via WhatsApp
-        if (!isMcpOrder) {
-            whatsappService.readyOrder(orderId).catch(err => {
-                console.error('[WhatsAppService] Failed to notify customer of doorstep arrival:', err);
-            });
-        }
-    } else if (orderToUpdate && status === OrderStatus.COMPLETED) {
-        // Trigger delivery completion message and persist COMPLETED in backend store
-        if (!isMcpOrder) {
-            whatsappService.deliverOrder(orderId).catch(err => {
-                console.error('[WhatsAppService] Failed to notify customer of order delivery:', err);
-            });
-        }
-    } else if (orderToUpdate && status === OrderStatus.REJECTED) {
-        // Trigger real WhatsApp rejection message via Baileys backend
-        if (!isMcpOrder) {
-            whatsappService.rejectOrder(orderId).catch(err => {
-                console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
-            });
-        }
-    } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
-        // If an order is cancelled, restore the stock. This was the one piece of
-        // stock arithmetic with no floor at all: a negative line quantity here
-        // subtracted from stock instead of adding to it.
-        applyStockDelta(orderToUpdate.items, 1);
-    }
+          // Trigger real WhatsApp confirmation message via Baileys backend
+          if (!isMcpOrder) {
+              whatsappService.acceptOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
+          // Trigger doorstep / at pickup notification to customer via WhatsApp
+          if (!isMcpOrder) {
+              whatsappService.readyOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of doorstep arrival:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.COMPLETED) {
+          // Trigger delivery completion message and persist COMPLETED in backend store
+          if (!isMcpOrder) {
+              whatsappService.deliverOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order delivery:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.REJECTED) {
+          // Trigger real WhatsApp rejection message via Baileys backend
+          if (!isMcpOrder) {
+              whatsappService.rejectOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
+          // If an order is cancelled, restore the stock. This was the one piece of
+          // stock arithmetic with no floor at all: a negative line quantity here
+          // subtracted from stock instead of adding to it.
+          applyStockDelta(orderToUpdate.items, 1);
+      }
 
-    setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
-    if (newOrderForPopup?.id === orderId) {
-        setNewOrderForPopup(null);
+      setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
+      if (newOrderForPopup?.id === orderId) {
+          setNewOrderForPopup(null);
+      }
+    } finally {
+      statusUpdateInFlightRef.current = false;
     }
   };
-
   const handleAddOrders = useCallback((newOrders: Order[]) => {
     setOrders(prev => [...newOrders, ...prev]);
   }, []);

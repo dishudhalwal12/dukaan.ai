@@ -16,7 +16,7 @@ Last run on 2026-10-25:
 
 | Command | Result | Scope |
 |---|---|---|
-| `npm run mcp:test` | 15 files passed | pure rules, auth, geo, schema, HTTP, tools, MCP App |
+| `npm run mcp:test` | 16 files passed | pure rules, auth, geo, schema, HTTP, tools, MCP App |
 | `npm test` | passed | existing app regression suite |
 | `npx tsc --noEmit` | passed | TypeScript |
 | `npm run build` | passed | Vite static bundle + secret guard |
@@ -46,6 +46,7 @@ Last run on 2026-10-25:
 ### Phase 2 — MCP server and auth
 
 - `mcp/server.js`, `mcp/auth.js`, `api/mcp.js`, `mcp/dev-server.js`.
+- `scripts/test_mcp_config.js` proves a missing `MCP_PUBLIC_URL` fails fast.
 - `scripts/test_mcp_http.js` proves:
   - `/health` is public;
   - `/.well-known/oauth-protected-resource` names the correct resource and Supabase issuer;
@@ -53,7 +54,8 @@ Last run on 2026-10-25:
   - a bad token is refused;
   - a valid token initializes the server;
   - `tools/list` includes the ordering tools;
-  - `resources/list` includes `ui://dukaan/checkout.html`.
+  - `resources/list` includes `ui://dukaan/checkout.html`;
+  - a configured origin allowlist does not fall back to wildcard.
 - The local server was started with `npm run mcp:dev`; `/health` and discovery answered `200`, `/mcp` answered `401` with a challenge.
 - `scripts/test_mcp_vercel_entry.mjs` exercises `api/mcp.js` through a real Node HTTP server and the rewrite query.
 
@@ -61,6 +63,7 @@ Last run on 2026-10-25:
 
 - `find_shops`, `get_shop`, `search_products`, profile and address tools.
 - `scripts/test_mcp_geometry.js`: distance, ranking, delivery radius, disabled/paused shops, fail-closed cases.
+- `scripts/test_mcp_tools.js` also exercises the pincode and text-address geocoding paths.
 - `scripts/test_mcp_catalog.js`: paise prices, product mapping, aliases, search.
 - `scripts/test_mcp_geo.js`: Nominatim and Google mapping, cache, empty result, network failure.
 - `scripts/test_mcp_validation.js`: phone, pincode, name.
@@ -68,7 +71,7 @@ Last run on 2026-10-25:
 ### Phase 4 — Quote and order
 
 - `quote_order`, `place_order`, `show_checkout`, `get_order`, `list_orders`, `cancel_order`.
-- `scripts/test_mcp_order_rules.js`: catalog pricing, duplicate merge, unknown/unavailable items, quantity bounds, line cap, expiry, cancel rules.
+- `scripts/test_mcp_order_rules.js`: catalog pricing, duplicate merge, unknown/unavailable items, stock quantity, quantity bounds, line cap, expiry, cancel rules.
 - `scripts/test_mcp_tools.js`: a real in-memory MCP client calls every tool; unconfirmed placement is refused; retries return the same order; `show_checkout` does not place.
 - `scripts/test_mcp_limits.js`: quote/order/active-order limits and the ₹10,000 total cap.
 - `scripts/test_mcp_auth.js` and `scripts/test_mcp_auth_config.js`: token verification cache, expiry, discovery.

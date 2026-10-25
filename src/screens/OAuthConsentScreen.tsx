@@ -64,7 +64,11 @@ const OAuthConsentScreen: React.FC = () => {
   const signUp = async () => {
     setLoading(true);
     setError(null);
-    const { data, error: authError } = await supabase.auth.signUp({ email, password });
+    const { data, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo: window.location.href },
+    });
     if (authError) setError(authError.message);
     else if (!data.session) setNotice('Check your email to confirm the account, then come back to this page.');
     setLoading(false);

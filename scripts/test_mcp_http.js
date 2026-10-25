@@ -177,5 +177,13 @@ const resourcesBody = parseBody(await resources.text());
 assert(resourcesBody.result.resources.some((resource) => resource.uri === 'ui://dukaan/checkout.html'));
 ok('the checkout card is listed as an MCP App resource');
 
+const restricted = createFetchHandler({ ...config, allowedOrigins: ['https://trusted.example'] }, { verifier, repo });
+const blocked = await restricted.fetch(new Request('http://localhost:8787/health', { headers: { Origin: 'https://evil.example' } }));
+assert.strictEqual(blocked.headers.get('access-control-allow-origin'), null);
+const trusted = await restricted.fetch(new Request('http://localhost:8787/health', { headers: { Origin: 'https://trusted.example' } }));
+assert.strictEqual(trusted.headers.get('access-control-allow-origin'), 'https://trusted.example');
+await restricted.close();
+ok('a configured origin allowlist does not fall back to wildcard');
+
 await handler.close();
 console.log(`\nAll ${n} MCP HTTP checks passed.`);
