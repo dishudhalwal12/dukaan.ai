@@ -50,7 +50,7 @@ Dukaan also exposes an MCP endpoint, so customers can order from ChatGPT, Claude
 
 - Endpoint: `https://mcp.dukaan.ai/mcp`
 - Setup and caveats: [docs/mcp.md](docs/mcp.md)
-- Merchant switch: **Online Store → Sell on AI assistants**
+- Merchant control: **Online Store → Pause AI orders** (AI ordering is on by default)
 
 WhatsApp keeps working. AI ordering is a second front door, not a replacement.
 

@@ -196,11 +196,25 @@ export async function geocodeAddress(fields, options = {}) {
       ? await geocodeGoogle(query, fetchImpl, googleKey)
       : await geocodeNominatim(query, fetchImpl, minIntervalMs);
   } catch {
-    return {
-      ok: false,
-      code: 'geocoder_unavailable',
-      message: 'The address service is unavailable. Try again, or share a map pin.',
-    };
+    // A misconfigured Google key must not block the whole channel. Fall back to
+    // the keyless provider once; a genuine address miss still returns null.
+    if (provider === 'google') {
+      try {
+        result = await geocodeNominatim(query, fetchImpl, minIntervalMs);
+      } catch {
+        return {
+          ok: false,
+          code: 'geocoder_unavailable',
+          message: 'The address service is unavailable. Try again, or share a map pin.',
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        code: 'geocoder_unavailable',
+        message: 'The address service is unavailable. Try again, or share a map pin.',
+      };
+    }
   }
 
   if (!result) {

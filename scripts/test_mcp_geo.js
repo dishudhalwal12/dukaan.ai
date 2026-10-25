@@ -113,4 +113,26 @@ assert.strictEqual(google.matchType, 'house');
 assert.strictEqual(google.provider, 'google');
 ok('the Google provider is a seam, not a rewrite');
 
+let googleAttempts = 0;
+const fallback = await geocodeAddress(
+  { line1: '12 MG Road', city: 'Jaipur' },
+  {
+    provider: 'google',
+    googleKey: 'bad-key',
+    cache: new Map(),
+    minIntervalMs: 0,
+    fetchImpl: async (url) => {
+      googleAttempts++;
+      if (String(url).includes('googleapis')) throw new Error('Google key rejected');
+      return new Response(JSON.stringify([
+        { lat: '26.91', lon: '75.78', display_name: '12 MG Road, Jaipur', type: 'house', addresstype: 'house' },
+      ]), { status: 200 });
+    },
+  }
+);
+assert.strictEqual(fallback.ok, true);
+assert.strictEqual(fallback.provider, 'nominatim');
+assert.strictEqual(googleAttempts, 2);
+ok('a broken Google key falls back to Nominatim instead of blocking addresses');
+
 console.log(`\nAll ${n} MCP geocoding checks passed.`);

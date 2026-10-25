@@ -16,7 +16,7 @@
 -- 1. Merchant controls on the shop profile
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.business_profiles
-    ADD COLUMN IF NOT EXISTS mcp_enabled BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS mcp_enabled BOOLEAN NOT NULL DEFAULT true,
     ADD COLUMN IF NOT EXISTS delivery_radius_km NUMERIC NOT NULL DEFAULT 5,
     ADD COLUMN IF NOT EXISTS orders_paused BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS public_shop_id TEXT;

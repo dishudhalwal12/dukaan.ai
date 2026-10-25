@@ -8,6 +8,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 const bootstrap = readFileSync(resolve(root, '.superpowers/sdd/mcp-ai-ordering/schema_test_bootstrap.sql'), 'utf8');
 const migration = readFileSync(resolve(root, 'supabase/migrations/2026-10-26_mcp.sql'), 'utf8');
+const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp_default_on.sql'), 'utf8');
 
 console.log('--- RUNNING MCP SCHEMA / RPC TESTS (PGlite) ---');
 let n = 0;
@@ -16,7 +17,8 @@ const ok = (m) => console.log(`✓ ${++n}: ${m}`);
 const db = new PGlite();
 await db.exec(bootstrap);
 await db.exec(migration);
-ok('the migration applies to a Supabase-shaped Postgres database');
+await db.exec(defaultOn);
+ok('both migrations apply to a Supabase-shaped Postgres database');
 
 const u1 = '11111111-1111-4111-8111-111111111111';
 const u2 = '22222222-2222-4222-8222-222222222222';
@@ -32,7 +34,9 @@ const radius = await db.query("SELECT delivery_radius_km, mcp_enabled, orders_pa
 assert.strictEqual(Number(radius.rows[0].delivery_radius_km), 5);
 assert.strictEqual(radius.rows[0].mcp_enabled, true);
 assert.strictEqual(radius.rows[0].orders_paused, false);
-ok('shop defaults and public ids are backfilled');
+const defaultOnShop = await db.query("INSERT INTO public.business_profiles (user_id, store_name, store_lat, store_lng) VALUES ($1, 'Default On Shop', 26.9, 75.8) RETURNING mcp_enabled", [u2]);
+assert.strictEqual(defaultOnShop.rows[0].mcp_enabled, true, 'new shops are AI-enabled by default');
+ok('shop defaults, public ids, and AI-on-by-default are applied');
 
 const address = {
   label: 'Home',

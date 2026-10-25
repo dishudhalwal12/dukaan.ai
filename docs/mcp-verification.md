@@ -33,7 +33,7 @@ Last run on 2026-10-25:
 
 ### Phase 1 — Schema and ownership
 
-- `supabase/migrations/2026-10-26_mcp.sql`.
+- `supabase/migrations/2026-10-26_mcp.sql` and `2026-10-27_mcp_default_on.sql`.
 - `scripts/test_mcp_schema.mjs` runs the migration on PGlite and proves:
   - columns and defaults exist;
   - the placement RPC inserts from the quote snapshot;

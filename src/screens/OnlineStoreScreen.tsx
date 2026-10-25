@@ -3,7 +3,7 @@ import Card from '../components/Card.tsx';
 import { WhatsAppIcon } from '../components/Icons.tsx';
 import { fetchMcpSettingsFromCloud, saveMcpSettingsToCloud, McpSettings } from '../services/cloudSync.ts';
 
-const DEFAULT_SETTINGS: McpSettings = { mcpEnabled: false, deliveryRadiusKm: 5, ordersPaused: false };
+const DEFAULT_SETTINGS: McpSettings = { mcpEnabled: true, deliveryRadiusKm: 5, ordersPaused: false };
 
 const OnlineStoreScreen: React.FC = () => {
   const [isStoreCreated, setIsStoreCreated] = useState(false);
@@ -16,7 +16,12 @@ const OnlineStoreScreen: React.FC = () => {
     let alive = true;
     fetchMcpSettingsFromCloud()
       .then((value) => {
-        if (alive && value) setSettings(value);
+        if (!alive || !value) return;
+        // AI ordering is a product default, not a shopkeeper task. If an older
+        // row still says false, show it as on and repair the row once.
+        const next = { ...value, mcpEnabled: true };
+        setSettings(next);
+        if (!value.mcpEnabled) void saveMcpSettingsToCloud(next);
       })
       .finally(() => {
         if (alive) setLoadingSettings(false);
@@ -27,10 +32,11 @@ const OnlineStoreScreen: React.FC = () => {
   }, []);
 
   const save = async (next: McpSettings) => {
-    setSettings(next);
+    const enabled = { ...next, mcpEnabled: true };
+    setSettings(enabled);
     setSaving(true);
     setSaved(null);
-    const ok = await saveMcpSettingsToCloud(next);
+    const ok = await saveMcpSettingsToCloud(enabled);
     setSaving(false);
     setSaved(ok ? 'Saved.' : 'Could not save. Sign in and try again.');
   };
@@ -46,22 +52,18 @@ const OnlineStoreScreen: React.FC = () => {
             total, and delivery address.
           </p>
         </div>
-        <span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${settings.mcpEnabled && !settings.ordersPaused ? 'bg-green-500' : 'bg-gray-300'}`} />
+        <span className={`mt-1 h-3 w-3 shrink-0 rounded-full ${!settings.ordersPaused ? 'bg-green-500' : 'bg-amber-400'}`} />
       </div>
 
       {loadingSettings ? (
         <p className="mt-4 text-sm text-gray-500">Loading settings…</p>
       ) : (
         <div className="mt-4 space-y-4">
-          <label className="flex items-center justify-between gap-3">
-            <span className="text-sm font-medium text-gray-700">Sell on AI assistants</span>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-[#3A3E98]"
-              checked={settings.mcpEnabled}
-              onChange={(event) => save({ ...settings, mcpEnabled: event.target.checked })}
-            />
-          </label>
+          <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+            <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+            {settings.ordersPaused ? 'AI ordering is paused' : 'AI ordering is on for this shop'}
+          </div>
+          <p className="text-xs text-gray-500">It is on automatically. Use Pause only when the shop is closed or you cannot fulfil new orders.</p>
 
           <label className="block">
             <span className="text-sm font-medium text-gray-700">Delivery radius: {settings.deliveryRadiusKm} km</span>
@@ -71,7 +73,6 @@ const OnlineStoreScreen: React.FC = () => {
               max={10}
               step={1}
               value={settings.deliveryRadiusKm}
-              disabled={!settings.mcpEnabled}
               onChange={(event) => setSettings({ ...settings, deliveryRadiusKm: Number(event.target.value) })}
               onMouseUp={(event) => save({ ...settings, deliveryRadiusKm: Number((event.target as HTMLInputElement).value) })}
               onTouchEnd={(event) => save({ ...settings, deliveryRadiusKm: Number((event.target as HTMLInputElement).value) })}
@@ -86,7 +87,6 @@ const OnlineStoreScreen: React.FC = () => {
               type="checkbox"
               className="h-5 w-5 accent-[#3A3E98]"
               checked={settings.ordersPaused}
-              disabled={!settings.mcpEnabled}
               onChange={(event) => save({ ...settings, ordersPaused: event.target.checked })}
             />
           </label>

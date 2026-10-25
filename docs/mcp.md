@@ -2,6 +2,8 @@
 
 One public MCP endpoint lets any MCP-capable AI client order from nearby Dukaan shops. WhatsApp stays as a channel; it is no longer the only one.
 
+> The examples below use `https://mcp.dukaan.ai/mcp`. If you do not own that domain, replace it with your Vercel URL, e.g. `https://dukaan-ai-hypnexis.vercel.app/mcp`. Use the same URL in Vercel, Supabase Site URL, and the AI client.
+
 ```
 ChatGPT / Claude / Claude Code / OpenCode / Cursor / VS Code
                     │  MCP over HTTPS + OAuth 2.1
@@ -50,16 +52,9 @@ Everything in the table above is implemented and tested locally. The two live st
 6. Set **Authorization Path** to `/oauth/consent`.
 7. Add `https://dukaan-ai-hypnexis.vercel.app/oauth/consent` to the allowed redirect URLs if the dashboard asks for it.
 8. Run `supabase/migrations/2026-10-26_mcp.sql` in the SQL editor.
+9. Run `supabase/migrations/2026-10-27_mcp_default_on.sql` so every existing shop becomes AI-enabled by default.
 
-To turn on one pilot shop after the migration:
-
-```sql
-update public.business_profiles
-set mcp_enabled = true
-where user_id = '<shop-owner-uuid>';
-```
-
-The shop must already have `store_lat`/`store_lng` captured with `gps` or `manual` (not `ip_approximate`).
+AI ordering is on by default. The shop still needs `store_lat`/`store_lng` captured with `gps` or `manual` (not `ip_approximate`), and at least one priced product in stock. Use **Pause AI orders** for a temporary stop; there is no per-shop enable toggle.
 
 Verify discovery:
 
@@ -100,15 +95,16 @@ Point `mcp.dukaan.ai` at the Vercel project (or use the project's own domain and
 
 The function performs no OAuth issuance. Supabase is the authorization server; the function only verifies bearer tokens and serves the RFC 9728 discovery document.
 
-## 3. Enable a shop
+## 3. Shop availability
+
+AI ordering is **on by default** for every registered shop. The shopkeeper does not need to find an enable switch.
 
 1. Sign in to Dukaan as the shopkeeper.
 2. Open **Online Store**.
-3. Turn on **Sell on AI assistants**.
-4. Set the delivery radius (1–10 km).
-5. Use **Pause AI orders** when the shop is closed.
+3. Set the delivery radius (1–10 km).
+4. Use **Pause AI orders** when the shop is closed.
 
-Only `mcp_enabled = true` shops with a real `store_lat`/`store_lng` are discoverable. Shops whose location source is `ip_approximate` are excluded.
+Only shops with a real `store_lat`/`store_lng`, at least one priced product in stock, and `orders_paused = false` are discoverable. Shops whose location source is `ip_approximate` are excluded. `mcp_enabled` is retained as the database default and server filter, not a merchant-facing toggle.
 
 ## 4. Connect a client
 

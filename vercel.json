@@ -8,7 +8,7 @@
       "VITE_API_BASE": "https://aurelio-chasmy-dorsiventrally.ngrok-free.dev",
       "VITE_SUPABASE_URL": "https://glkzpygjodhnmtlxejzg.supabase.co",
       "VITE_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdsa3pweWdqb2Robn10bHhlanpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5ODk0MTEsImV4cCI6MjEwNzU2NTQxMX0.GqqPCk9O-LP48Cpzd9Ee8HlXAS6zxHPL6bFlF8lh73U",
-      "VITE_MCP_URL": "https://mcp.dukaan.ai/mcp"
+      "VITE_MCP_URL": "https://dukaan-ai-hypnexis.vercel.app/mcp"
     }
   },
   "rewrites": [
