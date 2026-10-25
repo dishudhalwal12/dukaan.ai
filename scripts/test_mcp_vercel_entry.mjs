@@ -1,5 +1,6 @@
 import assert from 'assert';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 
 /**
  * Exercises the Vercel entry and its Node<->Web adapter without Vercel:
@@ -16,6 +17,11 @@ process.env.MCP_ALLOW_INSECURE = 'true';
 const { default: handler } = await import('../api/mcp.js');
 
 console.log('--- RUNNING MCP VERCEL ENTRY TESTS ---');
+const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
+for (const route of ['/health', '/mcp', '/.well-known/oauth-protected-resource', '/oauth/consent']) {
+  assert(vercel.rewrites.some((rule) => rule.source === route), `vercel.json must route ${route}`);
+}
+console.log('✓ 0: vercel.json routes health, MCP, discovery, and consent');
 const server = http.createServer((req, res) => handler(req, res));
 await new Promise((resolve) => server.listen(8789, resolve));
 
@@ -35,9 +41,9 @@ try {
   assert.match(unauth.headers.get('www-authenticate') || '', /resource_metadata/);
   console.log('✓ 2: the rewired MCP route enforces bearer auth');
 
-  const health = await fetch('http://localhost:8789/health');
+  const health = await fetch('http://localhost:8789/health?__route=/health');
   assert.strictEqual(health.status, 200);
-  console.log('✓ 3: the adapter writes a normal JSON response');
+  console.log('✓ 3: the /health rewrite serves the health JSON');
 } finally {
   await new Promise((resolve) => server.close(resolve));
 }

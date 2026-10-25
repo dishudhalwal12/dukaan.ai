@@ -5,7 +5,11 @@ import { fetchMcpSettingsFromCloud, saveMcpSettingsToCloud, McpSettings } from '
 
 const DEFAULT_SETTINGS: McpSettings = { mcpEnabled: true, deliveryRadiusKm: 5, ordersPaused: false };
 
-const OnlineStoreScreen: React.FC = () => {
+interface OnlineStoreScreenProps {
+  onBack?: () => void;
+}
+
+const OnlineStoreScreen: React.FC<OnlineStoreScreenProps> = ({ onBack }) => {
   const [isStoreCreated, setIsStoreCreated] = useState(false);
   const [settings, setSettings] = useState<McpSettings>(DEFAULT_SETTINGS);
   const [loadingSettings, setLoadingSettings] = useState(true);
@@ -161,8 +165,21 @@ const OnlineStoreScreen: React.FC = () => {
 
   return (
     <div className="h-full">
-      <header className="p-4 border-b border-gray-200 bg-white">
-        <h1 className="text-xl font-bold text-center text-gray-800">Your Online Store</h1>
+      <header className="p-4 border-b border-gray-200 bg-white flex items-center">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to settings"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-700 hover:bg-gray-100"
+          >
+            <span className="material-symbols-outlined">arrow_back</span>
+          </button>
+        ) : (
+          <span className="h-9 w-9" />
+        )}
+        <h1 className="flex-1 text-center text-xl font-bold text-gray-800">Your Online Store</h1>
+        <span className="h-9 w-9" />
       </header>
       <div className="p-4 space-y-5">
         {AiOrderingCard}

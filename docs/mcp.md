@@ -100,7 +100,7 @@ The function performs no OAuth issuance. Supabase is the authorization server; t
 AI ordering is **on by default** for every registered shop. The shopkeeper does not need to find an enable switch.
 
 1. Sign in to Dukaan as the shopkeeper.
-2. Open **Online Store**.
+2. Open **Settings → Online Store & AI Orders**.
 3. Set the delivery radius (1–10 km).
 4. Use **Pause AI orders** when the shop is closed.
 

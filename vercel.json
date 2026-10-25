@@ -21,6 +21,10 @@
       "destination": "/api/mcp?__route=/.well-known/oauth-protected-resource"
     },
     {
+      "source": "/health",
+      "destination": "/api/mcp?__route=/health"
+    },
+    {
       "source": "/mcp",
       "destination": "/api/mcp?__route=/mcp"
     },
