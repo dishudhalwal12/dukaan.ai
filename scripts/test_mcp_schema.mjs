@@ -6,7 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
-const bootstrap = readFileSync(resolve(root, '.superpowers/sdd/mcp-ai-ordering/schema_test_bootstrap.sql'), 'utf8');
+const bootstrap = readFileSync(resolve(root, 'scripts/fixtures/mcp_schema_bootstrap.sql'), 'utf8');
 const migration = readFileSync(resolve(root, 'supabase/migrations/2026-10-26_mcp.sql'), 'utf8');
 const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp_default_on.sql'), 'utf8');
 
