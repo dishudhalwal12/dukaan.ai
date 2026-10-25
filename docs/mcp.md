@@ -121,7 +121,7 @@ The public endpoint is `https://mcp.dukaan.ai/mcp`.
 | Claude Code | `claude mcp add --transport http dukaan https://mcp.dukaan.ai/mcp` |
 | Cursor | `~/.cursor/mcp.json` with `{ "mcpServers": { "dukaan": { "url": "..." } } }` |
 | VS Code | `.vscode/mcp.json` with `{ "servers": { "dukaan": { "type": "http", "url": "..." } } }` |
-| OpenCode | `opencode.json` with `{ "mcp": { "dukaan": { "type": "remote", "url": "..." } } }` |
+| OpenCode | `opencode mcp add dukaan --global --url https://mcp.dukaan.ai/mcp`, then `/mcps` → sign in |
 | stdio-only clients | `npx mcp-remote https://mcp.dukaan.ai/mcp` |
 
 The `/connect` page carries the same snippets with copy buttons.

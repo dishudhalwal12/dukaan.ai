@@ -32,8 +32,8 @@ const GUIDES: ClientGuide[] = [
   {
     id: 'opencode',
     label: 'OpenCode',
-    steps: ['Add this to your opencode.json, then restart OpenCode.'],
-    code: JSON.stringify({ mcp: { dukaan: { type: 'remote', url: ENDPOINT, enabled: true } } }, null, 2),
+    steps: ['Run this once. Then open /mcps and sign in to Dukaan. Config hot-reloads; no restart is needed.'],
+    code: `opencode mcp add dukaan --global --url ${ENDPOINT}`,
   },
   {
     id: 'cursor',
