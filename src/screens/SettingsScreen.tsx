@@ -8,6 +8,7 @@ import ChangeLanguageScreen from './settings/ChangeLanguageScreen.tsx';
 import BrandGuideScreen from './settings/BrandGuideScreen.tsx';
 import PrivacyPolicyScreen from './settings/PrivacyPolicyScreen.tsx';
 import HelpCenterScreen from './settings/HelpCenterScreen.tsx';
+import OnlineStoreScreen from './OnlineStoreScreen.tsx';
 import { hasSupportWhatsApp, supportTelHref } from '../config/support.ts';
 import { useLanguage } from '../contexts/LanguageContext.tsx';
 import { resolveProfileImage } from '../utils/profileImage.ts';
@@ -162,6 +163,7 @@ const MainSettings: React.FC<{
                   <div className="space-y-2">
                       <SettingsItem icon="account_circle" label={t('settings_edit_profile')} onClick={() => onNavigate('profile')} />
                       <SettingsItem icon="store" label={t('settings_manage_store')} onClick={() => onNavigate('store')} />
+                      <SettingsItem icon="storefront" label="Online Store & AI Orders" onClick={() => onNavigate('onlineStore')} />
                       <SettingsItem icon="notifications" label={t('settings_notifications')} onClick={() => onNavigate('notifications')} />
                       <SettingsItem icon="language" label={t('settings_change_language')} onClick={() => onNavigate('language')} />
                   </div>
@@ -274,6 +276,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({
             return <EditProfileScreen onBack={handleBack} currentUser={currentUser} onOpenAuth={onOpenAuth} />;
         case 'store':
             return <ManageStoreScreen onBack={handleBack} />;
+        case 'onlineStore':
+            return <OnlineStoreScreen onBack={handleBack} />;
         case 'notifications':
             return <NotificationsScreen onBack={handleBack} />;
         case 'language':

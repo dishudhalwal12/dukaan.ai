@@ -147,8 +147,8 @@ const ConnectScreen: React.FC = () => {
           <div className="rounded-2xl border border-gray-200 bg-white p-5">
             <h2 className="font-semibold text-gray-900">For shopkeepers</h2>
             <p className="mt-2 text-sm text-gray-600">
-              AI ordering is on automatically for every shop. Set a delivery radius between 1 and 10 km, and pause AI
-              orders whenever the shop is closed. WhatsApp orders keep working.
+              AI ordering is on automatically for every shop. Open Settings → Online Store & AI Orders to set a delivery
+              radius between 1 and 10 km, and pause orders whenever the shop is closed. WhatsApp orders keep working.
             </p>
           </div>
         </section>
