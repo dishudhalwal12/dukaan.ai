@@ -1,5 +1,5 @@
 import assert from 'assert';
-import { orderBelongsTo, ownedOrdersOnly } from '../src/utils/orderOwnership.ts';
+import { orderBelongsTo, ownedOrdersOnly, isMcpOrderId } from '../src/utils/orderOwnership.ts';
 
 console.log('--- RUNNING CLIENT ORDER-OWNERSHIP TESTS ---');
 
@@ -53,6 +53,13 @@ for (const other of ['a', 'b', 'c']) {
   assert.ok(rows.every((o) => o.userId === other), `${other} saw a foreign row`);
 }
 console.log(`✓ Test 3 Passed: ${mineCount}/500 survived for "me"; all other owners isolated`);
+
+// ── Test 4: MCP ids are recognised so the client never writes them back ──────
+assert.strictEqual(isMcpOrderId('MCP-20261026-A1B2C3'), true);
+assert.strictEqual(isMcpOrderId('DKN-1001'), false);
+assert.strictEqual(isMcpOrderId(null), false);
+assert.strictEqual(isMcpOrderId(42), false);
+console.log('✓ Test 4 Passed: MCP order ids are identifiable');
 
 console.log('\n========================================');
 console.log('🎉 ALL CLIENT ORDER-OWNERSHIP TESTS PASSED! 🎉');

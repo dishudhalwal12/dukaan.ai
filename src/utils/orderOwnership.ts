@@ -21,3 +21,14 @@ export const orderBelongsTo = (order: OwnedOrder | null | undefined, userId?: st
 /** Keep only orders owned by `userId`; drops foreign and ownerless rows. */
 export const ownedOrdersOnly = <T extends OwnedOrder>(orders: T[], userId?: string | null): T[] =>
   (Array.isArray(orders) ? orders : []).filter((order) => orderBelongsTo(order, userId));
+
+
+/**
+ * True for an order that originated on the MCP channel.
+ *
+ * These rows are written and statused by the MCP server. The dashboard must
+ * never upsert them back: a stale local copy would overwrite the authoritative
+ * status, items, and notes with a normalised display shape.
+ */
+export const isMcpOrderId = (id: unknown): boolean =>
+  typeof id === 'string' && id.startsWith('MCP-');

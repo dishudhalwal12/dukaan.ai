@@ -44,6 +44,16 @@ flowchart LR
     D --> E[Customer gets a WhatsApp confirmation]
 ```
 
+## Order from an AI chat
+
+Dukaan also exposes an MCP endpoint, so customers can order from ChatGPT, Claude, Claude Code, OpenCode, Cursor, VS Code, or any MCP-capable client. The assistant finds nearby shops, reads real prices, builds a bill, reads back the address, and places the order only after the customer confirms it.
+
+- Endpoint: `https://mcp.dukaan.ai/mcp`
+- Setup and caveats: [docs/mcp.md](docs/mcp.md)
+- Merchant control: **Online Store → Pause AI orders** (AI ordering is on by default)
+
+WhatsApp keeps working. AI ordering is a second front door, not a replacement.
+
 ## What it does
 
 The customer sends a message by text or voice note in whatever language they speak. The bot asks about quantity when something is unclear, then writes the order down properly.

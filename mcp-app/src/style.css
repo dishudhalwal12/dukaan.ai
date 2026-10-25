@@ -1,0 +1,141 @@
+:root {
+  color-scheme: light dark;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  font-size: var(--font-text-size, 14px);
+  color: var(--color-text-primary, #111827);
+  background: transparent;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+.card {
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--color-background-primary, #ffffff);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+h1 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.sub {
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.badge {
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #ecfdf3;
+  color: #067647;
+  white-space: nowrap;
+}
+
+.lines {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-border-secondary, #f3f4f6);
+  font-size: 13px;
+}
+
+.line:last-child { border-bottom: 0; }
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-primary, #e5e7eb);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.address {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #4b5563);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+button {
+  font: inherit;
+  border-radius: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-primary, #d1d5db);
+  background: var(--color-background-primary, #fff);
+  color: inherit;
+  cursor: pointer;
+}
+
+button.primary {
+  flex: 1;
+  background: #27ae60;
+  border-color: #27ae60;
+  color: #fff;
+  font-weight: 700;
+}
+
+button:disabled { opacity: 0.6; cursor: default; }
+
+.note {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7280);
+}
+
+.error {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #fef3f2;
+  color: #b42318;
+  font-size: 12px;
+}
+
+.receipt {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.receipt .tick {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  margin: 0 auto 10px;
+  display: grid;
+  place-items: center;
+  background: #ecfdf3;
+  color: #067647;
+  font-size: 22px;
+}

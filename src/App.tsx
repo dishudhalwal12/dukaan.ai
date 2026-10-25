@@ -22,7 +22,7 @@ import EmailConfirmScreen from './components/EmailConfirmScreen.tsx';
 import { captureEmailConfirmParams } from './utils/confirmLink.ts';
 import type { ConfirmParams } from './utils/confirmLink.ts';
 import { listenToAuthState, signOutUser, User, getAuthUrlError, isOAuthPending, clearOAuthPending } from './services/auth.ts';
-import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad, isNewSignupForWalkthrough } from './services/cloudSync.ts';
+import { syncOrdersToCloud, syncOnLogin, syncDeviceSessionOnceForAppLoad, syncMerchantPreferencesOnceForAppLoad, syncUserIdentityOnceForAppLoad, isNewSignupForWalkthrough, fetchOrdersFromCloud, updateOrderStatusInCloud } from './services/cloudSync.ts';
 import { hasStoreLocation, saveStoreLocation } from './utils/location.ts';
 import { getInstallId } from './utils/telemetry.ts';
 import { resolveTabsFromBusinessType, TabConfig } from './utils/tabResolver.ts';
@@ -90,6 +90,8 @@ const AppContent: React.FC = () => {
   const { products, updateProduct, loadProducts } = useProducts();
   const ordersRef = useRef(orders);
   const productsRef = useRef(products);
+  // A second click must not run the stock arithmetic or the cloud write twice.
+  const statusUpdateInFlightRef = useRef(false);
   useEffect(() => { ordersRef.current = orders; }, [orders]);
   useEffect(() => { productsRef.current = products; }, [products]);
 
@@ -453,53 +455,78 @@ const AppContent: React.FC = () => {
     }
   }, [products, updateProduct]);
 
-  const handleUpdateStatus = (orderId: string, status: OrderStatus) => {
-    const orderToUpdate = orders.find(o => o.id === orderId);
+  const handleUpdateStatus = async (orderId: string, status: OrderStatus) => {
+    if (statusUpdateInFlightRef.current) return;
+    statusUpdateInFlightRef.current = true;
+    try {
+      const orderToUpdate = orders.find(o => o.id === orderId);
 
-    // A finished order stays finished. The New Order popup keeps a 60-second
-    // auto-reject timer; after a delivery it used to fire anyway and send the
-    // customer a "declined" message for an order they had already received.
-    // Refusing every transition out of a final status is the one choke point.
-    if (orderToUpdate && isFinalOrderStatus(orderToUpdate.status)) {
-        return;
-    }
+      // A finished order stays finished. The New Order popup keeps a 60-second
+      // auto-reject timer; after a delivery it used to fire anyway and send the
+      // customer a "declined" message for an order they had already received.
+      // Refusing every transition out of a final status is the one choke point.
+      if (orderToUpdate && isFinalOrderStatus(orderToUpdate.status)) {
+          return;
+      }
 
-    // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
-    if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
-        applyStockDelta(orderToUpdate.items, -1);
+      // MCP orders live in Supabase, not in the WhatsApp engine. Write the status
+      // there first; only then move the local row. A failed write must not leave
+      // the dashboard claiming an acceptance the customer cannot see.
+      const isMcpOrder = orderId.startsWith('MCP-');
+      if (isMcpOrder && orderToUpdate && orderToUpdate.status !== status) {
+          const saved = await updateOrderStatusInCloud(orderId, status, orderToUpdate.status);
+          if (!saved) {
+              setError('This order changed elsewhere. Refresh and try again.');
+              return;
+          }
+      }
 
-        // Trigger real WhatsApp confirmation message via Baileys backend
-        whatsappService.acceptOrder(orderId).catch(err => {
-            console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
-        });
-    } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
-        // Trigger doorstep / at pickup notification to customer via WhatsApp
-        whatsappService.readyOrder(orderId).catch(err => {
-            console.error('[WhatsAppService] Failed to notify customer of doorstep arrival:', err);
-        });
-    } else if (orderToUpdate && status === OrderStatus.COMPLETED) {
-        // Trigger delivery completion message and persist COMPLETED in backend store
-        whatsappService.deliverOrder(orderId).catch(err => {
-            console.error('[WhatsAppService] Failed to notify customer of order delivery:', err);
-        });
-    } else if (orderToUpdate && status === OrderStatus.REJECTED) {
-        // Trigger real WhatsApp rejection message via Baileys backend
-        whatsappService.rejectOrder(orderId).catch(err => {
-            console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
-        });
-    } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
-        // If an order is cancelled, restore the stock. This was the one piece of
-        // stock arithmetic with no floor at all: a negative line quantity here
-        // subtracted from stock instead of adding to it.
-        applyStockDelta(orderToUpdate.items, 1);
-    }
+      // If an order is accepted (moved from NEW to PREPARING), update inventory and notify customer on WhatsApp
+      if (orderToUpdate && orderToUpdate.status === OrderStatus.NEW && status === OrderStatus.PREPARING) {
+          applyStockDelta(orderToUpdate.items, -1);
 
-    setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
-    if (newOrderForPopup?.id === orderId) {
-        setNewOrderForPopup(null);
+          // Trigger real WhatsApp confirmation message via Baileys backend
+          if (!isMcpOrder) {
+              whatsappService.acceptOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order acceptance:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.READY_FOR_PICKUP) {
+          // Trigger doorstep / at pickup notification to customer via WhatsApp
+          if (!isMcpOrder) {
+              whatsappService.readyOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of doorstep arrival:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.COMPLETED) {
+          // Trigger delivery completion message and persist COMPLETED in backend store
+          if (!isMcpOrder) {
+              whatsappService.deliverOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order delivery:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.REJECTED) {
+          // Trigger real WhatsApp rejection message via Baileys backend
+          if (!isMcpOrder) {
+              whatsappService.rejectOrder(orderId).catch(err => {
+                  console.error('[WhatsAppService] Failed to notify customer of order rejection:', err);
+              });
+          }
+      } else if (orderToUpdate && status === OrderStatus.CANCELLED) {
+          // If an order is cancelled, restore the stock. This was the one piece of
+          // stock arithmetic with no floor at all: a negative line quantity here
+          // subtracted from stock instead of adding to it.
+          applyStockDelta(orderToUpdate.items, 1);
+      }
+
+      setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status } : o)));
+      if (newOrderForPopup?.id === orderId) {
+          setNewOrderForPopup(null);
+      }
+    } finally {
+      statusUpdateInFlightRef.current = false;
     }
   };
-
   const handleAddOrders = useCallback((newOrders: Order[]) => {
     setOrders(prev => [...newOrders, ...prev]);
   }, []);
@@ -676,52 +703,70 @@ const AppContent: React.FC = () => {
       }
     });
 
-    // 2.5s polling fallback to ensure 100% delivery guarantee
+    // 2.5s polling fallback to ensure 100% delivery guarantee. Two sources:
+    // the WhatsApp engine's local store, and Supabase (where MCP orders land).
     pollPrimedRef.current = false;
-    const pollInterval = setInterval(() => {
+    const refreshOrders = async () => {
       const myId = currentUserRef.current?.id;
       if (!myId) return; // No account → nothing to reconcile.
 
-      whatsappService.fetchOrders().then(res => {
-        if (!res?.orders || !Array.isArray(res.orders)) return;
-        const freshOrders: Order[] = ownedOrdersOnly(
-          res.orders.map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
-          myId,
-        );
+      const [backend, cloud] = await Promise.all([
+        whatsappService.fetchOrders().catch(() => ({ orders: [] })),
+        fetchOrdersFromCloud(50).catch(() => null),
+      ]);
 
-        // The SSE stream is the alerting path, but it can be slow or dropped
-        // behind a proxy. The poll therefore also raises the popup — once per
-        // order: `electPopupCandidates` elects nobody until the first poll has
-        // been folded in, and records what it elected, so a fresh browser cannot
-        // fire one chime per order for its whole backlog.
-        //
-        // Decided out here, not inside the state updater: React may run an
-        // updater twice, and a chime or a popup is not idempotent.
-        const { appeared } = mergePolledOrders(ordersRef.current, freshOrders);
-        const electedIds = electPopupCandidates(appeared, seenOrderIds.current, pollPrimedRef.current);
-        pollPrimedRef.current = true;
+      // Deduplicate by id. The backend row wins because it carries the
+      // WhatsApp JID; a cloud row for the same id is the same order.
+      const byId = new Map<string, any>();
+      for (const order of [
+        ...(Array.isArray(backend?.orders) ? backend.orders : []),
+        ...(Array.isArray(cloud) ? cloud : []),
+      ]) {
+        if (!order) continue;
+        const id = String(order.id || '');
+        if (id && !byId.has(id)) byId.set(id, order);
+      }
 
-        if (electedIds.length > 0) {
-          for (const id of electedIds) seenOrderIds.current.add(id);
-          localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+      const freshOrders: Order[] = ownedOrdersOnly(
+        [...byId.values()].map((o: any) => normalizeIncomingOrder(o)).filter((o: Order) => Boolean(o.id)),
+        myId,
+      );
 
-          playOrderChime();
+      // The SSE stream is the alerting path, but it can be slow or dropped
+      // behind a proxy. The poll therefore also raises the popup — once per
+      // order: `electPopupCandidates` elects nobody until the first poll has
+      // been folded in, and records what it elected, so a fresh browser cannot
+      // fire one chime per order for its whole backlog.
+      //
+      // Decided out here, not inside the state updater: React may run an
+      // updater twice, and a chime or a popup is not idempotent.
+      const { appeared } = mergePolledOrders(ordersRef.current, freshOrders);
+      const electedIds = electPopupCandidates(appeared, seenOrderIds.current, pollPrimedRef.current);
+      pollPrimedRef.current = true;
 
-          // Trigger popup unless suppressed by active subscreen or another open modal.
-          if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
-            console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
-          } else {
-            const first = appeared.find(o => electedIds.includes(o.id));
-            if (first) setTimeout(() => setNewOrderForPopup(first), 0);
-          }
+      if (electedIds.length > 0) {
+        for (const id of electedIds) seenOrderIds.current.add(id);
+        localStorage.setItem('dukan-seen-order-ids', JSON.stringify([...seenOrderIds.current]));
+
+        playOrderChime();
+
+        // Trigger popup unless suppressed by active subscreen or another open modal.
+        if (activeScreenRef.current === Screen.SETTINGS || isOtherModalShowingRef.current) {
+          console.log('[WhatsApp Order] Received new order, but popup suppressed due to active modal/screen.');
+        } else {
+          const first = appeared.find(o => electedIds.includes(o.id));
+          if (first) setTimeout(() => setNewOrderForPopup(first), 0);
         }
+      }
 
-        setOrders(prev => {
-          const merged = mergePolledOrders(prev, freshOrders);
-          return merged.changed ? merged.orders : prev;
-        });
-      }).catch(() => {});
-    }, 2500);
+      setOrders(prev => {
+        const merged = mergePolledOrders(prev, freshOrders);
+        return merged.changed ? merged.orders : prev;
+      });
+    };
+
+    void refreshOrders();
+    const pollInterval = setInterval(refreshOrders, 2500);
 
     return () => {
       unsubscribe();

@@ -43,9 +43,20 @@ const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 // ── 3. the deployed site serves static files only ────────────────────────────
 {
   const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'));
-  assert.ok(!vercel.rewrites, 'vercel.json must not rewrite /api to a backend — that is what returned 502');
+  const rewrites = Array.isArray(vercel.rewrites) ? vercel.rewrites : [];
+  // `/api` used to be proxied to a VPS that no longer existed, so every call
+  // answered 502. The MCP endpoint is a local function, not a proxy: keep every
+  // rewrite on this deployment and never point one at an external origin.
+  assert.ok(
+    !rewrites.some((rule) => String(rule.source || '').startsWith('/api')),
+    'vercel.json must not rewrite /api to a backend — that is what returned 502'
+  );
+  assert.ok(
+    rewrites.every((rule) => !/^https?:/i.test(String(rule.destination || ''))),
+    'vercel.json rewrites must stay on this deployment'
+  );
   assert.strictEqual(vercel.outputDirectory, 'dist', 'Vercel serves the built static site');
-  ok('vercel.json serves the static build and proxies nothing');
+  ok('vercel.json serves the static build and proxies nothing off-platform');
 }
 
 // ── 4. the deployed bundle knows where the API lives ─────────────────────────
