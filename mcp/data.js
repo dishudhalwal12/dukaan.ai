@@ -38,6 +38,10 @@ export function publicAddress(row) {
     pincode: row.pincode || null,
     match_type: row.match_type,
     source: row.source,
+    // Provenance, not just precision: the quote reads these to decide whether it
+    // may call the address verified. Older rows may predate the columns.
+    precision_source: row.precision_source || 'typed',
+    geocode_verified: Boolean(row.geocode_verified),
     accuracy_m: row.accuracy_m === null || row.accuracy_m === undefined ? null : Number(row.accuracy_m),
     is_default: Boolean(row.is_default),
     maps_url: mapsUrl(row.lat, row.lng),
@@ -274,7 +278,12 @@ export async function saveAddressRow(db, userId, fields) {
     lng: Number(fields.lng),
     accuracy_m: fields.accuracy_m === null || fields.accuracy_m === undefined ? null : Number(fields.accuracy_m),
     match_type: fields.match_type || 'area',
-    source: fields.source || 'geocoded',
+    source: fields.source || 'map_pin',
+    // Kept explicit so a row can never be written without its provenance: an
+    // unverified coordinate that looks verified is worse than an unknown one.
+    precision_source: fields.precision_source || 'typed',
+    geocode_verified: Boolean(fields.geocode_verified),
+    coords_captured_at: fields.coords_captured_at || null,
     is_default: Boolean(makeDefault || (isUpdate && existing.is_default && fields.is_default !== false)),
     updated_at: new Date().toISOString(),
   };

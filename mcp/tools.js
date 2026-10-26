@@ -477,6 +477,9 @@ export function registerTools(server, { repo, config, deps }) {
         latitude: z.number().min(-90).max(90).optional(),
         longitude: z.number().min(-180).max(180).optional(),
         accuracy_m: z.number().min(0).max(100000).optional(),
+        // Accepted for older clients, then ignored on purpose: the server derives
+        // `source` from the evidence it actually has, so a caller cannot promote
+        // a shared pin into a geocoded address.
         source: z.enum(['map_pin', 'geocoded', 'manual']).optional(),
         is_default: z.boolean().optional(),
       }),
@@ -500,38 +503,84 @@ export function registerTools(server, { repo, config, deps }) {
         };
         if (!merged.line1) return fail('address_required', 'Add a house/street line for the address.');
 
+        // Where the delivery coordinate comes from, in priority order:
+        //
+        //   1. coordinates the customer just shared in the chat;
+        //   2. an edit that did not change the text  -> keep what we already had;
+        //   3. the fix captured when they connected the assistant (<=30 days);
+        //   4. a geocoder, and only now, because it is the slowest and least
+        //      reliable source and the decision of 2026-10-26 is that it must
+        //      never be on the happy path.
+        //
+        // The old code geocoded first and returned `address_not_found` when the
+        // map service missed, which blocked an address we already knew the
+        // position of. It also defaulted `match_type` to 'house' whenever a
+        // coordinate existed, so a shared pin was stored as a verified rooftop.
+        const nowMs = deps.now ? deps.now() : Date.now();
+        const textChanged = ['line1', 'line2', 'landmark', 'city', 'state', 'pincode'].some(
+          (key) => input[key] !== undefined && String(input[key] || '') !== String(existing?.[key] || '')
+        );
+        const appLocation = storedLocationFromProfile(await repo.getProfile(), nowMs);
+
         let lat = input.latitude;
         let lng = input.longitude;
-        let accuracyM = input.accuracy_m;
-        let matchType = 'house';
-        let source = input.source || 'map_pin';
+        let accuracyM = input.accuracy_m ?? null;
+        let matchType;
+        let source;
+        let precisionSource;
+        let geocodeVerified = false;
+        let coordsCapturedAt = null;
 
         if (lat !== undefined || lng !== undefined) {
           if (!coordsOk(Number(lat), Number(lng))) return fail('location_invalid', 'Pass both latitude and longitude.');
-          accuracyM = accuracyM ?? 15;
+          // A pin proves where the phone is, never which door the typed text
+          // names, so this can only ever be street-level.
+          precisionSource = 'chat_shared';
+          matchType = 'street';
+          source = 'map_pin';
+          coordsCapturedAt = new Date(nowMs).toISOString();
+        } else if (existing && !textChanged) {
+          lat = existing.lat;
+          lng = existing.lng;
+          accuracyM = existing.accuracy_m ?? accuracyM;
+          matchType = existing.match_type;
+          source = existing.source;
+          // An edit must not launder a pin into a verified address, in either
+          // direction: keep exactly what the row was created with.
+          precisionSource = existing.precision_source || 'typed';
+          geocodeVerified = Boolean(existing.geocode_verified);
+          coordsCapturedAt = existing.coords_captured_at || null;
+        } else if (appLocation.ok) {
+          lat = appLocation.lat;
+          lng = appLocation.lng;
+          accuracyM = appLocation.accuracyM ?? accuracyM;
+          precisionSource = 'app_location';
+          matchType = 'street';
+          source = 'map_pin';
+          coordsCapturedAt = appLocation.capturedAt;
         } else {
-          const textChanged = ['line1', 'line2', 'landmark', 'city', 'state', 'pincode'].some(
-            (key) => input[key] !== undefined && String(input[key] || '') !== String(existing?.[key] || '')
-          );
-          if (existing && !textChanged) {
-            lat = existing.lat;
-            lng = existing.lng;
-            accuracyM = existing.accuracy_m;
-            matchType = existing.match_type;
-            source = existing.source;
-          } else {
-            const geo = await geocodeAddress(merged, {
-              fetchImpl: deps.fetchImpl,
-              googleKey: deps.config.googleKey,
-              provider: deps.config.geocoderProvider,
-            });
-            if (!geo.ok) return fail(geo.code, geo.message);
-            lat = geo.lat;
-            lng = geo.lng;
-            accuracyM = geo.accuracyM;
-            matchType = geo.matchType;
-            source = 'geocoded';
+          const geo = await geocodeAddress(merged, {
+            fetchImpl: deps.fetchImpl,
+            googleKey: deps.config.googleKey,
+            provider: deps.config.geocoderProvider,
+          });
+          if (!geo.ok) {
+            // No pin, no app fix, no geocode: the honest answer is "ask for a
+            // pin". `address_not_found` blamed the customer's address for what
+            // is really a missing coordinate.
+            return fail(
+              'location_required',
+              'That address could not be located and no location is on file. Ask the customer to share a map pin, or to allow location in the Dukaan app.'
+            );
           }
+          lat = geo.lat;
+          lng = geo.lng;
+          accuracyM = geo.accuracyM ?? accuracyM;
+          matchType = geo.matchType;
+          source = 'geocoded';
+          precisionSource = 'geocoded';
+          geocodeVerified = true;
+          coordsCapturedAt = new Date(nowMs).toISOString();
         }
 
         const address = await repo.saveAddress({
@@ -543,6 +592,9 @@ export function registerTools(server, { repo, config, deps }) {
           accuracy_m: accuracyM,
           match_type: matchType,
           source,
+          precision_source: precisionSource,
+          geocode_verified: geocodeVerified,
+          coords_captured_at: coordsCapturedAt,
           is_default: input.is_default,
         });
         // The customer just shared a real position, so remember it for the next
@@ -563,9 +615,19 @@ export function registerTools(server, { repo, config, deps }) {
           }
         }
 
+        // Say which evidence backs the delivery point. A geocoded address can be
+        // quoted as verified; a pin cannot, and the shop is told to call.
+        const proof = address.geocode_verified
+          ? `Address matched by the map service (${address.match_type}).`
+          : 'Address saved as typed; the delivery pin is the customer location, so the shop may call to confirm.';
         return ok(
-          `Saved ${address.label ? `${address.label}: ` : ''}${address.address}. Match: ${address.match_type}${address.match_type === 'area' ? ' (the shop may call to confirm)' : ''}.`,
-          { address, needs_exact_address: address.match_type === 'city' }
+          `Saved ${address.label ? `${address.label}: ` : ''}${address.address}. ${proof}`,
+          {
+            address,
+            needs_exact_address: !address.geocode_verified,
+            precision_source: address.precision_source,
+            geocode_verified: address.geocode_verified,
+          }
         );
       } catch (error) {
         return fromError(error);
