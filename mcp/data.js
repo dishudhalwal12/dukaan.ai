@@ -1,5 +1,5 @@
 import { normaliseShop } from './geometry.js';
-import { toPublicProduct, formatRupees } from './catalog.js';
+import { toPublicProduct, formatRupees, normaliseUnit, parsePriceToPaise } from './catalog.js';
 import { formatAddress, mapsUrl } from './geo.js';
 import { customerStatusLabel } from './orderRules.js';
 
@@ -38,6 +38,10 @@ export function publicAddress(row) {
     pincode: row.pincode || null,
     match_type: row.match_type,
     source: row.source,
+    // Provenance, not just precision: the quote reads these to decide whether it
+    // may call the address verified. Older rows may predate the columns.
+    precision_source: row.precision_source || 'typed',
+    geocode_verified: Boolean(row.geocode_verified),
     accuracy_m: row.accuracy_m === null || row.accuracy_m === undefined ? null : Number(row.accuracy_m),
     is_default: Boolean(row.is_default),
     maps_url: mapsUrl(row.lat, row.lng),
@@ -59,11 +63,34 @@ export function addressSnapshot(row, profile) {
 
 export function publicOrder(row, shop = {}) {
   if (!row) return null;
+
+  // The popup reads src/types.ts Customer. The row stores it as JSONB, so the
+  // projection has to keep the same key names in both directions: a rename here
+  // silently empties the shopkeeper's phone/map link, not the assistant's reply.
+  const stored = row.customer && typeof row.customer === 'object' ? row.customer : {};
+  const storedLocation = stored.location && typeof stored.location === 'object' ? stored.location : {};
+  const coord = (value) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const latitude = coord(stored.latitude) ?? coord(storedLocation.latitude);
+  const longitude = coord(stored.longitude) ?? coord(storedLocation.longitude);
+  const customer = {
+    name: stored.name || row.customer_name || 'Customer',
+    whatsappNumber: stored.whatsappNumber || row.customer_phone || '',
+    address: stored.address || row.delivery_address || '',
+    mapsUrl: stored.mapsUrl || storedLocation.mapsUrl || (latitude !== undefined && longitude !== undefined ? mapsUrl(latitude, longitude) : undefined),
+    ...(latitude !== undefined ? { latitude } : {}),
+    ...(longitude !== undefined ? { longitude } : {}),
+  };
+
   return {
     order_id: row.external_id,
     status: row.status,
     status_label: customerStatusLabel(row.status),
     shop: { shop_id: shop.public_shop_id || null, name: shop.store_name || 'Shop' },
+    customer,
     items: Array.isArray(row.items) ? row.items : [],
     total: Number(row.total) || 0,
     total_display: formatRupees(Math.round((Number(row.total) || 0) * 100)),
@@ -122,6 +149,84 @@ export async function getShopByUserId(db, shopUserId) {
     .maybeSingle();
   if (error) fail('registry_unavailable', error.message);
   return data || null;
+}
+
+/**
+ * Shops that deliver to a point, nearest first — computed in Postgres.
+ *
+ * This replaces loading every AI-enabled shop and ranking in Node. At a few
+ * thousand shops the old path returned only what PostgREST's row cap allowed and
+ * built an impossible `IN (...)` list for the product count, so the nearest shop
+ * could simply be absent.
+ *
+ * `numeric` columns arrive as strings from PostgREST; every distance and count is
+ * converted here so no caller compares "0.12" with 0.12.
+ */
+export async function findShopsNearby(db, { lat, lng, radiusKm = 10, query = null, limit = 10, ignoreRadius = false }) {
+  const { data, error } = await db.rpc('mcp_find_shops', {
+    p_lat: Number(lat),
+    p_lng: Number(lng),
+    p_radius_km: Number(radiusKm),
+    p_query: query ? String(query) : null,
+    p_limit: Number(limit),
+    // The out-of-range probe asks "how far is the nearest shop", which must not
+    // be filtered by that shop's own delivery radius.
+    p_ignore_radius: Boolean(ignoreRadius),
+  });
+  if (error) fail('registry_unavailable', error.message);
+
+  return (Array.isArray(data) ? data : []).map((row) => ({
+    shopId: row.shop_id,
+    userId: row.user_id,
+    name: row.name,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    distanceKm: Number(row.distance_km),
+    deliveryRadiusKm: Number(row.delivery_radius_km),
+    catalogItemCount: Number(row.item_count) || 0,
+    mcpEnabled: true,
+    ordersPaused: Boolean(row.orders_paused),
+  }));
+}
+
+/**
+ * "Which shop near me has this, and at what price" — one row per matching
+ * product, nearest shop first. A page of rows is enough to build an answer; the
+ * caller groups by shop.
+ */
+export async function searchNearbyProducts(db, { lat, lng, radiusKm = 10, tokens = [], limit = 40 }) {
+  const { data, error } = await db.rpc('mcp_search_nearby_products', {
+    p_lat: Number(lat),
+    p_lng: Number(lng),
+    p_radius_km: Number(radiusKm),
+    p_tokens: (Array.isArray(tokens) ? tokens : []).map(String),
+    p_limit: Number(limit),
+  });
+  if (error) fail('catalog_unavailable', error.message);
+
+  return (Array.isArray(data) ? data : [])
+    .map((row) => {
+      // The SQL only proves "stock > 0". `price` is free text typed by a
+      // merchant, and a row quoting at ₹0 or "FREE" would reach the card and then
+      // fail inside quote_order. Drop it here, exactly as search_products does.
+      const pricePaise = parsePriceToPaise(row.price);
+      if (pricePaise === null) return null;
+      return {
+        shopId: row.shop_id,
+        userId: row.user_id,
+        shopName: row.name,
+        shopLatitude: Number(row.latitude),
+        shopLongitude: Number(row.longitude),
+        distanceKm: Number(row.distance_km),
+        productId: row.product_id,
+        productName: row.product_name,
+        pricePaise,
+        price: formatRupees(pricePaise),
+        unit: normaliseUnit(row.unit),
+        stock: Number(row.stock),
+      };
+    })
+    .filter(Boolean);
 }
 
 export async function loadShopCatalog(db, shopUserId) {
@@ -274,7 +379,12 @@ export async function saveAddressRow(db, userId, fields) {
     lng: Number(fields.lng),
     accuracy_m: fields.accuracy_m === null || fields.accuracy_m === undefined ? null : Number(fields.accuracy_m),
     match_type: fields.match_type || 'area',
-    source: fields.source || 'geocoded',
+    source: fields.source || 'map_pin',
+    // Kept explicit so a row can never be written without its provenance: an
+    // unverified coordinate that looks verified is worse than an unknown one.
+    precision_source: fields.precision_source || 'typed',
+    geocode_verified: Boolean(fields.geocode_verified),
+    coords_captured_at: fields.coords_captured_at || null,
     is_default: Boolean(makeDefault || (isUpdate && existing.is_default && fields.is_default !== false)),
     updated_at: new Date().toISOString(),
   };
@@ -329,11 +439,41 @@ export async function createQuote(db, row) {
       payment_method: row.paymentMethod || 'COD',
       notes: row.notes || null,
       expires_at: row.expiresAt,
+      request_hash: row.requestHash || null,
     })
     .select('*')
     .single();
-  if (error) fail('quote_save_failed', error.message);
+  if (error) {
+    // A concurrent identical request (or the transparent socket retry) may have
+    // committed first. The unique partial index tells us so; returning the
+    // winner's row is the whole point of the index.
+    if (String(error.code) === '23505' && row.requestHash) {
+      const existing = await findRecentQuote(db, row.userId, row.requestHash, new Date(Date.now() - 60_000).toISOString());
+      if (existing) return existing;
+    }
+    fail('quote_save_failed', error.message);
+  }
   return data;
+}
+
+/**
+ * The quote this request already produced, if any: same hash, same customer,
+ * unconsumed, unexpired, created inside the window. One index scan.
+ */
+export async function findRecentQuote(db, userId, requestHash, sinceIso) {
+  if (!requestHash) return null;
+  const { data, error } = await db
+    .from('order_quotes')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('request_hash', requestHash)
+    .is('consumed_at', null)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) fail('quote_unavailable', error.message);
+  return data || null;
 }
 
 export async function getQuote(db, userId, quoteId) {

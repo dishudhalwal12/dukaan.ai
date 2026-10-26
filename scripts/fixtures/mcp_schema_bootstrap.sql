@@ -20,7 +20,25 @@ CREATE TABLE public.business_profiles (
     user_id UUID NOT NULL UNIQUE,
     store_name TEXT NOT NULL,
     store_lat DOUBLE PRECISION,
-    store_lng DOUBLE PRECISION
+    store_lng DOUBLE PRECISION,
+    store_location_source TEXT
+);
+
+-- Mirrors supabase/schema.sql: the nearby-search functions join it.
+CREATE TABLE public.products (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    external_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    price TEXT NOT NULL,
+    stock INTEGER NOT NULL DEFAULT 0,
+    stock_unit TEXT NOT NULL DEFAULT 'pcs',
+    image_url TEXT,
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT products_owner_external_id_key UNIQUE (user_id, external_id),
+    CONSTRAINT products_stock_non_negative CHECK (stock >= 0)
 );
 
 CREATE TABLE public.orders (

@@ -1,5 +1,7 @@
 import {
   loadEnabledShops,
+  findShopsNearby,
+  searchNearbyProducts,
   getShopByPublicId,
   getShopByUserId,
   loadShopCatalog,
@@ -12,6 +14,7 @@ import {
   saveAddressRow,
   deleteAddressRow,
   createQuote,
+  findRecentQuote,
   getQuote,
   usageCounts,
   placeOrderRpc,
@@ -30,6 +33,10 @@ export function createRepo({ service, user, userId }) {
   return {
     userId,
     loadEnabledShops: () => loadEnabledShops(service),
+    // Nearby search runs as the service role: it reads shop rows the customer
+    // cannot see, and returns only the public shop id and public product fields.
+    findShopsNearby: (fields) => findShopsNearby(service, fields),
+    searchNearbyProducts: (fields) => searchNearbyProducts(service, fields),
     getShop: (publicShopId) => getShopByPublicId(service, publicShopId),
     getShopByUserId: (shopUserId) => getShopByUserId(service, shopUserId),
     getCatalog: (shopUserId) => loadShopCatalog(service, shopUserId),
@@ -42,6 +49,7 @@ export function createRepo({ service, user, userId }) {
     saveAddress: (fields) => saveAddressRow(user, userId, fields),
     deleteAddress: (addressId) => deleteAddressRow(user, userId, addressId),
     createQuote: (row) => createQuote(service, { ...row, userId }),
+    findRecentQuote: (requestHash, sinceIso) => findRecentQuote(user, userId, requestHash, sinceIso),
     getQuote: (quoteId) => getQuote(service, userId, quoteId),
     usageCounts: (shopUserId, since) => usageCounts(service, userId, shopUserId, since),
     placeOrder: ({ quoteId, externalId }) => placeOrderRpc(service, { quoteId, userId, externalId }),

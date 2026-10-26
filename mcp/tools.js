@@ -1,10 +1,11 @@
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
-import { rankShops, serviceability, roundedKm, isShopAvailable } from './geometry.js';
-import { searchCatalog, formatRupees } from './catalog.js';
+import { serviceability, roundedKm, isShopAvailable, MAX_DELIVERY_RADIUS_KM } from './geometry.js';
+import { searchCatalog, formatRupees, expandQueryTokens, parsePackSize } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
-import { geocodeAddress, formatAddress, needsExactAddress } from './geo.js';
+import { geocodeAddress, formatAddress, mapsUrl, needsExactAddress } from './geo.js';
 import { describeAge, precisionForLocation, storedLocationFromProfile } from './location.js';
 import { evaluateOrderLimits, checkOrderTotal, allowRead } from './limits.js';
 import { mcpOrderId } from './ids.js';
@@ -24,20 +25,108 @@ const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
   accepting_orders: isShopAvailable(shop),
 });
 
+/**
+ * Escape the two LIKE metacharacters. `p_query` reaches `ILIKE '%…%'`, so a name
+ * containing "%" or "_" would otherwise act as a wildcard and return shops the
+ * customer never typed.
+ */
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * A stable fingerprint of "the same request": shop, delivery address, and the
+ * basket. Ordering does not matter (the array is sorted), so a model that lists
+ * the same two items in a different order still hits the same quote.
+ */
+function quoteRequestHash({ shopId, addressId, items, addressText, note }) {
+  const normalised = (Array.isArray(items) ? items : [])
+    .map((item) => ({ id: String(item.product_id), qty: Number(item.quantity) }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  // The address TEXT and the note are part of the order, not decoration: if the
+  // customer fixes a house number or adds "ring twice", reusing the old quote
+  // would ship the old snapshot while the confirmation shows the new text.
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      shopId: String(shopId),
+      addressId: String(addressId),
+      addressText: String(addressText || '').trim(),
+      note: String(note || '').trim(),
+      items: normalised,
+    }))
+    .digest('hex');
+}
+
+/**
+ * One shape for a quote result, whether the quote was just created or reused.
+ *
+ * The confirmation is rendered here, from the same numbers the order will carry,
+ * so a model can read it out but cannot paraphrase a price or drop the phone
+ * number the shop needs to call.
+ */
+function quoteResult({ quote, items, shop, address, profile, phone, distanceKm, catalogCount, reused }) {
+  const addressVerified = Boolean(address.geocode_verified);
+  const totalPaise = items.reduce((sum, item) => sum + (Number(item.totalPaise) || 0), 0);
+  const totalDisplay = formatRupees(totalPaise);
+
+  const confirmation = [
+    `Name: ${profile.full_name}`,
+    `Phone: ${phone}`,
+    `Address: ${formatAddress(address)}`,
+    ...items.map((item) => `${item.name} × ${item.quantity} — ${formatRupees(item.totalPaise)}`),
+    `Total: ${totalDisplay} — cash on delivery`,
+  ].join('\n');
+
+  const caveats = [];
+  if (address.match_type === 'area') caveats.push('Area-level address; the shop may call to confirm.');
+  if (!addressVerified) caveats.push('The delivery pin is the customer location, not a verified rooftop; the shop may call to confirm.');
+  const warning = caveats.length > 0 ? `\n${caveats.join(' ')}` : '';
+
+  return ok(
+    `Order preview from ${shop.name}:\n${confirmation}\nDeliver to pin: ${mapsUrl(address.lat, address.lng)}${warning}\n\nAsk the customer to confirm by reading this back, then wait for an explicit yes. Only then call place_order with quote_id ${quote.id} and confirmed: true. This quote expires at ${quote.expires_at}.`,
+    {
+      quote_id: quote.id,
+      shop: shopPublic(shop, distanceKm, catalogCount),
+      items,
+      total: Number((totalPaise / 100).toFixed(2)),
+      total_display: totalDisplay,
+      address: formatAddress(address),
+      address_match_type: address.match_type,
+      address_verified: addressVerified,
+      precision_source: address.precision_source || 'typed',
+      maps_url: mapsUrl(address.lat, address.lng),
+      confirmation,
+      payment_method: 'COD',
+      expires_at: quote.expires_at,
+      requires_confirmation: true,
+      reused: Boolean(reused),
+      warnings: caveats,
+    }
+  );
+}
+
 const coordsOk = (lat, lng) => Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
 async function resolveLocation(input, repo, deps) {
   if (input.address_id) {
     const row = await repo.getAddressRow(input.address_id);
     if (!row) return { ok: false, code: 'address_not_found', message: 'That saved address does not exist.' };
+    // Only a row a geocoder actually matched may describe itself as house-level.
+    // Rows written by the old code carry `match_type: 'house'` from a GPS fix,
+    // so the label alone is not evidence.
+    const verified = Boolean(row.geocode_verified);
+    const claimed = row.match_type;
     return {
       ok: true,
       lat: Number(row.lat),
       lng: Number(row.lng),
       label: formatAddress(row),
       source: 'saved_address',
-      match_type: row.match_type,
-      needs_exact_address: needsExactAddress(row.match_type),
+      match_type: verified || claimed !== 'house' ? claimed : 'street',
+      needs_exact_address: verified ? needsExactAddress(claimed) : true,
+      precision_source: row.precision_source || (row.source === 'geocoded' ? 'geocoded' : 'typed'),
+      geocode_verified: verified,
     };
   }
 
@@ -51,8 +140,12 @@ async function resolveLocation(input, repo, deps) {
       lng: Number(input.longitude),
       label: 'Shared location',
       source: 'coordinates',
-      match_type: 'house',
-      needs_exact_address: false,
+      // A pin says where the phone is. It says nothing about which door the
+      // customer typed, so it is street level and still needs an address.
+      match_type: 'street',
+      needs_exact_address: true,
+      precision_source: 'chat_shared',
+      geocode_verified: false,
     };
   }
 
@@ -74,6 +167,8 @@ async function resolveLocation(input, repo, deps) {
       source: 'geocoded',
       match_type: geo.matchType,
       needs_exact_address: geo.needsExactAddress,
+      precision_source: 'geocoded',
+      geocode_verified: true,
     };
   }
 
@@ -93,6 +188,8 @@ async function resolveLocation(input, repo, deps) {
       captured_at: stored.capturedAt,
       age_days: stored.ageDays,
       precision: stored.precision,
+      precision_source: 'app_location',
+      geocode_verified: false,
     };
   }
 
@@ -197,30 +294,65 @@ export function registerTools(server, { repo, config, deps }) {
           return fail(location.code, location.message);
         }
 
-        const shops = await repo.loadEnabledShops();
-        const ranked = rankShops(shops, location);
-        const serviceable = ranked.filter((shop) => serviceability(shop, location).ok);
-        const filtered = input.query
-          ? serviceable.filter((shop) => shop.name.toLowerCase().includes(input.query.trim().toLowerCase()))
-          : serviceable;
-
-        if (filtered.length === 0) {
-          if (serviceable.length > 0) {
-            return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
-          }
-          const nearest = ranked[0];
-          if (!nearest) {
-            return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
-          }
-          return fail(
-            'out_of_range',
-            `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
-            { nearest_km: roundedKm(nearest.distanceKm) }
-          );
-        }
-
         const limit = input.limit || 5;
-        const results = filtered.slice(0, limit).map((shop) => shopPublic(shop));
+        let results;
+
+        if (typeof repo.findShopsNearby === 'function') {
+          // Production path. The database filters by radius, ranks by distance,
+          // and applies the LIMIT, so a deployment with 10 000 shops transfers a
+          // handful of rows instead of the whole registry.
+          const searchRadiusKm = MAX_DELIVERY_RADIUS_KM;
+          const nearby = await repo.findShopsNearby({
+            lat: location.lat,
+            lng: location.lng,
+            radiusKm: searchRadiusKm,
+            query: input.query ? escapeLike(input.query.trim()) : null,
+            limit,
+          });
+
+          if (nearby.length === 0) {
+            // Two different empties: "no shop by that name nearby" and "nothing
+            // delivers here". One extra query separates them, and the second one
+            // still lets the reply say how far the nearest shop is.
+            const inRadius = input.query
+              ? await repo.findShopsNearby({ lat: location.lat, lng: location.lng, radiusKm: searchRadiusKm, query: null, limit: 1 })
+              : [];
+            if (inRadius.length > 0) {
+              return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
+            }
+            const widened = await repo.findShopsNearby({
+              lat: location.lat,
+              lng: location.lng,
+              radiusKm: 500,
+              query: null,
+              limit: 1,
+              // Ask "how far is the nearest shop", not "which shops deliver here".
+              ignoreRadius: true,
+            });
+            const nearest = widened[0];
+            if (!nearest) {
+              return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
+            }
+            return fail(
+              'out_of_range',
+              `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
+              { nearest_km: roundedKm(nearest.distanceKm) }
+            );
+          }
+
+          results = nearby.slice(0, limit).map((entry) => shopPublic(entry, entry.distanceKm, entry.catalogItemCount));
+        } else {
+          // No in-memory fallback on purpose: falling back would download the
+          // whole registry again, reintroduce the 1 000-row truncation, and turn
+          // a broken deployment into a quietly wrong shop instead of an error.
+          return fail('unsupported', 'Nearby shop search is not available on this deployment.');
+        }
+        // Diagnostics for the one request log line: how many shops were ranked
+        // and how the location was obtained. No customer data.
+        if (deps.diagnostics) {
+          deps.diagnostics.shopCount = results.length;
+          deps.diagnostics.precision = location.precision_source || 'typed';
+        }
         const lines = results.map(
           (shop, index) => `${index + 1}. ${shop.name} — ${shop.distance_km} km, ${shop.item_count} items`
         );
@@ -240,6 +372,7 @@ export function registerTools(server, { repo, config, deps }) {
               label: location.label,
               match_type: location.match_type,
               source: location.source,
+              precision_source: location.precision_source || 'typed',
               needs_exact_address: Boolean(location.needs_exact_address),
               ...(fromApp
                 ? { precision: location.precision, captured_at: location.captured_at, age_days: location.age_days }
@@ -314,6 +447,108 @@ export function registerTools(server, { repo, config, deps }) {
           shop: { shop_id: shop.shopId, name: shop.name },
           products,
         });
+      } catch (error) {
+        return fromError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'find_products_nearby',
+    {
+      title: 'Find shops that stock an item',
+      description:
+        'Find shops near the customer that actually stock what they asked for, nearest first, with prices. Prefer this over find_shops followed by a search per shop: it answers "which shop has soap" in a single call. query is the customer’s own words ("soap", "atta", "sabun"); common aliases are expanded server-side. Never invent a shop, a price, or a product id — use the ids returned here.',
+      inputSchema: z.object({
+        query: z.string().min(2).max(80),
+        address_id: z.string().uuid().optional(),
+        pincode: z.string().optional(),
+        area: z.string().max(120).optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+      annotations: READ,
+    },
+    async (input) => {
+      try {
+        const location = await resolveLocation(input, repo, deps);
+        if (!location.ok) return fail(location.code, location.message);
+        if (typeof repo.searchNearbyProducts !== 'function') {
+          return fail('unsupported', 'Nearby product search is not available on this deployment. Use find_shops and search_products instead.');
+        }
+
+        const tokens = expandQueryTokens(input.query);
+        if (tokens.length === 0) return fail('query_required', 'Ask the customer which product they want.');
+
+        // Ask for more rows than shops: one shop may stock several variants of the
+        // same word, and the caller still needs the nearest *shops*, not a single
+        // product page.
+        const rows = await repo.searchNearbyProducts({
+          lat: location.lat,
+          lng: location.lng,
+          radiusKm: MAX_DELIVERY_RADIUS_KM,
+          tokens,
+          limit: (input.limit || 5) * 6,
+        });
+
+        if (rows.length === 0) {
+          return fail('no_matching_shops', `No shop near ${location.label} stocks that. Nothing was ordered.`);
+        }
+
+        const byShop = new Map();
+        for (const row of rows) {
+          if (!byShop.has(row.shopId)) {
+            byShop.set(row.shopId, {
+              shop_id: row.shopId,
+              name: row.shopName,
+              // Order on the raw distance; show the rounded one.
+              distanceKm: Number(row.distanceKm),
+              distance_km: roundedKm(row.distanceKm),
+              items: [],
+            });
+          }
+          byShop.get(row.shopId).items.push({
+            product_id: row.productId,
+            name: row.productName,
+            price: row.price,
+            unit: row.unit,
+            stock: row.stock,
+          });
+        }
+
+        const shops = [...byShop.values()]
+          .sort((a, b) => a.distanceKm - b.distanceKm || a.shop_id.localeCompare(b.shop_id))
+          .slice(0, input.limit || 5)
+          .map(({ distanceKm, ...shop }) => shop);
+
+        if (deps.diagnostics) {
+          deps.diagnostics.shopCount = shops.length;
+          deps.diagnostics.precision = location.precision_source || 'typed';
+        }
+
+        const lines = shops.map((shop, index) => {
+          const items = shop.items.map((item) => `   - ${item.name} — ${item.price} [${item.product_id}]`).join('\n');
+          return `${index + 1}. ${shop.name} — ${shop.distance_km} km\n${items}`;
+        });
+
+        // "lifeboy 2 pack" carries its own quantity; hand it over so the model
+        // does not have to decide whether "pack" was a word or a count.
+        const packSize = parsePackSize(input.query);
+
+        return ok(
+          `Shops near ${location.label} that have "${input.query.trim()}":\n${lines.join('\n')}\n\nUse one of these product ids with quote_order. search_products shows the rest of a shop's catalog.`,
+          {
+            query: input.query.trim(),
+            ...(packSize ? { pack_size: packSize } : {}),
+            location: {
+              label: location.label,
+              precision_source: location.precision_source || 'typed',
+              needs_exact_address: Boolean(location.needs_exact_address),
+            },
+            shops,
+          }
+        );
       } catch (error) {
         return fromError(error);
       }
@@ -464,7 +699,7 @@ export function registerTools(server, { repo, config, deps }) {
     {
       title: 'Save a delivery address',
       description:
-        'Save a delivery address. Pass latitude/longitude when the customer shared a map pin; otherwise pass the address text and the server geocodes it. The response says whether the match is house, street, area, or city. City-level matches cannot be used for delivery.',
+        'Save the delivery address the customer typed. The coordinate comes from the app location captured at Dukaan sign-in, or from latitude/longitude when the customer shared a map pin; a geocoder is consulted only when neither exists. The typed text is stored exactly as given and is what the shop reads and calls. The response says whether the address was verified by the map service.',
       inputSchema: z.object({
         address_id: z.string().uuid().optional(),
         label: z.string().max(40).optional(),
@@ -477,6 +712,9 @@ export function registerTools(server, { repo, config, deps }) {
         latitude: z.number().min(-90).max(90).optional(),
         longitude: z.number().min(-180).max(180).optional(),
         accuracy_m: z.number().min(0).max(100000).optional(),
+        // Accepted for older clients, then ignored on purpose: the server derives
+        // `source` from the evidence it actually has, so a caller cannot promote
+        // a shared pin into a geocoded address.
         source: z.enum(['map_pin', 'geocoded', 'manual']).optional(),
         is_default: z.boolean().optional(),
       }),
@@ -500,38 +738,89 @@ export function registerTools(server, { repo, config, deps }) {
         };
         if (!merged.line1) return fail('address_required', 'Add a house/street line for the address.');
 
+        // Where the delivery coordinate comes from, in priority order:
+        //
+        //   1. coordinates the customer just shared in the chat;
+        //   2. an edit that did not change the text  -> keep what we already had;
+        //   3. the fix captured when they connected the assistant (<=30 days);
+        //   4. a geocoder, and only now, because it is the slowest and least
+        //      reliable source and the decision of 2026-10-26 is that it must
+        //      never be on the happy path.
+        //
+        // The old code geocoded first and returned `address_not_found` when the
+        // map service missed, which blocked an address we already knew the
+        // position of. It also defaulted `match_type` to 'house' whenever a
+        // coordinate existed, so a shared pin was stored as a verified rooftop.
+        const nowMs = deps.now ? deps.now() : Date.now();
+        // Compare trimmed values on both sides. `merged` is trimmed, so a caller
+        // that re-submits the stored text with a stray space would otherwise look
+        // like an edit, skip the "keep what we had" rung, and silently replace a
+        // verified geocode with the app location.
+        const same = (key) => String(input[key] ?? '').trim() === String(existing?.[key] ?? '').trim();
+        const textChanged = ['line1', 'line2', 'landmark', 'city', 'state', 'pincode'].some(
+          (key) => input[key] !== undefined && !same(key)
+        );
+        const appLocation = storedLocationFromProfile(await repo.getProfile(), nowMs);
+
         let lat = input.latitude;
         let lng = input.longitude;
-        let accuracyM = input.accuracy_m;
-        let matchType = 'house';
-        let source = input.source || 'map_pin';
+        let accuracyM = input.accuracy_m ?? null;
+        let matchType;
+        let source;
+        let precisionSource;
+        let geocodeVerified = false;
+        let coordsCapturedAt = null;
 
         if (lat !== undefined || lng !== undefined) {
           if (!coordsOk(Number(lat), Number(lng))) return fail('location_invalid', 'Pass both latitude and longitude.');
-          accuracyM = accuracyM ?? 15;
+          // A pin proves where the phone is, never which door the typed text
+          // names, so this can only ever be street-level.
+          precisionSource = 'chat_shared';
+          matchType = 'street';
+          source = 'map_pin';
+          coordsCapturedAt = new Date(nowMs).toISOString();
+        } else if (existing && !textChanged) {
+          lat = existing.lat;
+          lng = existing.lng;
+          accuracyM = existing.accuracy_m ?? accuracyM;
+          matchType = existing.match_type;
+          source = existing.source;
+          // An edit must not launder a pin into a verified address, in either
+          // direction: keep exactly what the row was created with.
+          precisionSource = existing.precision_source || 'typed';
+          geocodeVerified = Boolean(existing.geocode_verified);
+          coordsCapturedAt = existing.coords_captured_at || null;
+        } else if (appLocation.ok) {
+          lat = appLocation.lat;
+          lng = appLocation.lng;
+          accuracyM = appLocation.accuracyM ?? accuracyM;
+          precisionSource = 'app_location';
+          matchType = 'street';
+          source = 'map_pin';
+          coordsCapturedAt = appLocation.capturedAt;
         } else {
-          const textChanged = ['line1', 'line2', 'landmark', 'city', 'state', 'pincode'].some(
-            (key) => input[key] !== undefined && String(input[key] || '') !== String(existing?.[key] || '')
-          );
-          if (existing && !textChanged) {
-            lat = existing.lat;
-            lng = existing.lng;
-            accuracyM = existing.accuracy_m;
-            matchType = existing.match_type;
-            source = existing.source;
-          } else {
-            const geo = await geocodeAddress(merged, {
-              fetchImpl: deps.fetchImpl,
-              googleKey: deps.config.googleKey,
-              provider: deps.config.geocoderProvider,
-            });
-            if (!geo.ok) return fail(geo.code, geo.message);
-            lat = geo.lat;
-            lng = geo.lng;
-            accuracyM = geo.accuracyM;
-            matchType = geo.matchType;
-            source = 'geocoded';
+          const geo = await geocodeAddress(merged, {
+            fetchImpl: deps.fetchImpl,
+            googleKey: deps.config.googleKey,
+            provider: deps.config.geocoderProvider,
+          });
+          if (!geo.ok) {
+            // No pin, no app fix, no geocode: the honest answer is "ask for a
+            // pin". `address_not_found` blamed the customer's address for what
+            // is really a missing coordinate.
+            return fail(
+              'location_required',
+              'That address could not be located and no location is on file. Ask the customer to share a map pin, or to allow location in the Dukaan app.'
+            );
           }
+          lat = geo.lat;
+          lng = geo.lng;
+          accuracyM = geo.accuracyM ?? accuracyM;
+          matchType = geo.matchType;
+          source = 'geocoded';
+          precisionSource = 'geocoded';
+          geocodeVerified = true;
+          coordsCapturedAt = new Date(nowMs).toISOString();
         }
 
         const address = await repo.saveAddress({
@@ -543,6 +832,9 @@ export function registerTools(server, { repo, config, deps }) {
           accuracy_m: accuracyM,
           match_type: matchType,
           source,
+          precision_source: precisionSource,
+          geocode_verified: geocodeVerified,
+          coords_captured_at: coordsCapturedAt,
           is_default: input.is_default,
         });
         // The customer just shared a real position, so remember it for the next
@@ -563,9 +855,19 @@ export function registerTools(server, { repo, config, deps }) {
           }
         }
 
+        // Say which evidence backs the delivery point. A geocoded address can be
+        // quoted as verified; a pin cannot, and the shop is told to call.
+        const proof = address.geocode_verified
+          ? `Address matched by the map service (${address.match_type}).`
+          : 'Address saved as typed; the delivery pin is the customer location, so the shop may call to confirm.';
         return ok(
-          `Saved ${address.label ? `${address.label}: ` : ''}${address.address}. Match: ${address.match_type}${address.match_type === 'area' ? ' (the shop may call to confirm)' : ''}.`,
-          { address, needs_exact_address: address.match_type === 'city' }
+          `Saved ${address.label ? `${address.label}: ` : ''}${address.address}. ${proof}`,
+          {
+            address,
+            needs_exact_address: !address.geocode_verified,
+            precision_source: address.precision_source,
+            geocode_verified: address.geocode_verified,
+          }
         );
       } catch (error) {
         return fromError(error);
@@ -607,7 +909,9 @@ export function registerTools(server, { repo, config, deps }) {
         payment_method: z.enum(['COD']).optional(),
         customer_note: z.string().max(200).optional(),
       }),
-      annotations: { ...WRITE, idempotentHint: false, destructiveHint: false },
+      // Retrying this call is safe: the same basket inside 60 seconds returns the
+      // same quote, and the database rejects a duplicate insert outright.
+      annotations: { ...WRITE, idempotentHint: true, destructiveHint: false },
     },
     async (input) => {
       try {
@@ -620,6 +924,13 @@ export function registerTools(server, { repo, config, deps }) {
 
         const address = await repo.getAddressRow(input.address_id);
         if (!address) return fail('address_required', 'Save a delivery address first, then quote the order.');
+        // A quote is a promise to deliver somewhere. `Number(null)` is 0, so the
+        // blank check has to come before the cast or an empty row would quote
+        // against a point in the Gulf of Guinea.
+        const needsCoordinate = (value) => value === null || value === undefined || value === '' || !Number.isFinite(Number(value));
+        if (needsCoordinate(address.lat) || needsCoordinate(address.lng)) {
+          return fail('location_required', 'That address has no map position. Ask the customer to share a map pin, or to allow location in the Dukaan app.');
+        }
 
         const profile = await repo.getProfile();
         const phone = normalisePhone(profile?.phone);
@@ -649,7 +960,24 @@ export function registerTools(server, { repo, config, deps }) {
         const limits = evaluateOrderLimits(counts);
         if (!limits.ok) return fail(limits.code, limits.message);
 
-        const saved = await repo.createQuote({
+        // Idempotency. Task 7 makes a dead socket retryable, and a customer can
+        // also double-tap; neither may create a second quote, consume the hourly
+        // preview budget, and leave the assistant holding an unused quote id.
+        // A consumed quote is excluded by the query, so an order is never
+        // resurrected as a fresh preview.
+        const requestHash = quoteRequestHash({
+          shopId: shop.shopId,
+          addressId: input.address_id,
+          items: input.items,
+          addressText: formatAddress(address),
+          note: input.customer_note,
+        });
+        const sinceIso = new Date(deps.now() - 60_000).toISOString();
+        const recent = typeof repo.findRecentQuote === 'function'
+          ? await repo.findRecentQuote(requestHash, sinceIso)
+          : null;
+
+        const saved = recent || await repo.createQuote({
           shopUserId: shop.userId,
           address: addressSnapshot(address, profile),
           items: quote.items,
@@ -657,28 +985,22 @@ export function registerTools(server, { repo, config, deps }) {
           paymentMethod: 'COD',
           notes: input.customer_note ? input.customer_note.trim() : null,
           expiresAt: quote.expiresAt,
+          requestHash,
         });
 
-        const lines = quote.items.map(
-          (item) => `${item.quantity} × ${item.name} (${item.unit}) — ${formatRupees(item.totalPaise)}`
-        );
-        const warning = address.match_type === 'area' ? '\nAddress match is area-level; the shop may call to confirm.' : '';
-        return ok(
-          `Order preview from ${shop.name}:\n${lines.join('\n')}\nTotal: ${quote.total}\nDeliver to: ${formatAddress(address)}${warning}\n\nAsk the customer to confirm. Only then call place_order with quote_id ${saved.id} and confirmed: true. This quote expires at ${quote.expiresAt}.`,
-          {
-            quote_id: saved.id,
-            shop: shopPublic(shop, service.distanceKm, catalog.length),
-            items: quote.items,
-            total: Number((quote.totalPaise / 100).toFixed(2)),
-            total_display: quote.total,
-            address: formatAddress(address),
-            address_match_type: address.match_type,
-            payment_method: 'COD',
-            expires_at: quote.expiresAt,
-            requires_confirmation: true,
-            warnings: address.match_type === 'area' ? ['Area-level address; the shop may call to confirm.'] : [],
-          }
-        );
+        if (deps.diagnostics) deps.diagnostics.precision = address.precision_source || 'typed';
+
+        return quoteResult({
+          quote: saved,
+          items: saved.items,
+          shop,
+          address,
+          profile,
+          phone,
+          distanceKm: service.distanceKm,
+          catalogCount: catalog.length,
+          reused: Boolean(recent),
+        });
       } catch (error) {
         return fromError(error);
       }

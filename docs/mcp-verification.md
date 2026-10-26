@@ -16,7 +16,7 @@ Last run on 2026-10-26:
 
 | Command | Result | Scope |
 |---|---|---|
-| `npm run mcp:test` | 20 files passed | pure rules, saved location, consent UI, auth, geo, schema, HTTP, tools, MCP App |
+| `npm run mcp:test` | 29 files passed | pure rules, saved location, consent UI, auth, geo, schema, HTTP, tools, MCP App |
 | `npm test` | passed | existing app regression suite |
 | `npx tsc --noEmit` | passed | TypeScript |
 | `npm run build` | passed | Vite static bundle + secret guard |
@@ -71,6 +71,28 @@ Last run on 2026-10-26:
 - `scripts/test_mcp_supabase_key.js` proves the fallback ladder, the caching, the
   `invalid` vs `unknown` split, the `/health` field, the 503, and that
   `fromError` turns "Invalid API key" into an operator error.
+
+### Phase 3 — scale (10 000 shops) and catalog hygiene
+
+- `supabase/migrations/2026-11-01_mcp_nearby_search.sql` moves the distance work into two
+  `SECURITY DEFINER` functions (`mcp_find_shops`, `mcp_search_nearby_products`) with a bounding-box
+  prefilter, the delivery-radius rule, and the row limit inside Postgres. No extension dependency.
+- `find_products_nearby` answers "which shop near me has soap" in one call, replacing find_shops plus
+  one search per shop. Rows with an unparseable price (₹0, "FREE") are dropped in the data layer, so
+  an unsellable item can never reach the card and then fail inside quote_order.
+- `mcp_find_shops` takes `p_ignore_radius` for the "nearest shop is X km away" probe; without it the
+  radius filter also applied to the probe, so the out-of-range message was unreachable.
+- Alias expansion is shelf words only (`sabun`, `sope`), never brand fragments: the nearby query ORs
+  every token, so "dettol" would have matched Dettol handwash and "paste" tomato paste. `scripts/test_mcp_nearby_products.js` covers grouping, ordering, aliases, and
+  the empty case.
+- `mcp/catalog.js` folds units into one vocabulary, reads a pack count from "2 pack", drops
+  placeholder images, tolerates one or two edits ("lifebuoy" → "Lifeboy", "soop" → "soap"), and ranks
+  equally good matches by stock. Per-shop search still shows a sold-out row so the assistant can say so.
+- `npm run qa:load` seeds 10 000 shops / 200 000 products in PGlite and checks the SQL answer against
+  a brute-force oracle: **100 % correct shop, p50 0.7 ms / p95 0.9 ms, a shop beyond row 9 000 found**.
+  PGlite runs in-process WASM, so these numbers exclude network round-trips and connection pooling: they are a floor for the query itself, not a production latency measurement. Re-measure against the real project before promising a p95 to anyone.
+- `npm run qa:personas` runs P1–P10 (transcript replay, no-location, Hinglish, dense area, out of
+  range, merchant edges, adversary, flaky socket, stale fix, non-technical): **10 pass, 0 fail**.
 
 ### Phase 2 — MCP server and auth
 

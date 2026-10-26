@@ -2,6 +2,7 @@ import assert from 'assert';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { createServerFactory } from '../mcp/server.js';
 import { DataError } from '../mcp/data.js';
+import { rankShops, isShopAvailable } from '../mcp/geometry.js';
 
 console.log('--- RUNNING MCP TOOL FLOW TESTS ---');
 let n = 0;
@@ -61,6 +62,17 @@ function makeRepo({ phone = '+919876543210', location = null } = {}) {
   let savedLocation = location;
   return {
     userId,
+
+    // Mirrors the SQL function: availability, the shop's own radius, and the
+    // ignoreRadius probe for the "nearest shop is X km away" message.
+    findShopsNearby: async ({ lat, lng, radiusKm, query, limit, ignoreRadius }) => {
+      const loc = { latitude: lat, longitude: lng };
+      const term = String(query || '').replace(/\\/g, '').toLowerCase();
+      return rankShops([shop], loc)
+        .filter((entry) => isShopAvailable(entry) && (ignoreRadius || entry.distanceKm <= Math.min(radiusKm, entry.deliveryRadiusKm)))
+        .filter((entry) => (term ? entry.name.toLowerCase().includes(term) : true))
+        .slice(0, limit);
+    },
     loadEnabledShops: async () => [shop],
     getShop: async (id) => (id === 'shop_one' ? shop : null),
     getShopByUserId: async (id) => (id === shopUserId
