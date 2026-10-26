@@ -194,6 +194,37 @@ npm run build:mcp-app  # rebuild the checkout card after UI changes
 
 A local session can be tested with a real Supabase access token from the app, or with `npx mcp-remote http://localhost:8787/mcp --allow-http`.
 
+### When every customer-owned tool fails with "Invalid API key"
+
+Symptom: `find_shops` (when it reads the saved app location), `get_customer_profile`,
+`save_address`, and `quote_order` all return `profile_unavailable: Invalid API key`,
+while `/health`, discovery, and shop-only reads still work.
+
+Cause: the server's **anon** key is refused by the project. The service key is
+fine, which is why reads that bypass RLS keep working. This usually means the
+Vercel runtime variable `SUPABASE_ANON_KEY` is an older copy than the project's
+current anon/publishable key, or points at a different project. A rotated legacy
+key still decodes as `ref: <project>, role: anon`, which is why boot-time claim
+checks cannot catch it.
+
+The server now handles this itself (`mcp/keys.js`):
+
+- before any tool runs, it asks the project which candidate key it accepts
+  (`GET /auth/v1/settings`), and uses the first one that answers 200;
+- candidates are `SUPABASE_ANON_KEY`, `SUPABASE_PUBLISHABLE_KEY`,
+  `VITE_SUPABASE_ANON_KEY`, `VITE_SUPABASE_PUBLISHABLE_KEY`;
+- `/health` reports `supabaseKey: "ok" | "invalid" | "unknown" | "skipped"`;
+- when nothing is accepted, MCP calls get `503 server_misconfigured` naming the
+  variable, and tool-level failures are translated to `anon_key_invalid` — never
+  to advice about re-authenticating the client.
+
+Fix, if `/health` says `"invalid"`:
+
+1. Copy the value of `VITE_SUPABASE_ANON_KEY` (the build key that demonstrably
+   works) into `SUPABASE_ANON_KEY` in Vercel → Settings → Environment Variables.
+2. Redeploy so the function picks it up.
+3. `curl -s https://<site>/health` and confirm `"supabaseKey":"ok"`.
+
 ## 9. Dashboard behavior
 
 MCP orders go straight to Supabase. The dashboard now:
