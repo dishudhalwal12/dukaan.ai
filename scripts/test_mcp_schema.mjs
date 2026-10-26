@@ -10,6 +10,7 @@ const bootstrap = readFileSync(resolve(root, 'scripts/fixtures/mcp_schema_bootst
 const migration = readFileSync(resolve(root, 'supabase/migrations/2026-10-26_mcp.sql'), 'utf8');
 const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp_default_on.sql'), 'utf8');
 const customerLocation = readFileSync(resolve(root, 'supabase/migrations/2026-10-28_mcp_customer_location.sql'), 'utf8');
+const addressSource = readFileSync(resolve(root, 'supabase/migrations/2026-10-29_address_source.sql'), 'utf8');
 
 console.log('--- RUNNING MCP SCHEMA / RPC TESTS (PGlite) ---');
 let n = 0;
@@ -20,13 +21,20 @@ await db.exec(bootstrap);
 await db.exec(migration);
 await db.exec(defaultOn);
 await db.exec(customerLocation);
-ok('all three migrations apply to a Supabase-shaped Postgres database');
 
 const u1 = '11111111-1111-4111-8111-111111111111';
 const u2 = '22222222-2222-4222-8222-222222222222';
 const s1 = '33333333-3333-4333-8333-333333333333';
 const s2 = '44444444-4444-4444-8444-444444444444';
 await db.query('INSERT INTO auth.users (id) VALUES ($1), ($2), ($3), ($4)', [u1, u2, s1, s2]);
+
+// Two rows written BEFORE 2026-10-29 exists, so the backfill has something to fix.
+await db.query(
+  "INSERT INTO public.customer_addresses (user_id, line1, lat, lng, source, match_type) VALUES ($1, 'geocoded before the migration', 26.9, 75.8, 'geocoded', 'house'), ($1, 'typed before the migration', 26.9, 75.8, 'manual', 'area')",
+  [u1]
+);
+await db.exec(addressSource);
+ok('all four migrations apply to a Supabase-shaped Postgres database');
 await db.query(
   "INSERT INTO public.business_profiles (user_id, store_name, store_lat, store_lng, mcp_enabled) VALUES ($1, 'Shop One', 26.9124, 75.7873, true), ($2, 'Shop Two', 26.92, 75.79, true)",
   [s1, s2]
@@ -181,6 +189,36 @@ await db.exec('RESET request.jwt.claim.sub;');
 const untouched = await db.query('SELECT location_lat FROM public.customer_profiles WHERE user_id = $1', [u1]);
 assert.strictEqual(Number(untouched.rows[0].location_lat), 26.9124);
 ok('RLS lets the owner write their position and hides it from everyone else');
+
+// ── the address-source columns (2026-10-29) ─────────────────────────────────
+const addressColumns = await db.query(
+  "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'customer_addresses' AND column_name IN ('precision_source','geocode_verified','coords_captured_at')"
+);
+assert.deepStrictEqual(
+  addressColumns.rows.map((row) => row.column_name).sort(),
+  ['coords_captured_at', 'geocode_verified', 'precision_source']
+);
+
+const backfill = await db.query(
+  "SELECT line1, precision_source, geocode_verified FROM public.customer_addresses WHERE user_id = $1 ORDER BY line1",
+  [u1]
+);
+const geocodedRow = backfill.rows.find((row) => row.line1.startsWith('geocoded'));
+const typedRow = backfill.rows.find((row) => row.line1.startsWith('typed'));
+assert.strictEqual(geocodedRow.geocode_verified, true, 'a geocoded row is marked verified');
+assert.strictEqual(geocodedRow.precision_source, 'geocoded');
+assert.strictEqual(typedRow.geocode_verified, false, 'a typed row is never marked verified');
+assert.strictEqual(typedRow.precision_source, 'typed');
+ok('existing addresses are backfilled: geocoded = verified, everything else is not');
+
+let badPrecision = '';
+try {
+  await db.query("UPDATE public.customer_addresses SET precision_source = 'telepathy' WHERE user_id = $1", [u1]);
+} catch (error) {
+  badPrecision = String(error.message || error);
+}
+assert.match(badPrecision, /customer_addresses_precision_source_check/);
+ok('precision_source only accepts the four known provenance values');
 
 console.log(`\nAll ${n} MCP schema checks passed.`);
 await db.close();
