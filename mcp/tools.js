@@ -480,7 +480,7 @@ export function registerTools(server, { repo, config, deps }) {
     {
       title: 'Save a delivery address',
       description:
-        'Save a delivery address. Pass latitude/longitude when the customer shared a map pin; otherwise pass the address text and the server geocodes it. The response says whether the match is house, street, area, or city. City-level matches cannot be used for delivery.',
+        'Save the delivery address the customer typed. The coordinate comes from the app location captured at Dukaan sign-in, or from latitude/longitude when the customer shared a map pin; a geocoder is consulted only when neither exists. The typed text is stored exactly as given and is what the shop reads and calls. The response says whether the address was verified by the map service.',
       inputSchema: z.object({
         address_id: z.string().uuid().optional(),
         label: z.string().max(40).optional(),
