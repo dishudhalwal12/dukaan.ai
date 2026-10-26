@@ -30,13 +30,22 @@ const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
  * basket. Ordering does not matter (the array is sorted), so a model that lists
  * the same two items in a different order still hits the same quote.
  */
-function quoteRequestHash({ shopId, addressId, items }) {
+function quoteRequestHash({ shopId, addressId, items, addressText, note }) {
   const normalised = (Array.isArray(items) ? items : [])
     .map((item) => ({ id: String(item.product_id), qty: Number(item.quantity) }))
     .sort((a, b) => a.id.localeCompare(b.id));
+  // The address TEXT and the note are part of the order, not decoration: if the
+  // customer fixes a house number or adds "ring twice", reusing the old quote
+  // would ship the old snapshot while the confirmation shows the new text.
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify({ shopId: String(shopId), addressId: String(addressId), items: normalised }))
+    .update(JSON.stringify({
+      shopId: String(shopId),
+      addressId: String(addressId),
+      addressText: String(addressText || '').trim(),
+      note: String(note || '').trim(),
+      items: normalised,
+    }))
     .digest('hex');
 }
 
@@ -603,8 +612,13 @@ export function registerTools(server, { repo, config, deps }) {
         // position of. It also defaulted `match_type` to 'house' whenever a
         // coordinate existed, so a shared pin was stored as a verified rooftop.
         const nowMs = deps.now ? deps.now() : Date.now();
+        // Compare trimmed values on both sides. `merged` is trimmed, so a caller
+        // that re-submits the stored text with a stray space would otherwise look
+        // like an edit, skip the "keep what we had" rung, and silently replace a
+        // verified geocode with the app location.
+        const same = (key) => String(input[key] ?? '').trim() === String(existing?.[key] ?? '').trim();
         const textChanged = ['line1', 'line2', 'landmark', 'city', 'state', 'pincode'].some(
-          (key) => input[key] !== undefined && String(input[key] || '') !== String(existing?.[key] || '')
+          (key) => input[key] !== undefined && !same(key)
         );
         const appLocation = storedLocationFromProfile(await repo.getProfile(), nowMs);
 
@@ -755,7 +769,9 @@ export function registerTools(server, { repo, config, deps }) {
         payment_method: z.enum(['COD']).optional(),
         customer_note: z.string().max(200).optional(),
       }),
-      annotations: { ...WRITE, idempotentHint: false, destructiveHint: false },
+      // Retrying this call is safe: the same basket inside 60 seconds returns the
+      // same quote, and the database rejects a duplicate insert outright.
+      annotations: { ...WRITE, idempotentHint: true, destructiveHint: false },
     },
     async (input) => {
       try {
@@ -809,7 +825,13 @@ export function registerTools(server, { repo, config, deps }) {
         // preview budget, and leave the assistant holding an unused quote id.
         // A consumed quote is excluded by the query, so an order is never
         // resurrected as a fresh preview.
-        const requestHash = quoteRequestHash({ shopId: shop.shopId, addressId: input.address_id, items: input.items });
+        const requestHash = quoteRequestHash({
+          shopId: shop.shopId,
+          addressId: input.address_id,
+          items: input.items,
+          addressText: formatAddress(address),
+          note: input.customer_note,
+        });
         const sinceIso = new Date(deps.now() - 60_000).toISOString();
         const recent = typeof repo.findRecentQuote === 'function'
           ? await repo.findRecentQuote(requestHash, sinceIso)

@@ -23,9 +23,13 @@
 ALTER TABLE public.order_quotes
     ADD COLUMN IF NOT EXISTS request_hash TEXT;
 
-CREATE INDEX IF NOT EXISTS order_quotes_request_hash_idx
-    ON public.order_quotes(user_id, request_hash, created_at DESC)
-    WHERE request_hash IS NOT NULL;
+-- UNIQUE on purpose. A plain index only makes the pre-check fast; it does not
+-- stop two requests that both read "no quote" from both inserting. Uniqueness is
+-- what makes the retry safe. The predicate excludes consumed quotes, so a fresh
+-- quote for the same basket is allowed the moment the old one becomes an order.
+CREATE UNIQUE INDEX IF NOT EXISTS order_quotes_request_hash_idx
+    ON public.order_quotes(user_id, request_hash)
+    WHERE request_hash IS NOT NULL AND consumed_at IS NULL;
 
 COMMENT ON COLUMN public.order_quotes.request_hash IS
     'sha256 of shop + address + normalised basket. A retry inside 60s returns the existing quote instead of inserting a second one.';

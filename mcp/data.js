@@ -365,7 +365,16 @@ export async function createQuote(db, row) {
     })
     .select('*')
     .single();
-  if (error) fail('quote_save_failed', error.message);
+  if (error) {
+    // A concurrent identical request (or the transparent socket retry) may have
+    // committed first. The unique partial index tells us so; returning the
+    // winner's row is the whole point of the index.
+    if (String(error.code) === '23505' && row.requestHash) {
+      const existing = await findRecentQuote(db, row.userId, row.requestHash, new Date(Date.now() - 60_000).toISOString());
+      if (existing) return existing;
+    }
+    fail('quote_save_failed', error.message);
+  }
   return data;
 }
 

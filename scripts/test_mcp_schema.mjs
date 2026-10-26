@@ -234,9 +234,11 @@ const hashColumn = await db.query(
 assert.strictEqual(hashColumn.rows.length, 1, 'order_quotes.request_hash exists');
 assert.strictEqual(hashColumn.rows[0].is_nullable, 'YES', 'old quotes keep working without a hash');
 const hashIndex = await db.query(
-  "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'order_quotes_request_hash_idx'"
+  "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'order_quotes_request_hash_idx'"
 );
 assert.strictEqual(hashIndex.rows.length, 1, 'the lookup index exists');
+assert.match(hashIndex.rows[0].indexdef, /CREATE UNIQUE INDEX/i, 'uniqueness is what makes the retry safe, not just speed');
+assert.match(hashIndex.rows[0].indexdef, /consumed_at IS NULL/i, 'a consumed quote must not block a fresh one');
 ok('quotes carry a request hash with the index the retry lookup needs');
 
 console.log(`\nAll ${n} MCP schema checks passed.`);
