@@ -22,6 +22,17 @@ for (const route of ['/health', '/mcp', '/.well-known/oauth-protected-resource',
   assert(vercel.rewrites.some((rule) => rule.source === route), `vercel.json must route ${route}`);
 }
 console.log('✓ 0: vercel.json routes health, MCP, discovery, and consent');
+
+const productionAnonKey = vercel.build?.env?.VITE_SUPABASE_ANON_KEY;
+const productionSupabaseUrl = vercel.build?.env?.VITE_SUPABASE_URL;
+assert(productionAnonKey, 'vercel.json must define the build-time anon key');
+assert(productionSupabaseUrl, 'vercel.json must define the build-time Supabase URL');
+const anonPayload = JSON.parse(Buffer.from(productionAnonKey.split('.')[1], 'base64url').toString('utf8'));
+const projectRef = new URL(productionSupabaseUrl).hostname.split('.')[0];
+assert.strictEqual(anonPayload.ref, projectRef, 'the production anon key must belong to the configured project');
+assert.strictEqual(anonPayload.role, 'anon', 'the production browser key must be an anon key');
+console.log('✓ 0b: the production anon key belongs to the configured project');
+
 const server = http.createServer((req, res) => handler(req, res));
 await new Promise((resolve) => server.listen(8789, resolve));
 
