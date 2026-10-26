@@ -12,6 +12,7 @@ const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp
 const customerLocation = readFileSync(resolve(root, 'supabase/migrations/2026-10-28_mcp_customer_location.sql'), 'utf8');
 const addressSource = readFileSync(resolve(root, 'supabase/migrations/2026-10-29_address_source.sql'), 'utf8');
 const orderCustomerMapsUrl = readFileSync(resolve(root, 'supabase/migrations/2026-10-31_order_customer_mapsurl.sql'), 'utf8');
+const quoteRequestHash = readFileSync(resolve(root, 'supabase/migrations/2026-10-30_quote_request_hash.sql'), 'utf8');
 
 console.log('--- RUNNING MCP SCHEMA / RPC TESTS (PGlite) ---');
 let n = 0;
@@ -36,7 +37,8 @@ await db.query(
 );
 await db.exec(addressSource);
 await db.exec(orderCustomerMapsUrl);
-ok('all five migrations apply to a Supabase-shaped Postgres database');
+await db.exec(quoteRequestHash);
+ok('all six migrations apply to a Supabase-shaped Postgres database');
 await db.query(
   "INSERT INTO public.business_profiles (user_id, store_name, store_lat, store_lng, mcp_enabled) VALUES ($1, 'Shop One', 26.9124, 75.7873, true), ($2, 'Shop Two', 26.92, 75.79, true)",
   [s1, s2]
@@ -224,6 +226,18 @@ try {
 }
 assert.match(badPrecision, /customer_addresses_precision_source_check/);
 ok('precision_source only accepts the four known provenance values');
+
+// ── retry-safe quotes (2026-10-30) ─────────────────────────────────────────
+const hashColumn = await db.query(
+  "SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'order_quotes' AND column_name = 'request_hash'"
+);
+assert.strictEqual(hashColumn.rows.length, 1, 'order_quotes.request_hash exists');
+assert.strictEqual(hashColumn.rows[0].is_nullable, 'YES', 'old quotes keep working without a hash');
+const hashIndex = await db.query(
+  "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'order_quotes_request_hash_idx'"
+);
+assert.strictEqual(hashIndex.rows.length, 1, 'the lookup index exists');
+ok('quotes carry a request hash with the index the retry lookup needs');
 
 console.log(`\nAll ${n} MCP schema checks passed.`);
 await db.close();

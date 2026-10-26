@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
@@ -23,6 +24,69 @@ const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
   item_count: itemCount,
   accepting_orders: isShopAvailable(shop),
 });
+
+/**
+ * A stable fingerprint of "the same request": shop, delivery address, and the
+ * basket. Ordering does not matter (the array is sorted), so a model that lists
+ * the same two items in a different order still hits the same quote.
+ */
+function quoteRequestHash({ shopId, addressId, items }) {
+  const normalised = (Array.isArray(items) ? items : [])
+    .map((item) => ({ id: String(item.product_id), qty: Number(item.quantity) }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({ shopId: String(shopId), addressId: String(addressId), items: normalised }))
+    .digest('hex');
+}
+
+/**
+ * One shape for a quote result, whether the quote was just created or reused.
+ *
+ * The confirmation is rendered here, from the same numbers the order will carry,
+ * so a model can read it out but cannot paraphrase a price or drop the phone
+ * number the shop needs to call.
+ */
+function quoteResult({ quote, items, shop, address, profile, phone, distanceKm, catalogCount, reused }) {
+  const addressVerified = Boolean(address.geocode_verified);
+  const totalPaise = items.reduce((sum, item) => sum + (Number(item.totalPaise) || 0), 0);
+  const totalDisplay = formatRupees(totalPaise);
+
+  const confirmation = [
+    `Name: ${profile.full_name}`,
+    `Phone: ${phone}`,
+    `Address: ${formatAddress(address)}`,
+    ...items.map((item) => `${item.name} × ${item.quantity} — ${formatRupees(item.totalPaise)}`),
+    `Total: ${totalDisplay} — cash on delivery`,
+  ].join('\n');
+
+  const caveats = [];
+  if (address.match_type === 'area') caveats.push('Area-level address; the shop may call to confirm.');
+  if (!addressVerified) caveats.push('The delivery pin is the customer location, not a verified rooftop; the shop may call to confirm.');
+  const warning = caveats.length > 0 ? `\n${caveats.join(' ')}` : '';
+
+  return ok(
+    `Order preview from ${shop.name}:\n${confirmation}\nDeliver to pin: ${mapsUrl(address.lat, address.lng)}${warning}\n\nAsk the customer to confirm by reading this back, then wait for an explicit yes. Only then call place_order with quote_id ${quote.id} and confirmed: true. This quote expires at ${quote.expires_at}.`,
+    {
+      quote_id: quote.id,
+      shop: shopPublic(shop, distanceKm, catalogCount),
+      items,
+      total: Number((totalPaise / 100).toFixed(2)),
+      total_display: totalDisplay,
+      address: formatAddress(address),
+      address_match_type: address.match_type,
+      address_verified: addressVerified,
+      precision_source: address.precision_source || 'typed',
+      maps_url: mapsUrl(address.lat, address.lng),
+      confirmation,
+      payment_method: 'COD',
+      expires_at: quote.expires_at,
+      requires_confirmation: true,
+      reused: Boolean(reused),
+      warnings: caveats,
+    }
+  );
+}
 
 const coordsOk = (lat, lng) => Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
@@ -734,7 +798,18 @@ export function registerTools(server, { repo, config, deps }) {
         const limits = evaluateOrderLimits(counts);
         if (!limits.ok) return fail(limits.code, limits.message);
 
-        const saved = await repo.createQuote({
+        // Idempotency. Task 7 makes a dead socket retryable, and a customer can
+        // also double-tap; neither may create a second quote, consume the hourly
+        // preview budget, and leave the assistant holding an unused quote id.
+        // A consumed quote is excluded by the query, so an order is never
+        // resurrected as a fresh preview.
+        const requestHash = quoteRequestHash({ shopId: shop.shopId, addressId: input.address_id, items: input.items });
+        const sinceIso = new Date(deps.now() - 60_000).toISOString();
+        const recent = typeof repo.findRecentQuote === 'function'
+          ? await repo.findRecentQuote(requestHash, sinceIso)
+          : null;
+
+        const saved = recent || await repo.createQuote({
           shopUserId: shop.userId,
           address: addressSnapshot(address, profile),
           items: quote.items,
@@ -742,45 +817,20 @@ export function registerTools(server, { repo, config, deps }) {
           paymentMethod: 'COD',
           notes: input.customer_note ? input.customer_note.trim() : null,
           expiresAt: quote.expiresAt,
+          requestHash,
         });
 
-        // The confirmation is rendered here, from the same numbers the order will
-        // carry, so a model can read it out but cannot paraphrase a price or drop
-        // the phone number the shop needs to call.
-        const addressVerified = Boolean(address.geocode_verified);
-        const confirmation = [
-          `Name: ${profile.full_name}`,
-          `Phone: ${phone}`,
-          `Address: ${formatAddress(address)}`,
-          ...quote.items.map((item) => `${item.name} × ${item.quantity} — ${formatRupees(item.totalPaise)}`),
-          `Total: ${quote.total} — cash on delivery`,
-        ].join('\n');
-
-        const caveats = [];
-        if (address.match_type === 'area') caveats.push('Area-level address; the shop may call to confirm.');
-        if (!addressVerified) caveats.push('The delivery pin is the customer location, not a verified rooftop; the shop may call to confirm.');
-        const warning = caveats.length > 0 ? `\n${caveats.join(' ')}` : '';
-
-        return ok(
-          `Order preview from ${shop.name}:\n${confirmation}\nDeliver to pin: ${mapsUrl(address.lat, address.lng)}${warning}\n\nAsk the customer to confirm by reading this back, then wait for an explicit yes. Only then call place_order with quote_id ${saved.id} and confirmed: true. This quote expires at ${quote.expiresAt}.`,
-          {
-            quote_id: saved.id,
-            shop: shopPublic(shop, service.distanceKm, catalog.length),
-            items: quote.items,
-            total: Number((quote.totalPaise / 100).toFixed(2)),
-            total_display: quote.total,
-            address: formatAddress(address),
-            address_match_type: address.match_type,
-            address_verified: addressVerified,
-            precision_source: address.precision_source || 'typed',
-            maps_url: mapsUrl(address.lat, address.lng),
-            confirmation,
-            payment_method: 'COD',
-            expires_at: quote.expiresAt,
-            requires_confirmation: true,
-            warnings: caveats,
-          }
-        );
+        return quoteResult({
+          quote: saved,
+          items: saved.items,
+          shop,
+          address,
+          profile,
+          phone,
+          distanceKm: service.distanceKm,
+          catalogCount: catalog.length,
+          reused: Boolean(recent),
+        });
       } catch (error) {
         return fromError(error);
       }

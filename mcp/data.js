@@ -361,11 +361,32 @@ export async function createQuote(db, row) {
       payment_method: row.paymentMethod || 'COD',
       notes: row.notes || null,
       expires_at: row.expiresAt,
+      request_hash: row.requestHash || null,
     })
     .select('*')
     .single();
   if (error) fail('quote_save_failed', error.message);
   return data;
+}
+
+/**
+ * The quote this request already produced, if any: same hash, same customer,
+ * unconsumed, unexpired, created inside the window. One index scan.
+ */
+export async function findRecentQuote(db, userId, requestHash, sinceIso) {
+  if (!requestHash) return null;
+  const { data, error } = await db
+    .from('order_quotes')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('request_hash', requestHash)
+    .is('consumed_at', null)
+    .gte('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) fail('quote_unavailable', error.message);
+  return data || null;
 }
 
 export async function getQuote(db, userId, quoteId) {
