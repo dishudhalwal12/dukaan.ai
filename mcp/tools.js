@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
-import { rankShops, serviceability, roundedKm, isShopAvailable } from './geometry.js';
+import { rankShops, serviceability, roundedKm, isShopAvailable, MAX_DELIVERY_RADIUS_KM } from './geometry.js';
 import { searchCatalog, formatRupees } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
 import { geocodeAddress, formatAddress, mapsUrl, needsExactAddress } from './geo.js';
@@ -285,30 +285,72 @@ export function registerTools(server, { repo, config, deps }) {
           return fail(location.code, location.message);
         }
 
-        const shops = await repo.loadEnabledShops();
-        const ranked = rankShops(shops, location);
-        const serviceable = ranked.filter((shop) => serviceability(shop, location).ok);
-        const filtered = input.query
-          ? serviceable.filter((shop) => shop.name.toLowerCase().includes(input.query.trim().toLowerCase()))
-          : serviceable;
-
-        if (filtered.length === 0) {
-          if (serviceable.length > 0) {
-            return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
-          }
-          const nearest = ranked[0];
-          if (!nearest) {
-            return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
-          }
-          return fail(
-            'out_of_range',
-            `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
-            { nearest_km: roundedKm(nearest.distanceKm) }
-          );
-        }
-
         const limit = input.limit || 5;
-        const results = filtered.slice(0, limit).map((shop) => shopPublic(shop));
+        let results;
+
+        if (typeof repo.findShopsNearby === 'function') {
+          // Production path. The database filters by radius, ranks by distance,
+          // and applies the LIMIT, so a deployment with 10 000 shops transfers a
+          // handful of rows instead of the whole registry.
+          const searchRadiusKm = MAX_DELIVERY_RADIUS_KM;
+          const nearby = await repo.findShopsNearby({
+            lat: location.lat,
+            lng: location.lng,
+            radiusKm: searchRadiusKm,
+            query: input.query ? input.query.trim() : null,
+            limit,
+          });
+
+          if (nearby.length === 0) {
+            // Two different empties: "no shop by that name nearby" and "nothing
+            // delivers here". One extra query separates them, and the second one
+            // still lets the reply say how far the nearest shop is.
+            const inRadius = input.query
+              ? await repo.findShopsNearby({ lat: location.lat, lng: location.lng, radiusKm: searchRadiusKm, query: null, limit: 1 })
+              : [];
+            if (inRadius.length > 0) {
+              return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
+            }
+            const widened = await repo.findShopsNearby({ lat: location.lat, lng: location.lng, radiusKm: 500, query: null, limit: 1 });
+            const nearest = widened[0];
+            if (!nearest) {
+              return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
+            }
+            return fail(
+              'out_of_range',
+              `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
+              { nearest_km: roundedKm(nearest.distanceKm) }
+            );
+          }
+
+          results = nearby.slice(0, limit).map((entry) => shopPublic(entry, entry.distanceKm, entry.catalogItemCount));
+        } else {
+          // Test seam only: fakes written before the SQL search existed provide
+          // the whole registry. Kept so those suites still exercise the tool.
+          const shops = await repo.loadEnabledShops();
+          const ranked = rankShops(shops, location);
+          const serviceable = ranked.filter((shop) => serviceability(shop, location).ok);
+          const filtered = input.query
+            ? serviceable.filter((shop) => shop.name.toLowerCase().includes(input.query.trim().toLowerCase()))
+            : serviceable;
+
+          if (filtered.length === 0) {
+            if (serviceable.length > 0) {
+              return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
+            }
+            const nearest = ranked[0];
+            if (!nearest) {
+              return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
+            }
+            return fail(
+              'out_of_range',
+              `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
+              { nearest_km: roundedKm(nearest.distanceKm) }
+            );
+          }
+
+          results = filtered.slice(0, limit).map((shop) => shopPublic(shop));
+        }
         // Diagnostics for the one request log line: how many shops were ranked
         // and how the location was obtained. No customer data.
         if (deps.diagnostics) {
