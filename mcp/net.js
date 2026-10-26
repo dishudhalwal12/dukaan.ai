@@ -44,6 +44,23 @@ const SOCKET_CODES = new Set([
   'UND_ERR_BODY_TIMEOUT',
 ]);
 
+/**
+ * Retries performed by the default wrapper during the current request. The
+ * serverless instance is reused, so this is drained (not reset) by the request
+ * logger: a line reporting retryCount 1 is exactly one recovered stale socket.
+ */
+let retryTally = 0;
+
+export function bumpRetryTally() {
+  retryTally += 1;
+}
+
+export function takeRetryCount() {
+  const seen = retryTally;
+  retryTally = 0;
+  return seen;
+}
+
 /** True when the failure is transport-level and a fresh socket may succeed. */
 export function isSocketError(error) {
   const code = String(error?.code || error?.cause?.code || '');
@@ -87,5 +104,10 @@ export function createResilientFetch({ fetchImpl = globalThis.fetch, retries = 1
 
 /** The fetch handed to both Supabase clients in mcp/supabase.js. */
 export function createSupabaseFetch(options = {}) {
-  return createResilientFetch(options);
+  return createResilientFetch({
+    // Counting is the default, so every retry is visible in the request log
+    // without every caller having to pass a logger.
+    onRetry: () => bumpRetryTally(),
+    ...options,
+  });
 }

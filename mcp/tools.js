@@ -300,6 +300,12 @@ export function registerTools(server, { repo, config, deps }) {
 
         const limit = input.limit || 5;
         const results = filtered.slice(0, limit).map((shop) => shopPublic(shop));
+        // Diagnostics for the one request log line: how many shops were ranked
+        // and how the location was obtained. No customer data.
+        if (deps.diagnostics) {
+          deps.diagnostics.shopCount = results.length;
+          deps.diagnostics.precision = location.precision_source || 'typed';
+        }
         const lines = results.map(
           (shop, index) => `${index + 1}. ${shop.name} — ${shop.distance_km} km, ${shop.item_count} items`
         );
@@ -819,6 +825,8 @@ export function registerTools(server, { repo, config, deps }) {
           expiresAt: quote.expiresAt,
           requestHash,
         });
+
+        if (deps.diagnostics) deps.diagnostics.precision = address.precision_source || 'typed';
 
         return quoteResult({
           quote: saved,

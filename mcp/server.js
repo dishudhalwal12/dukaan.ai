@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { McpServer, createMcpHandler, requireBearerAuth, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/server';
 import { authUserId, createVerifier } from './auth.js';
 import { createAnonKeyResolver } from './keys.js';
+import { takeRetryCount } from './net.js';
 import { toolLogLine } from './logging.js';
 import { protectedResourceMetadata } from './authConfig.js';
 import { serviceClient, userClient } from './supabase.js';
@@ -33,6 +34,15 @@ Rules:
 export function createServerFactory(config, overrides = {}) {
   return (ctx) => {
     const authInfo = ctx?.authInfo;
+    // A per-request bag the tools may fill with diagnostics that the single log
+    // line needs (how many shops were ranked, how the address was obtained).
+    // It rides on `authInfo.extra` because the MCP transport rebuilds the request
+    // context as `{ authInfo }` and would drop any extra property we added.
+    // Passing it by reference (not a module global) keeps two concurrent requests
+    // in one warm instance from writing into each other's line.
+    const diagnostics = ctx?.authInfo?.extra?.diagnostics && typeof ctx.authInfo.extra.diagnostics === 'object'
+      ? ctx.authInfo.extra.diagnostics
+      : {};
     const userId = authUserId(authInfo);
     if (!userId) throw new Error('unauthorized');
 
@@ -55,6 +65,7 @@ export function createServerFactory(config, overrides = {}) {
         now: overrides.now || (() => Date.now()),
         randomBytes: overrides.randomBytes || ((size) => crypto.randomBytes(size)),
         config,
+        diagnostics,
       },
     });
     return server;
@@ -202,8 +213,20 @@ export function createFetchHandler(config, overrides = {}) {
     }
 
     try {
+      const diagnostics = {};
+      // Hand the bag to the tools through the auth object the SDK forwards.
+      auth.extra = { ...(auth.extra || {}), diagnostics };
       const response = await mcp.fetch(request, { authInfo: auth });
-      console.log(toolLogLine({ tool: request.headers.get('mcp-method') || 'mcp', userId: authUserId(auth), durationMs: Date.now() - started, ok: response.status < 500, status: response.status }));
+      console.log(toolLogLine({
+        tool: request.headers.get('mcp-method') || 'mcp',
+        userId: authUserId(auth),
+        durationMs: Date.now() - started,
+        ok: response.status < 500,
+        status: response.status,
+        retryCount: takeRetryCount(),
+        shopCount: diagnostics.shopCount,
+        precision: diagnostics.precision,
+      }));
       return withCors(response, request, config);
     } catch (error) {
       console.error(toolLogLine({ tool: request.headers.get('mcp-method') || 'mcp', userId: authUserId(auth), durationMs: Date.now() - started, ok: false, code: 'internal_error', status: 500 }));
