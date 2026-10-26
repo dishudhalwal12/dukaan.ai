@@ -101,4 +101,21 @@ async function callFindShops(repo, args = {}) {
   ok('an empty radius still reports the nearest shop distance');
 }
 
+// ── 4. No SQL search on the repo is a deployment error ────────────────────
+{
+  const repo = {
+    userId,
+    getProfile: async () => ({
+      location_lat: 26.9091549, location_lng: 75.1845856, location_accuracy_m: 43,
+      location_source: 'gps', location_captured_at: new Date(now - 60_000).toISOString(),
+    }),
+    // Deliberately no findShopsNearby and no loadEnabledShops: the old fallback
+    // would have downloaded the registry; the tool must refuse instead.
+  };
+  const res = await callFindShops(repo, {});
+  assert.strictEqual(res.isError, true);
+  assert.strictEqual(res.structuredContent.code, 'unsupported');
+  ok('a repo without the SQL search fails loudly instead of scanning in memory');
+}
+
 console.log(`\nAll ${n} find-shops scale checks passed.`);

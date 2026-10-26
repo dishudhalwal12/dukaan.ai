@@ -2,6 +2,7 @@ import assert from 'assert';
 import { OAuthError } from '@modelcontextprotocol/server';
 import { hashId, toolLogLine, redact } from '../mcp/logging.js';
 import { createServerFactory } from '../mcp/server.js';
+import { rankShops, isShopAvailable } from '../mcp/geometry.js';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { takeRetryCount, bumpRetryTally } from '../mcp/net.js';
 
@@ -98,6 +99,14 @@ const shop = {
 };
 const repo = {
   userId: '11111111-1111-4111-8111-111111111111',
+  findShopsNearby: async ({ lat, lng, radiusKm, query, limit, ignoreRadius }) => {
+    const loc = { latitude: lat, longitude: lng };
+    const term = String(query || '').replace(/\\/g, '').toLowerCase();
+    return rankShops([shop], loc)
+      .filter((entry) => isShopAvailable(entry) && (ignoreRadius || entry.distanceKm <= Math.min(radiusKm, entry.deliveryRadiusKm)))
+      .filter((entry) => (term ? entry.name.toLowerCase().includes(term) : true))
+      .slice(0, limit);
+  },
   loadEnabledShops: async () => [shop],
   getShop: async () => shop,
   getCatalog: async () => [],

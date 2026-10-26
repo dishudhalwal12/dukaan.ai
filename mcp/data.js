@@ -1,5 +1,5 @@
 import { normaliseShop } from './geometry.js';
-import { toPublicProduct, formatRupees } from './catalog.js';
+import { toPublicProduct, formatRupees, normaliseUnit, parsePriceToPaise } from './catalog.js';
 import { formatAddress, mapsUrl } from './geo.js';
 import { customerStatusLabel } from './orderRules.js';
 
@@ -162,13 +162,16 @@ export async function getShopByUserId(db, shopUserId) {
  * `numeric` columns arrive as strings from PostgREST; every distance and count is
  * converted here so no caller compares "0.12" with 0.12.
  */
-export async function findShopsNearby(db, { lat, lng, radiusKm = 10, query = null, limit = 10 }) {
+export async function findShopsNearby(db, { lat, lng, radiusKm = 10, query = null, limit = 10, ignoreRadius = false }) {
   const { data, error } = await db.rpc('mcp_find_shops', {
     p_lat: Number(lat),
     p_lng: Number(lng),
     p_radius_km: Number(radiusKm),
     p_query: query ? String(query) : null,
     p_limit: Number(limit),
+    // The out-of-range probe asks "how far is the nearest shop", which must not
+    // be filtered by that shop's own delivery radius.
+    p_ignore_radius: Boolean(ignoreRadius),
   });
   if (error) fail('registry_unavailable', error.message);
 
@@ -201,19 +204,29 @@ export async function searchNearbyProducts(db, { lat, lng, radiusKm = 10, tokens
   });
   if (error) fail('catalog_unavailable', error.message);
 
-  return (Array.isArray(data) ? data : []).map((row) => ({
-    shopId: row.shop_id,
-    userId: row.user_id,
-    shopName: row.name,
-    shopLatitude: Number(row.latitude),
-    shopLongitude: Number(row.longitude),
-    distanceKm: Number(row.distance_km),
-    productId: row.product_id,
-    productName: row.product_name,
-    price: row.price,
-    unit: row.unit,
-    stock: Number(row.stock),
-  }));
+  return (Array.isArray(data) ? data : [])
+    .map((row) => {
+      // The SQL only proves "stock > 0". `price` is free text typed by a
+      // merchant, and a row quoting at ₹0 or "FREE" would reach the card and then
+      // fail inside quote_order. Drop it here, exactly as search_products does.
+      const pricePaise = parsePriceToPaise(row.price);
+      if (pricePaise === null) return null;
+      return {
+        shopId: row.shop_id,
+        userId: row.user_id,
+        shopName: row.name,
+        shopLatitude: Number(row.latitude),
+        shopLongitude: Number(row.longitude),
+        distanceKm: Number(row.distance_km),
+        productId: row.product_id,
+        productName: row.product_name,
+        pricePaise,
+        price: formatRupees(pricePaise),
+        unit: normaliseUnit(row.unit),
+        stock: Number(row.stock),
+      };
+    })
+    .filter(Boolean);
 }
 
 export async function loadShopCatalog(db, shopUserId) {

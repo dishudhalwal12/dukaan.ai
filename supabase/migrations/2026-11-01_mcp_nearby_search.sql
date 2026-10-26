@@ -34,8 +34,10 @@
 --
 -- TRUST
 -- Both functions are SECURITY DEFINER because they read shop rows the caller
--- cannot see through RLS, and they return only public fields: the public shop id,
--- never the merchant's auth uuid. Writes stay service_role only.
+-- cannot see through RLS. They return the merchant's user_id and coordinates
+-- because the tool layer needs them to price a quote; EXECUTE is granted to
+-- service_role only, so no customer token can call them directly. Widening that
+-- grant would expose merchant identifiers — do not grant it to `authenticated`.
 --
 -- NON-DESTRUCTIVE. Run once in the Supabase SQL Editor after 2026-10-31.
 -- ============================================================================
@@ -54,7 +56,11 @@ CREATE OR REPLACE FUNCTION public.mcp_find_shops(
     p_lng double precision,
     p_radius_km double precision DEFAULT 5,
     p_query text DEFAULT NULL,
-    p_limit integer DEFAULT 10
+    p_limit integer DEFAULT 10,
+    -- The out-of-range message needs "how far is the nearest shop", which is a
+    -- different question from "which shops deliver here". Without this flag the
+    -- radius filter also applies to the probe and the answer is always empty.
+    p_ignore_radius boolean DEFAULT false
 )
 RETURNS TABLE (
     shop_id text,
@@ -125,7 +131,7 @@ AS $$
     LEFT JOIN LATERAL (
         SELECT count(*) AS item_count FROM public.products p WHERE p.user_id = c.user_id
     ) counts ON true
-    WHERE c.distance_km <= LEAST(c.delivery_radius_km, p_radius_km)
+    WHERE (p_ignore_radius OR c.distance_km <= LEAST(c.delivery_radius_km, p_radius_km))
       AND counts.item_count > 0
       AND (p_query IS NULL OR c.store_name ILIKE '%' || p_query || '%')
     ORDER BY c.distance_km ASC, counts.item_count DESC, c.public_shop_id ASC
@@ -219,12 +225,12 @@ AS $$
     LIMIT GREATEST(1, LEAST(p_limit, 100));
 $$;
 
-REVOKE ALL ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.mcp_search_nearby_products(double precision, double precision, double precision, text[], integer) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.mcp_search_nearby_products(double precision, double precision, double precision, text[], integer) TO service_role;
 
-COMMENT ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer) IS
+COMMENT ON FUNCTION public.mcp_find_shops(double precision, double precision, double precision, text, integer, boolean) IS
     'Shops that deliver to a point, nearest first, computed in SQL so 10k shops is a query and not a full table download.';
 COMMENT ON FUNCTION public.mcp_search_nearby_products(double precision, double precision, double precision, text[], integer) IS
     'Stocked products near a point matching every token, nearest shop first. Replaces find_shops + N x search_products.';

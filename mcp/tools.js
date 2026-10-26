@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
-import { rankShops, serviceability, roundedKm, isShopAvailable, MAX_DELIVERY_RADIUS_KM } from './geometry.js';
-import { searchCatalog, formatRupees, expandQueryTokens } from './catalog.js';
+import { serviceability, roundedKm, isShopAvailable, MAX_DELIVERY_RADIUS_KM } from './geometry.js';
+import { searchCatalog, formatRupees, expandQueryTokens, parsePackSize } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
 import { geocodeAddress, formatAddress, mapsUrl, needsExactAddress } from './geo.js';
 import { describeAge, precisionForLocation, storedLocationFromProfile } from './location.js';
@@ -24,6 +24,15 @@ const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
   item_count: itemCount,
   accepting_orders: isShopAvailable(shop),
 });
+
+/**
+ * Escape the two LIKE metacharacters. `p_query` reaches `ILIKE '%…%'`, so a name
+ * containing "%" or "_" would otherwise act as a wildcard and return shops the
+ * customer never typed.
+ */
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, (character) => `\\${character}`);
+}
 
 /**
  * A stable fingerprint of "the same request": shop, delivery address, and the
@@ -297,7 +306,7 @@ export function registerTools(server, { repo, config, deps }) {
             lat: location.lat,
             lng: location.lng,
             radiusKm: searchRadiusKm,
-            query: input.query ? input.query.trim() : null,
+            query: input.query ? escapeLike(input.query.trim()) : null,
             limit,
           });
 
@@ -311,7 +320,15 @@ export function registerTools(server, { repo, config, deps }) {
             if (inRadius.length > 0) {
               return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
             }
-            const widened = await repo.findShopsNearby({ lat: location.lat, lng: location.lng, radiusKm: 500, query: null, limit: 1 });
+            const widened = await repo.findShopsNearby({
+              lat: location.lat,
+              lng: location.lng,
+              radiusKm: 500,
+              query: null,
+              limit: 1,
+              // Ask "how far is the nearest shop", not "which shops deliver here".
+              ignoreRadius: true,
+            });
             const nearest = widened[0];
             if (!nearest) {
               return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
@@ -325,31 +342,10 @@ export function registerTools(server, { repo, config, deps }) {
 
           results = nearby.slice(0, limit).map((entry) => shopPublic(entry, entry.distanceKm, entry.catalogItemCount));
         } else {
-          // Test seam only: fakes written before the SQL search existed provide
-          // the whole registry. Kept so those suites still exercise the tool.
-          const shops = await repo.loadEnabledShops();
-          const ranked = rankShops(shops, location);
-          const serviceable = ranked.filter((shop) => serviceability(shop, location).ok);
-          const filtered = input.query
-            ? serviceable.filter((shop) => shop.name.toLowerCase().includes(input.query.trim().toLowerCase()))
-            : serviceable;
-
-          if (filtered.length === 0) {
-            if (serviceable.length > 0) {
-              return fail('no_matching_shops', 'No shop near that location matches that name. Nothing was ordered.');
-            }
-            const nearest = ranked[0];
-            if (!nearest) {
-              return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
-            }
-            return fail(
-              'out_of_range',
-              `No shop delivers to that location. The nearest shop is ${roundedKm(nearest.distanceKm)} km away. Nothing was ordered.`,
-              { nearest_km: roundedKm(nearest.distanceKm) }
-            );
-          }
-
-          results = filtered.slice(0, limit).map((shop) => shopPublic(shop));
+          // No in-memory fallback on purpose: falling back would download the
+          // whole registry again, reintroduce the 1 000-row truncation, and turn
+          // a broken deployment into a quietly wrong shop instead of an error.
+          return fail('unsupported', 'Nearby shop search is not available on this deployment.');
         }
         // Diagnostics for the one request log line: how many shops were ranked
         // and how the location was obtained. No customer data.
@@ -506,6 +502,8 @@ export function registerTools(server, { repo, config, deps }) {
             byShop.set(row.shopId, {
               shop_id: row.shopId,
               name: row.shopName,
+              // Order on the raw distance; show the rounded one.
+              distanceKm: Number(row.distanceKm),
               distance_km: roundedKm(row.distanceKm),
               items: [],
             });
@@ -520,8 +518,9 @@ export function registerTools(server, { repo, config, deps }) {
         }
 
         const shops = [...byShop.values()]
-          .sort((a, b) => a.distance_km - b.distance_km || a.shop_id.localeCompare(b.shop_id))
-          .slice(0, input.limit || 5);
+          .sort((a, b) => a.distanceKm - b.distanceKm || a.shop_id.localeCompare(b.shop_id))
+          .slice(0, input.limit || 5)
+          .map(({ distanceKm, ...shop }) => shop);
 
         if (deps.diagnostics) {
           deps.diagnostics.shopCount = shops.length;
@@ -533,10 +532,15 @@ export function registerTools(server, { repo, config, deps }) {
           return `${index + 1}. ${shop.name} — ${shop.distance_km} km\n${items}`;
         });
 
+        // "lifeboy 2 pack" carries its own quantity; hand it over so the model
+        // does not have to decide whether "pack" was a word or a count.
+        const packSize = parsePackSize(input.query);
+
         return ok(
           `Shops near ${location.label} that have "${input.query.trim()}":\n${lines.join('\n')}\n\nUse one of these product ids with quote_order. search_products shows the rest of a shop's catalog.`,
           {
             query: input.query.trim(),
+            ...(packSize ? { pack_size: packSize } : {}),
             location: {
               label: location.label,
               precision_source: location.precision_source || 'typed',

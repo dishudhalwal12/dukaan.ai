@@ -27,14 +27,17 @@ const ALIASES = {
   sugar: ['cheeni', 'chini'],
   oil: ['tel', 'tel'],
   tea: ['chai', 'patti'],
-  // Personal care: the shelf word plus the brands a kirana actually stocks, so
-  // "soap" is not missed because the merchant typed "Lifeboy" and nothing else.
-  soap: ['sabun', 'sope', 'lifebuoy', 'lifeboy', 'dettol', 'lux', 'santoor', 'medimix'],
-  detergent: ['surf', 'detergent', 'washing powder'],
-  toothpaste: ['colgate', 'paste', 'manjan', 'pepsodent', 'close up'],
-  shampoo: ['sampoo', 'clinic plus', 'sunsilk', 'head shoulders'],
-  'sanitary pad': ['pad', 'pads', 'whisper', 'stayfree'],
-  'dishwash bar': ['vim', 'dishwash', 'bartan'],
+  // Personal care: the shelf word only. Brand names are deliberately NOT here:
+  // the nearby query ORs every token with ILIKE, so adding "dettol" to "soap"
+  // would return Dettol handwash, and "paste" would return tomato paste. Brand
+  // misspellings are handled by the bounded edit distance in scoreProduct, which
+  // compares whole words inside one shop's catalog.
+  soap: ['sabun', 'sope'],
+  detergent: ['washing powder', 'detergent powder'],
+  toothpaste: ['manjan', 'dant manjan'],
+  shampoo: ['sampoo'],
+  'sanitary pad': ['sanitary napkin', 'napkin'],
+  'dishwash bar': ['bartan bar', 'dish wash'],
 };
 
 /** Lowercase, collapse whitespace, strip punctuation that carries no meaning. */
@@ -248,8 +251,8 @@ export function expandQueryTokens(query, max = 8) {
   for (const word of words) {
     for (const alias of expandToken(word)) tokens.add(alias);
   }
-  // Two letters is noise ("so"); a single letter is always noise.
-  return [...tokens].filter((token) => token.length > 1).slice(0, max);
+  // Two letters is noise: "so" would ILIKE-match soap, sooji, soda and sona.
+  return [...tokens].filter((token) => token.length > 2).slice(0, max);
 }
 
 /** 2 = comfortably in stock, 1 = low, 0 = unknown/sold out. */

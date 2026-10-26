@@ -88,6 +88,14 @@ async function call(repo, args) {
   ok('a Hinglish query searches both the word and its alias');
 }
 
+// ── 2b. A pack count is handed over, not guessed ──────────────────────────
+{
+  const repo = makeRepo([row('shop_a', 'Ramu General Store', 0.1, 'p1', 'Lifeboy Soap', '₹40', 3)]);
+  const res = await call(repo, { query: 'lifeboy 2 pack' });
+  assert.strictEqual(res.structuredContent.pack_size, 2);
+  ok('a pack count in the query is returned as pack_size');
+}
+
 // ── 3. Nothing nearby stocks it ───────────────────────────────────────────
 {
   const res = await call(makeRepo([]), { query: 'cement' });
@@ -102,6 +110,16 @@ async function call(repo, args) {
   assert.match(SERVER_INSTRUCTIONS, /find_products_nearby/);
   assert.match(SERVER_INSTRUCTIONS, /one call|single call/i);
   ok('the instructions prefer one nearby search over one search per shop');
+}
+
+// ── 5. A deployment without the SQL search fails loudly ───────────────────
+{
+  const repo = makeRepo([]);
+  delete repo.searchNearbyProducts;
+  const res = await call(repo, { query: 'soap' });
+  assert.strictEqual(res.isError, true);
+  assert.strictEqual(res.structuredContent.code, 'unsupported');
+  ok('a missing nearby search is an error, not a silent fallback');
 }
 
 console.log(`\nAll ${n} nearby-products checks passed.`);

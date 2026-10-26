@@ -285,6 +285,9 @@ ok('mcp_find_shops filters by radius, pauses, and approximate positions');
 const byName = await db.query("SELECT shop_id FROM public.mcp_find_shops(26.9124, 75.7873, 5, 'Two', 10)");
 assert.strictEqual(byName.rows.length, 1);
 assert.strictEqual(byName.rows[0].shop_id, sid2);
+const probe = await db.query('SELECT shop_id, distance_km FROM public.mcp_find_shops(26.9124, 75.7873, 5, NULL, 1, true)');
+assert.ok(probe.rows.length >= 1, 'the nearest-shop probe ignores the delivery radius');
+assert.ok(Number(probe.rows[0].distance_km) > 0 || probe.rows[0].shop_id, 'a distance is still reported');
 ok('mcp_find_shops filters by shop name without touching products');
 
 const soap = await db.query("SELECT shop_id, product_name, price FROM public.mcp_search_nearby_products(26.9124, 75.7873, 5, ARRAY['soap'], 10)");
