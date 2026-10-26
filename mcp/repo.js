@@ -1,5 +1,7 @@
 import {
   loadEnabledShops,
+  findShopsNearby,
+  searchNearbyProducts,
   getShopByPublicId,
   getShopByUserId,
   loadShopCatalog,
@@ -31,6 +33,10 @@ export function createRepo({ service, user, userId }) {
   return {
     userId,
     loadEnabledShops: () => loadEnabledShops(service),
+    // Nearby search runs as the service role: it reads shop rows the customer
+    // cannot see, and returns only the public shop id and public product fields.
+    findShopsNearby: (fields) => findShopsNearby(service, fields),
+    searchNearbyProducts: (fields) => searchNearbyProducts(service, fields),
     getShop: (publicShopId) => getShopByPublicId(service, publicShopId),
     getShopByUserId: (shopUserId) => getShopByUserId(service, shopUserId),
     getCatalog: (shopUserId) => loadShopCatalog(service, shopUserId),

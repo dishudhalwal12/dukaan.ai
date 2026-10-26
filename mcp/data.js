@@ -151,6 +151,71 @@ export async function getShopByUserId(db, shopUserId) {
   return data || null;
 }
 
+/**
+ * Shops that deliver to a point, nearest first — computed in Postgres.
+ *
+ * This replaces loading every AI-enabled shop and ranking in Node. At a few
+ * thousand shops the old path returned only what PostgREST's row cap allowed and
+ * built an impossible `IN (...)` list for the product count, so the nearest shop
+ * could simply be absent.
+ *
+ * `numeric` columns arrive as strings from PostgREST; every distance and count is
+ * converted here so no caller compares "0.12" with 0.12.
+ */
+export async function findShopsNearby(db, { lat, lng, radiusKm = 10, query = null, limit = 10 }) {
+  const { data, error } = await db.rpc('mcp_find_shops', {
+    p_lat: Number(lat),
+    p_lng: Number(lng),
+    p_radius_km: Number(radiusKm),
+    p_query: query ? String(query) : null,
+    p_limit: Number(limit),
+  });
+  if (error) fail('registry_unavailable', error.message);
+
+  return (Array.isArray(data) ? data : []).map((row) => ({
+    shopId: row.shop_id,
+    userId: row.user_id,
+    name: row.name,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    distanceKm: Number(row.distance_km),
+    deliveryRadiusKm: Number(row.delivery_radius_km),
+    catalogItemCount: Number(row.item_count) || 0,
+    mcpEnabled: true,
+    ordersPaused: Boolean(row.orders_paused),
+  }));
+}
+
+/**
+ * "Which shop near me has this, and at what price" — one row per matching
+ * product, nearest shop first. A page of rows is enough to build an answer; the
+ * caller groups by shop.
+ */
+export async function searchNearbyProducts(db, { lat, lng, radiusKm = 10, tokens = [], limit = 40 }) {
+  const { data, error } = await db.rpc('mcp_search_nearby_products', {
+    p_lat: Number(lat),
+    p_lng: Number(lng),
+    p_radius_km: Number(radiusKm),
+    p_tokens: (Array.isArray(tokens) ? tokens : []).map(String),
+    p_limit: Number(limit),
+  });
+  if (error) fail('catalog_unavailable', error.message);
+
+  return (Array.isArray(data) ? data : []).map((row) => ({
+    shopId: row.shop_id,
+    userId: row.user_id,
+    shopName: row.name,
+    shopLatitude: Number(row.latitude),
+    shopLongitude: Number(row.longitude),
+    distanceKm: Number(row.distance_km),
+    productId: row.product_id,
+    productName: row.product_name,
+    price: row.price,
+    unit: row.unit,
+    stock: Number(row.stock),
+  }));
+}
+
 export async function loadShopCatalog(db, shopUserId) {
   const { data, error } = await db
     .from('products')
