@@ -171,6 +171,7 @@ const quote = await client.callTool({
 assert.strictEqual(quote.isError, undefined);
 assert.strictEqual(quote.structuredContent.total, 99);
 assert.strictEqual(quote.structuredContent.requires_confirmation, true);
+assert.strictEqual(quote.structuredContent.shop.item_count, 2);
 assert.strictEqual(quote.structuredContent.quote_id, quoteId);
 assert.match(quote.content[0].text, /ask the customer to confirm/i);
 ok('quote_order prices a draft and demands confirmation');

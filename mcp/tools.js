@@ -14,12 +14,12 @@ import { ok, fail, fromError } from './result.js';
 const READ = { readOnlyHint: true, openWorldHint: true };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 
-const shopPublic = (shop, km) => ({
+const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
   shop_id: shop.shopId,
   name: shop.name,
   distance_km: roundedKm(km ?? shop.distanceKm),
   delivery_radius_km: shop.deliveryRadiusKm,
-  item_count: shop.catalogItemCount,
+  item_count: itemCount,
   accepting_orders: isShopAvailable(shop),
 });
 
@@ -538,7 +538,7 @@ export function registerTools(server, { repo, config, deps }) {
           `Order preview from ${shop.name}:\n${lines.join('\n')}\nTotal: ${quote.total}\nDeliver to: ${formatAddress(address)}${warning}\n\nAsk the customer to confirm. Only then call place_order with quote_id ${saved.id} and confirmed: true. This quote expires at ${quote.expiresAt}.`,
           {
             quote_id: saved.id,
-            shop: shopPublic(shop, service.distanceKm),
+            shop: shopPublic(shop, service.distanceKm, catalog.length),
             items: quote.items,
             total: Number((quote.totalPaise / 100).toFixed(2)),
             total_display: quote.total,

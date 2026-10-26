@@ -114,7 +114,8 @@ const init = await handler.fetch(
 assert.strictEqual(init.status, 200);
 const initBody = parseBody(await init.text());
 assert.strictEqual(initBody.result.serverInfo.name, 'dukaan-ai');
-ok('an authenticated client can initialize the MCP server');
+assert.match(initBody.result.instructions || '', /Always answer the customer in English/i);
+ok('an authenticated client can initialize the MCP server and sees the English-only policy');
 
 const list = await handler.fetch(
   new Request('http://localhost:8787/mcp', {
