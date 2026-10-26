@@ -18,7 +18,10 @@
     "mcp:check": "node --env-file-if-exists=.env scripts/mcp/check_oauth_config.mjs",
     "build:mcp-app": "node scripts/build-mcp-app.mjs",
     "mcp:smoke": "node scripts/mcp/smoke.mjs",
-    "mcp:cleanup": "node --env-file-if-exists=.env scripts/mcp/cleanup.mjs"
+    "mcp:cleanup": "node --env-file-if-exists=.env scripts/mcp/cleanup.mjs",
+    "qa:personas": "node scripts/qa/personas.mjs",
+    "qa:load": "node scripts/qa/load_nearby.mjs",
+    "qa": "npm run mcp:test && npm run qa:personas && npm run qa:load"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
