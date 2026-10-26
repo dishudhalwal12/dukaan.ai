@@ -60,21 +60,37 @@ function anonKeyMatchesProject(key, supabaseUrl) {
  * Vercel can hold both a runtime SUPABASE_ANON_KEY and a build-time
  * VITE_SUPABASE_ANON_KEY. Prefer whichever actually belongs to this project,
  * so one stale copy cannot take every user-scoped tool down.
+ *
+ * This ordering is a hint, not a guarantee: a rotated legacy key still carries
+ * this project's `ref` and `role`, so it looks correct here and is only refused
+ * by the project itself. `mcp/keys.js` therefore probes the candidates at
+ * runtime and swaps in the first key the project accepts.
  */
-function pickAnonKey(env, supabaseUrl) {
-  const candidates = [
+function collectAnonKeys(env, supabaseUrl) {
+  const raw = [
     env.SUPABASE_ANON_KEY,
     env.SUPABASE_PUBLISHABLE_KEY,
     env.VITE_SUPABASE_ANON_KEY,
     env.VITE_SUPABASE_PUBLISHABLE_KEY,
   ].map((value) => String(value || '').trim()).filter(Boolean);
-  return candidates.find((key) => anonKeyMatchesProject(key, supabaseUrl)) || candidates[0] || '';
+
+  const unique = [...new Set(raw)];
+  const matching = unique.filter((key) => anonKeyMatchesProject(key, supabaseUrl));
+  return [...matching, ...unique.filter((key) => !matching.includes(key))];
+}
+
+function pickAnonKey(env, supabaseUrl) {
+  return collectAnonKeys(env, supabaseUrl)[0] || '';
 }
 
 export function readConfig(env = process.env) {
   const supabaseUrl = trimUrl(env.SUPABASE_URL || env.VITE_SUPABASE_URL);
   const serviceKey = String(env.SUPABASE_SERVICE_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '');
-  const anonKey = pickAnonKey(env, supabaseUrl);
+  // Every copy of the public key, most-likely-correct first. `anonKey` stays the
+  // single value the clients read; `anonKeys` is the fallback ladder that
+  // mcp/keys.js walks when the preferred copy is refused by the project.
+  const anonKeys = collectAnonKeys(env, supabaseUrl);
+  const anonKey = anonKeys[0] || '';
   const publicUrl = trimUrl(env.MCP_PUBLIC_URL || '');
   const issuer = trimUrl(env.MCP_AUTH_ISSUER || (supabaseUrl ? `${supabaseUrl}/auth/v1` : ''));
   const googleKey = String(env.GOOGLE_MAPS_API_KEY || '');
@@ -84,6 +100,7 @@ export function readConfig(env = process.env) {
     supabaseUrl,
     serviceKey,
     anonKey,
+    anonKeys,
     publicUrl,
     issuer,
     googleKey,

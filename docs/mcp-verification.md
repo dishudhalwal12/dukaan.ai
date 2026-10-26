@@ -16,7 +16,7 @@ Last run on 2026-10-26:
 
 | Command | Result | Scope |
 |---|---|---|
-| `npm run mcp:test` | 19 files passed | pure rules, saved location, consent UI, auth, geo, schema, HTTP, tools, MCP App |
+| `npm run mcp:test` | 20 files passed | pure rules, saved location, consent UI, auth, geo, schema, HTTP, tools, MCP App |
 | `npm test` | passed | existing app regression suite |
 | `npx tsc --noEmit` | passed | TypeScript |
 | `npm run build` | passed | Vite static bundle + secret guard |
@@ -57,6 +57,20 @@ Last run on 2026-10-26:
 - `mcp/location.js` holds the freshness rule (30 days), the precision model, and the wording used in tool replies. `scripts/test_mcp_location.js` covers day 29 vs day 31, a half position, a missing timestamp, and IP-level precision.
 - `scripts/test_mcp_tools.js` proves `find_shops` with no location uses the saved fix (`source: "app_location"`, `needs_exact_address: true`), an explicit pincode still wins, a 45-day-old fix is refused with `location_stale`, and `remember_location` stores a coordinate shared in chat.
 - `get_customer_profile` now reports the last known location and its age.
+
+### Phase 1c — the anon key the server actually uses
+
+- A production deploy failed every customer-owned tool with
+  `profile_unavailable: Invalid API key` while discovery still worked: the
+  runtime `SUPABASE_ANON_KEY` had been rotated away from.
+- `mcp/keys.js` now probes `/auth/v1/settings` with each candidate key before any
+  tool runs, keeps the first one the project accepts, and caches the verdict per
+  instance. A refused key returns `503 server_misconfigured` naming
+  `SUPABASE_ANON_KEY`; a probe outage is treated as `unknown` and never fails the
+  deployment closed.
+- `scripts/test_mcp_supabase_key.js` proves the fallback ladder, the caching, the
+  `invalid` vs `unknown` split, the `/health` field, the 503, and that
+  `fromError` turns "Invalid API key" into an operator error.
 
 ### Phase 2 — MCP server and auth
 

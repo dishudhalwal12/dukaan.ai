@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { McpServer, createMcpHandler, requireBearerAuth, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/server';
 import { authUserId, createVerifier } from './auth.js';
+import { createAnonKeyResolver } from './keys.js';
 import { toolLogLine } from './logging.js';
 import { protectedResourceMetadata } from './authConfig.js';
 import { serviceClient, userClient } from './supabase.js';
@@ -108,6 +109,13 @@ export function createFetchHandler(config, overrides = {}) {
     ...(config.expectedResource ? { expectedResource: new URL(config.expectedResource) } : {}),
   });
 
+  // Only verify the anon key when this handler will really build Supabase
+  // clients. The MCP tests inject a `repo`, so they never touch one and must not
+  // depend on a network probe (or on `anon` being a real key).
+  const keyResolver = overrides.repo
+    ? null
+    : createAnonKeyResolver(config, { fetchImpl: overrides.fetchImpl || globalThis.fetch });
+
   async function serve(request) {
     const started = Date.now();
     const url = new URL(request.url);
@@ -135,8 +143,21 @@ export function createFetchHandler(config, overrides = {}) {
     }
 
     if (path === '/health') {
+      // QA needs to see this without a client: a refused anon key is invisible
+      // until a customer opens a chat and every owned-row tool fails. The probe
+      // result is cached per instance, so repeated health checks stay cheap.
+      const supabaseKey = keyResolver ? await keyResolver.ensure().catch(() => 'unknown') : 'skipped';
       return json(
-        { ok: true, service: 'dukaan-mcp', enabled: Boolean(config.enabled), auth: 'supabase' },
+        {
+          ok: true,
+          service: 'dukaan-mcp',
+          enabled: Boolean(config.enabled),
+          auth: 'supabase',
+          supabaseKey,
+          ...(supabaseKey === 'invalid'
+            ? { warning: 'SUPABASE_ANON_KEY is not valid for this project: customer-owned tools will fail until it is updated.' }
+            : {}),
+        },
         200,
         request,
         config,
@@ -152,6 +173,29 @@ export function createFetchHandler(config, overrides = {}) {
     if (auth instanceof Response) {
       console.log(toolLogLine({ tool: request.headers.get('mcp-method') || 'auth', userId: null, durationMs: Date.now() - started, ok: false, status: auth.status }));
       return withCors(auth, request, config);
+    }
+
+    // Before any tool runs, make sure the per-request user client will be built
+    // with an anon key the project still accepts. Without this, a rotated key
+    // surfaces as `profile_unavailable: Invalid API key` inside a tool result,
+    // which reads like a customer problem and sends the assistant down the wrong
+    // path ("re-authenticate your MCP server"). A 503 with the variable name is
+    // the truth: it is an operator fix, not a customer one.
+    if (keyResolver) {
+      const keyState = await keyResolver.ensure().catch(() => 'unknown');
+      if (keyState === 'invalid') {
+        console.error(toolLogLine({ tool: 'config', userId: null, durationMs: Date.now() - started, ok: false, code: 'anon_key_invalid', status: 503 }));
+        return json(
+          {
+            error: 'server_misconfigured',
+            detail: 'SUPABASE_ANON_KEY is not valid for this Supabase project. Customer-owned tools cannot run until it is updated.',
+            variable: 'SUPABASE_ANON_KEY',
+          },
+          503,
+          request,
+          config
+        );
+      }
     }
 
     try {
