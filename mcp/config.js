@@ -19,6 +19,15 @@ function projectRefFromUrl(url) {
   }
 }
 
+/** The public /connect page lives on the same origin as the MCP endpoint. */
+export function connectUrlFor(publicUrl) {
+  try {
+    return `${new URL(publicUrl).origin}/connect`;
+  } catch {
+    return '';
+  }
+}
+
 /**
  * A corrupted copy of the anon JWT can still look like a key but point at a
  * different project, or be the service-role key. Either makes every
@@ -81,7 +90,11 @@ export function readConfig(env = process.env) {
     geocoderProvider: String(env.MCP_GEOCODER_PROVIDER || (googleKey ? 'google' : 'nominatim')),
     enabled: String(env.MCP_ENABLED || 'true').toLowerCase() !== 'false',
     allowInsecure,
-    documentationUrl: trimUrl(env.MCP_DOCS_URL || 'https://dukaan.ai/connect'),
+    // The docs page ships with the app that hosts /mcp. Deriving it from
+    // MCP_PUBLIC_URL keeps the link alive on every deployment; the old hardcoded
+    // https://dukaan.ai/connect did not resolve at all, so AI clients showed a
+    // dead "documentation" link on the consent screen.
+    documentationUrl: trimUrl(env.MCP_DOCS_URL || connectUrlFor(publicUrl)),
     expectedResource: trimUrl(env.MCP_EXPECTED_RESOURCE || ''),
     allowedOrigins: String(env.MCP_ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   };

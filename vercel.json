@@ -33,7 +33,15 @@
       "destination": "/index.html"
     },
     {
+      "source": "/oauth/consent/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/connect",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/connect/",
       "destination": "/index.html"
     }
   ],

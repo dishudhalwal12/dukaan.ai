@@ -60,4 +60,12 @@ const insecure = readConfig({ ...base, MCP_PUBLIC_URL: 'http://localhost:8787/mc
 assert.strictEqual(insecure.allowInsecure, true);
 console.log('✓ 7: local insecure mode is explicit');
 
+// The live PRM used to advertise https://dukaan.ai/connect, which does not
+// resolve; AI clients showed users a dead documentation link.
+const docs = readConfig({ ...base, MCP_PUBLIC_URL: 'https://dukaan-ai-hypnexis.vercel.app/mcp' });
+assert.strictEqual(docs.documentationUrl, 'https://dukaan-ai-hypnexis.vercel.app/connect');
+assert.strictEqual(readConfig({ ...base, MCP_DOCS_URL: 'https://docs.example/connect', MCP_PUBLIC_URL: 'https://mcp.dukaan.ai/mcp' }).documentationUrl, 'https://docs.example/connect');
+assert.strictEqual(readConfig({ ...base, MCP_PUBLIC_URL: 'not a url' }).documentationUrl, '', 'an unusable public URL yields no docs link');
+console.log('✓ 8: the documentation link follows the MCP origin');
+
 console.log('\nAll MCP config checks passed.');

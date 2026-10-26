@@ -49,7 +49,9 @@ if (!config.issuer) {
   pass('MCP_AUTH_ISSUER is set', config.issuer);
 }
 
-if (config.publicUrl.startsWith('http://') && !config.allowInsecure) {
+if (!config.publicUrl) {
+  fail('MCP_PUBLIC_URL is set', 'empty — set it in your shell or .env before rerunning');
+} else if (config.publicUrl.startsWith('http://') && !config.allowInsecure) {
   fail('MCP_PUBLIC_URL uses HTTPS', config.publicUrl);
 } else {
   pass('MCP_PUBLIC_URL is set', config.publicUrl);

@@ -55,9 +55,10 @@ const orderRow = (quote, externalId) => ({
   channel: 'mcp',
 });
 
-function makeRepo({ phone = '+919876543210' } = {}) {
+function makeRepo({ phone = '+919876543210', location = null } = {}) {
   let quote = null;
   let order = null;
+  let savedLocation = location;
   return {
     userId,
     loadEnabledShops: async () => [shop],
@@ -66,8 +67,23 @@ function makeRepo({ phone = '+919876543210' } = {}) {
       ? { user_id: shopUserId, store_name: 'Shop One', public_shop_id: 'shop_one', mcp_enabled: true, orders_paused: false }
       : null),
     getCatalog: async () => catalog,
-    getProfile: async () => ({ full_name: 'Asha', phone }),
+    getProfile: async () => ({ full_name: 'Asha', phone, ...(savedLocation || {}) }),
     saveProfile: async ({ fullName, phone: p }) => ({ full_name: fullName, phone: p }),
+    saveLocation: async (fields) => {
+      savedLocation = {
+        location_lat: fields.lat,
+        location_lng: fields.lng,
+        location_accuracy_m: fields.accuracyM ?? null,
+        location_source: fields.source,
+        location_label: fields.label || null,
+        location_captured_at: fields.capturedAt,
+      };
+      return savedLocation;
+    },
+    clearLocation: async () => {
+      savedLocation = null;
+      return { cleared: true };
+    },
     listAddresses: async () => [],
     getAddressRow: async (id) => (id === addressId ? address : null),
     saveAddress: async () => address,
@@ -268,5 +284,65 @@ assert.strictEqual(quotePaused.structuredContent.code, 'service_paused');
 await paused.client.close();
 await paused.server.close();
 ok('the kill switch pauses ordering while leaving discovery available');
+
+// ── the location captured during MCP sign-in ─────────────────────────────────
+const appLocation = {
+  location_lat: 26.9115,
+  location_lng: 75.7884,
+  location_accuracy_m: 18,
+  location_source: 'gps',
+  location_label: null,
+  location_captured_at: new Date(now - 2 * 86_400_000).toISOString(),
+};
+
+const withLocation = await connect(makeRepo({ location: appLocation }));
+const fromApp = await withLocation.client.callTool({ name: 'find_shops', arguments: {} });
+assert.strictEqual(fromApp.isError, undefined, 'a saved app location must be enough to find shops');
+assert.strictEqual(fromApp.structuredContent.location.source, 'app_location');
+assert.strictEqual(fromApp.structuredContent.location.needs_exact_address, true);
+assert.strictEqual(fromApp.structuredContent.location.age_days, 2);
+assert.strictEqual(fromApp.structuredContent.shops.length, 1);
+assert.match(fromApp.content[0].text, /saved in the Dukaan app/i);
+ok('find_shops uses the location captured at sign-in when none is given');
+
+const explicitPincode = await withLocation.client.callTool({ name: 'find_shops', arguments: { pincode: '302001' } });
+assert.strictEqual(explicitPincode.isError, undefined);
+assert.strictEqual(explicitPincode.structuredContent.location.source, 'geocoded', 'an explicit pincode must win over the saved fix');
+ok('an explicit pincode overrides the saved app location');
+
+const remembered = await withLocation.client.callTool({
+  name: 'remember_location',
+  arguments: { latitude: 26.8999, longitude: 75.7999, accuracy_m: 40 },
+});
+assert.strictEqual(remembered.isError, undefined);
+assert.strictEqual(remembered.structuredContent.location.source, 'chat_shared');
+const afterRemember = await withLocation.client.callTool({ name: 'find_shops', arguments: {} });
+assert.strictEqual(afterRemember.structuredContent.location.source, 'app_location');
+assert.match(afterRemember.content[0].text, /today/);
+ok('remember_location stores coordinates shared in the chat');
+
+const profileWithLocation = await withLocation.client.callTool({ name: 'get_customer_profile', arguments: {} });
+assert.match(profileWithLocation.content[0].text, /Last known location/);
+await withLocation.client.close();
+await withLocation.server.close();
+
+const stale = await connect(makeRepo({
+  location: { ...appLocation, location_captured_at: new Date(now - 45 * 86_400_000).toISOString() },
+}));
+const staleSearch = await stale.client.callTool({ name: 'find_shops', arguments: {} });
+assert.strictEqual(staleSearch.isError, true);
+assert.strictEqual(staleSearch.structuredContent.code, 'location_stale');
+assert.match(staleSearch.content[0].text, /45 days old/);
+await stale.client.close();
+await stale.server.close();
+ok('a saved location older than 30 days is refused instead of guessed');
+
+const noLocation = await connect(makeRepo());
+const noLocationSearch = await noLocation.client.callTool({ name: 'find_shops', arguments: {} });
+assert.strictEqual(noLocationSearch.isError, true);
+assert.strictEqual(noLocationSearch.structuredContent.code, 'location_required');
+await noLocation.client.close();
+await noLocation.server.close();
+ok('without a saved location the assistant is still told to ask for one');
 
 console.log(`\nAll ${n} MCP tool-flow checks passed.`);

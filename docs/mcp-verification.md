@@ -12,36 +12,51 @@ npm run build
 npm run build:mcp-app
 ```
 
-Last run on 2026-10-25:
+Last run on 2026-10-26:
 
 | Command | Result | Scope |
 |---|---|---|
-| `npm run mcp:test` | 16 files passed | pure rules, auth, geo, schema, HTTP, tools, MCP App |
+| `npm run mcp:test` | 19 files passed | pure rules, saved location, consent UI, auth, geo, schema, HTTP, tools, MCP App |
 | `npm test` | passed | existing app regression suite |
 | `npx tsc --noEmit` | passed | TypeScript |
 | `npm run build` | passed | Vite static bundle + secret guard |
 | `npm run build:mcp-app` | passed | 243 KB single-file checkout card |
+
+> `npm run build` fails on a machine whose `.env` sets `VITE_LLM_BASE_URL` to a
+> `127.0.0.1:8080` local model: the secret guard rejects the loopback backend
+> baked into the bundle. Run it with that variable empty, as Vercel does.
 
 ## Phase-by-phase evidence
 
 ### Phase 0 — OAuth setup and consent
 
 - `src/screens/OAuthConsentScreen.tsx` implements the Supabase `authorization_id` flow, login, details, approve, and deny.
+- The sign-in half mirrors the POS sheet in `src/components/AuthModal.tsx`: white "Continue with Google" with the Google mark, the privacy consent line (opening an in-page privacy sheet), and the "OR EMAIL" divider.
+- After sign-in the page runs the onboarding location sheet (`src/components/LocationModal.tsx`, `audience="customer"`) once, and keeps the fix on the customer's own `customer_profiles` row. `Update` / `Remove` sit in the approval card.
+- `scripts/test_mcp_consent_ui.js` pins all of the above, including the rule that this page never writes the merchant app's `dukan-oauth-in-progress` marker.
 - `src/index.tsx` mounts `/oauth/consent` without mounting the merchant app.
 - `scripts/mcp/check_oauth_config.mjs` checks Supabase AS discovery and the MCP protected-resource document.
 - **External gate:** the live Supabase project returns 404 for OAuth discovery. The OAuth 2.1 server and dynamic client registration must be enabled in the dashboard.
 
 ### Phase 1 — Schema and ownership
 
-- `supabase/migrations/2026-10-26_mcp.sql` and `2026-10-27_mcp_default_on.sql`.
+- `supabase/migrations/2026-10-26_mcp.sql`, `2026-10-27_mcp_default_on.sql`, and `2026-10-28_mcp_customer_location.sql`.
 - `scripts/test_mcp_schema.mjs` runs the migration on PGlite and proves:
   - columns and defaults exist;
   - the placement RPC inserts from the quote snapshot;
   - the same quote twice returns one order;
   - an expired quote is rejected;
   - one customer cannot place another customer's quote;
-  - RLS shows an order only to the customer who placed it.
+  - RLS shows an order only to the customer who placed it;
+  - the location columns exist, a half position and an unknown source are refused by the database, and the position is readable/writable only by its owner.
 - **External gate:** the migration is not applied to the live Supabase project (`mcp_enabled` column missing). No database password is available in the repository environment.
+
+### Phase 1b — the position captured at sign-in
+
+- `scripts/test_mcp_customer_data.js` pins the writer: only location keys are upserted (so an existing name and phone survive), a half or impossible position is refused before it reaches the row, and the profile is read with `select(*)` so an unmigrated project still works.
+- `mcp/location.js` holds the freshness rule (30 days), the precision model, and the wording used in tool replies. `scripts/test_mcp_location.js` covers day 29 vs day 31, a half position, a missing timestamp, and IP-level precision.
+- `scripts/test_mcp_tools.js` proves `find_shops` with no location uses the saved fix (`source: "app_location"`, `needs_exact_address: true`), an explicit pincode still wins, a 45-day-old fix is refused with `location_stale`, and `remember_location` stores a coordinate shared in chat.
+- `get_customer_profile` now reports the last known location and its age.
 
 ### Phase 2 — MCP server and auth
 
