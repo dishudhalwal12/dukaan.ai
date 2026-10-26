@@ -1,5 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '../supabase.ts';
+import { createIsolatedSupabaseClient } from '../supabase.ts';
+
+// The consent page is a customer surface. Keep its session out of the
+// merchant app's auth key so approving an AI client cannot sign the shopkeeper
+// out of their own dashboard.
+const consentSupabase = createIsolatedSupabaseClient('dukan_oauth_consent_auth_token');
 
 /**
  * Standalone OAuth consent page for MCP clients.
@@ -23,7 +28,7 @@ const OAuthConsentScreen: React.FC = () => {
       setError('This consent link is missing its authorization id. Start again from your AI app.');
       return;
     }
-    const { data: sessionData } = await supabase.auth.getSession();
+    const { data: sessionData } = await consentSupabase.auth.getSession();
     if (!sessionData.session) {
       setSignedInEmail(null);
       setDetails(null);
@@ -31,7 +36,7 @@ const OAuthConsentScreen: React.FC = () => {
     }
     setSignedInEmail(sessionData.session.user.email || null);
 
-    const { data, error: detailsError } = await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+    const { data, error: detailsError } = await consentSupabase.auth.oauth.getAuthorizationDetails(authorizationId);
     if (detailsError) {
       setError(detailsError.message);
       return;
@@ -46,7 +51,7 @@ const OAuthConsentScreen: React.FC = () => {
 
   useEffect(() => {
     void load();
-    const { data } = supabase.auth.onAuthStateChange(() => {
+    const { data } = consentSupabase.auth.onAuthStateChange(() => {
       void load();
     });
     return () => data.subscription.unsubscribe();
@@ -56,7 +61,7 @@ const OAuthConsentScreen: React.FC = () => {
     event.preventDefault();
     setLoading(true);
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    const { error: authError } = await consentSupabase.auth.signInWithPassword({ email, password });
     if (authError) setError(authError.message);
     setLoading(false);
   };
@@ -64,7 +69,7 @@ const OAuthConsentScreen: React.FC = () => {
   const signUp = async () => {
     setLoading(true);
     setError(null);
-    const { data, error: authError } = await supabase.auth.signUp({
+    const { data, error: authError } = await consentSupabase.auth.signUp({
       email,
       password,
       options: { emailRedirectTo: window.location.href },
@@ -76,7 +81,7 @@ const OAuthConsentScreen: React.FC = () => {
 
   const signInWithGoogle = async () => {
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOAuth({
+    const { error: authError } = await consentSupabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.href },
     });
@@ -87,8 +92,8 @@ const OAuthConsentScreen: React.FC = () => {
     setLoading(true);
     setError(null);
     const call = approve
-      ? supabase.auth.oauth.approveAuthorization(authorizationId, { skipBrowserRedirect: true })
-      : supabase.auth.oauth.denyAuthorization(authorizationId, { skipBrowserRedirect: true });
+      ? consentSupabase.auth.oauth.approveAuthorization(authorizationId, { skipBrowserRedirect: true })
+      : consentSupabase.auth.oauth.denyAuthorization(authorizationId, { skipBrowserRedirect: true });
     const { data, error: decisionError } = await call;
     if (decisionError) {
       setError(decisionError.message);
