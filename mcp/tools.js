@@ -4,7 +4,7 @@ import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
 import { rankShops, serviceability, roundedKm, isShopAvailable } from './geometry.js';
 import { searchCatalog, formatRupees } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
-import { geocodeAddress, formatAddress, needsExactAddress } from './geo.js';
+import { geocodeAddress, formatAddress, mapsUrl, needsExactAddress } from './geo.js';
 import { describeAge, precisionForLocation, storedLocationFromProfile } from './location.js';
 import { evaluateOrderLimits, checkOrderTotal, allowRead } from './limits.js';
 import { mcpOrderId } from './ids.js';
@@ -698,6 +698,13 @@ export function registerTools(server, { repo, config, deps }) {
 
         const address = await repo.getAddressRow(input.address_id);
         if (!address) return fail('address_required', 'Save a delivery address first, then quote the order.');
+        // A quote is a promise to deliver somewhere. `Number(null)` is 0, so the
+        // blank check has to come before the cast or an empty row would quote
+        // against a point in the Gulf of Guinea.
+        const needsCoordinate = (value) => value === null || value === undefined || value === '' || !Number.isFinite(Number(value));
+        if (needsCoordinate(address.lat) || needsCoordinate(address.lng)) {
+          return fail('location_required', 'That address has no map position. Ask the customer to share a map pin, or to allow location in the Dukaan app.');
+        }
 
         const profile = await repo.getProfile();
         const phone = normalisePhone(profile?.phone);
@@ -737,12 +744,25 @@ export function registerTools(server, { repo, config, deps }) {
           expiresAt: quote.expiresAt,
         });
 
-        const lines = quote.items.map(
-          (item) => `${item.quantity} × ${item.name} (${item.unit}) — ${formatRupees(item.totalPaise)}`
-        );
-        const warning = address.match_type === 'area' ? '\nAddress match is area-level; the shop may call to confirm.' : '';
+        // The confirmation is rendered here, from the same numbers the order will
+        // carry, so a model can read it out but cannot paraphrase a price or drop
+        // the phone number the shop needs to call.
+        const addressVerified = Boolean(address.geocode_verified);
+        const confirmation = [
+          `Name: ${profile.full_name}`,
+          `Phone: ${phone}`,
+          `Address: ${formatAddress(address)}`,
+          ...quote.items.map((item) => `${item.name} × ${item.quantity} — ${formatRupees(item.totalPaise)}`),
+          `Total: ${quote.total} — cash on delivery`,
+        ].join('\n');
+
+        const caveats = [];
+        if (address.match_type === 'area') caveats.push('Area-level address; the shop may call to confirm.');
+        if (!addressVerified) caveats.push('The delivery pin is the customer location, not a verified rooftop; the shop may call to confirm.');
+        const warning = caveats.length > 0 ? `\n${caveats.join(' ')}` : '';
+
         return ok(
-          `Order preview from ${shop.name}:\n${lines.join('\n')}\nTotal: ${quote.total}\nDeliver to: ${formatAddress(address)}${warning}\n\nAsk the customer to confirm. Only then call place_order with quote_id ${saved.id} and confirmed: true. This quote expires at ${quote.expiresAt}.`,
+          `Order preview from ${shop.name}:\n${confirmation}\nDeliver to pin: ${mapsUrl(address.lat, address.lng)}${warning}\n\nAsk the customer to confirm by reading this back, then wait for an explicit yes. Only then call place_order with quote_id ${saved.id} and confirmed: true. This quote expires at ${quote.expiresAt}.`,
           {
             quote_id: saved.id,
             shop: shopPublic(shop, service.distanceKm, catalog.length),
@@ -751,10 +771,14 @@ export function registerTools(server, { repo, config, deps }) {
             total_display: quote.total,
             address: formatAddress(address),
             address_match_type: address.match_type,
+            address_verified: addressVerified,
+            precision_source: address.precision_source || 'typed',
+            maps_url: mapsUrl(address.lat, address.lng),
+            confirmation,
             payment_method: 'COD',
             expires_at: quote.expiresAt,
             requires_confirmation: true,
-            warnings: address.match_type === 'area' ? ['Area-level address; the shop may call to confirm.'] : [],
+            warnings: caveats,
           }
         );
       } catch (error) {
