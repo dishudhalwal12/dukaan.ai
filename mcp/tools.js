@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { registerAppResource, registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { CHECKOUT_URI, checkoutResourceContents } from './apps/checkout.js';
 import { rankShops, serviceability, roundedKm, isShopAvailable, MAX_DELIVERY_RADIUS_KM } from './geometry.js';
-import { searchCatalog, formatRupees } from './catalog.js';
+import { searchCatalog, formatRupees, expandQueryTokens } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
 import { geocodeAddress, formatAddress, mapsUrl, needsExactAddress } from './geo.js';
 import { describeAge, precisionForLocation, storedLocationFromProfile } from './location.js';
@@ -451,6 +451,100 @@ export function registerTools(server, { repo, config, deps }) {
           shop: { shop_id: shop.shopId, name: shop.name },
           products,
         });
+      } catch (error) {
+        return fromError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'find_products_nearby',
+    {
+      title: 'Find shops that stock an item',
+      description:
+        'Find shops near the customer that actually stock what they asked for, nearest first, with prices. Prefer this over find_shops followed by a search per shop: it answers "which shop has soap" in a single call. query is the customer’s own words ("soap", "atta", "sabun"); common aliases are expanded server-side. Never invent a shop, a price, or a product id — use the ids returned here.',
+      inputSchema: z.object({
+        query: z.string().min(2).max(80),
+        address_id: z.string().uuid().optional(),
+        pincode: z.string().optional(),
+        area: z.string().max(120).optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        limit: z.number().int().min(1).max(10).optional(),
+      }),
+      annotations: READ,
+    },
+    async (input) => {
+      try {
+        const location = await resolveLocation(input, repo, deps);
+        if (!location.ok) return fail(location.code, location.message);
+        if (typeof repo.searchNearbyProducts !== 'function') {
+          return fail('unsupported', 'Nearby product search is not available on this deployment. Use find_shops and search_products instead.');
+        }
+
+        const tokens = expandQueryTokens(input.query);
+        if (tokens.length === 0) return fail('query_required', 'Ask the customer which product they want.');
+
+        // Ask for more rows than shops: one shop may stock several variants of the
+        // same word, and the caller still needs the nearest *shops*, not a single
+        // product page.
+        const rows = await repo.searchNearbyProducts({
+          lat: location.lat,
+          lng: location.lng,
+          radiusKm: MAX_DELIVERY_RADIUS_KM,
+          tokens,
+          limit: (input.limit || 5) * 6,
+        });
+
+        if (rows.length === 0) {
+          return fail('no_matching_shops', `No shop near ${location.label} stocks that. Nothing was ordered.`);
+        }
+
+        const byShop = new Map();
+        for (const row of rows) {
+          if (!byShop.has(row.shopId)) {
+            byShop.set(row.shopId, {
+              shop_id: row.shopId,
+              name: row.shopName,
+              distance_km: roundedKm(row.distanceKm),
+              items: [],
+            });
+          }
+          byShop.get(row.shopId).items.push({
+            product_id: row.productId,
+            name: row.productName,
+            price: row.price,
+            unit: row.unit,
+            stock: row.stock,
+          });
+        }
+
+        const shops = [...byShop.values()]
+          .sort((a, b) => a.distance_km - b.distance_km || a.shop_id.localeCompare(b.shop_id))
+          .slice(0, input.limit || 5);
+
+        if (deps.diagnostics) {
+          deps.diagnostics.shopCount = shops.length;
+          deps.diagnostics.precision = location.precision_source || 'typed';
+        }
+
+        const lines = shops.map((shop, index) => {
+          const items = shop.items.map((item) => `   - ${item.name} — ${item.price} [${item.product_id}]`).join('\n');
+          return `${index + 1}. ${shop.name} — ${shop.distance_km} km\n${items}`;
+        });
+
+        return ok(
+          `Shops near ${location.label} that have "${input.query.trim()}":\n${lines.join('\n')}\n\nUse one of these product ids with quote_order. search_products shows the rest of a shop's catalog.`,
+          {
+            query: input.query.trim(),
+            location: {
+              label: location.label,
+              precision_source: location.precision_source || 'typed',
+              needs_exact_address: Boolean(location.needs_exact_address),
+            },
+            shops,
+          }
+        );
       } catch (error) {
         return fromError(error);
       }

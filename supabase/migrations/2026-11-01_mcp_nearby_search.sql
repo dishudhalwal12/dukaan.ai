@@ -206,11 +206,13 @@ AS $$
       AND (
           p_tokens IS NULL
           OR cardinality(p_tokens) = 0
-          -- Every token must appear: "soap 125g" should not return a 75 g bar
-          -- because one word matched.
-          OR NOT EXISTS (
+          -- ANY token (OR). The tokens are alias alternatives — "soap" and
+          -- "sabun" describe the same shelf item — so requiring all of them would
+          -- match nothing. Ranking inside one shop stays in mcp/catalog.js, where
+          -- a multi-word query can be scored properly.
+          OR EXISTS (
               SELECT 1 FROM unnest(p_tokens) AS token
-              WHERE trim(token) <> '' AND p.name NOT ILIKE '%' || trim(token) || '%'
+              WHERE trim(token) <> '' AND p.name ILIKE '%' || trim(token) || '%'
           )
       )
     ORDER BY s.distance_km ASC, p.name ASC

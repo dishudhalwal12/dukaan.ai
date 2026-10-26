@@ -27,6 +27,14 @@ const ALIASES = {
   sugar: ['cheeni', 'chini'],
   oil: ['tel', 'tel'],
   tea: ['chai', 'patti'],
+  // Personal care: the shelf word plus the brands a kirana actually stocks, so
+  // "soap" is not missed because the merchant typed "Lifeboy" and nothing else.
+  soap: ['sabun', 'sope', 'lifebuoy', 'lifeboy', 'dettol', 'lux', 'santoor', 'medimix'],
+  detergent: ['surf', 'detergent', 'washing powder'],
+  toothpaste: ['colgate', 'paste', 'manjan', 'pepsodent', 'close up'],
+  shampoo: ['sampoo', 'clinic plus', 'sunsilk', 'head shoulders'],
+  'sanitary pad': ['pad', 'pads', 'whisper', 'stayfree'],
+  'dishwash bar': ['vim', 'dishwash', 'bartan'],
 };
 
 /** Lowercase, collapse whitespace, strip punctuation that carries no meaning. */
@@ -129,6 +137,28 @@ export function scoreProduct(product, query) {
  * Searches a shop's catalog. An empty query lists the catalog in its stored
  * order; otherwise results are ranked by score, then in-stock first, then name.
  */
+/** Words that carry no product meaning; "2 pack of soap" -> "soap". */
+const STOP_WORDS = new Set(['a', 'an', 'the', 'of', 'for', 'me', 'my', 'please', 'pack', 'packs', 'packet', 'packets', 'and', 'to', 'want', 'buy']);
+
+/**
+ * The token set handed to the nearby-product query.
+ *
+ * Aliases are OR'ed (soap OR sabun), because they name the same shelf item. The
+ * SQL matcher therefore uses ANY-match; the caller ranks inside a shop with
+ * `searchCatalog`, which can score a multi-word query sensibly.
+ */
+export function expandQueryTokens(query, max = 8) {
+  const words = normaliseQuery(query)
+    .split(' ')
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+  const tokens = new Set(words);
+  for (const word of words) {
+    for (const alias of expandToken(word)) tokens.add(alias);
+  }
+  // Two letters is noise ("so"); a single letter is always noise.
+  return [...tokens].filter((token) => token.length > 1).slice(0, max);
+}
+
 export function searchCatalog(products, query, limit = 20) {
   const list = (Array.isArray(products) ? products : []).filter(Boolean);
   const q = normaliseQuery(query);
