@@ -5,6 +5,7 @@ import { rankShops, serviceability, roundedKm, isShopAvailable } from './geometr
 import { searchCatalog, formatRupees } from './catalog.js';
 import { buildQuote, isQuoteExpired } from './orderRules.js';
 import { geocodeAddress, formatAddress, needsExactAddress } from './geo.js';
+import { describeAge, precisionForLocation, storedLocationFromProfile } from './location.js';
 import { evaluateOrderLimits, checkOrderTotal, allowRead } from './limits.js';
 import { mcpOrderId } from './ids.js';
 import { normalisePhone, normalisePincode, normaliseName } from './validation.js';
@@ -76,6 +77,33 @@ async function resolveLocation(input, repo, deps) {
     };
   }
 
+  // Nothing explicit was said. The Dukaan app may already know where the
+  // customer is, because MCP sign-in captures a position with consent.
+  const profile = await repo.getProfile();
+  const stored = storedLocationFromProfile(profile, deps.now ? deps.now() : Date.now());
+  if (stored.ok) {
+    return {
+      ok: true,
+      lat: stored.lat,
+      lng: stored.lng,
+      label: stored.label,
+      source: 'app_location',
+      match_type: stored.matchType,
+      needs_exact_address: stored.needsExactAddress,
+      captured_at: stored.capturedAt,
+      age_days: stored.ageDays,
+      precision: stored.precision,
+    };
+  }
+
+  if (stored.code === 'location_stale') {
+    return {
+      ok: false,
+      code: 'location_stale',
+      message: `The saved app location is ${stored.ageDays} days old, so shops cannot be found from it. Ask for a pincode or an area.`,
+    };
+  }
+
   return {
     ok: false,
     code: 'location_required',
@@ -104,6 +132,9 @@ export function registerTools(server, { repo, config, deps }) {
     'list_orders',
     'show_checkout',
     'cancel_order',
+    // Remembering where the customer is does not place or price anything, and a
+    // paused shop still deserves a short, useful answer next time.
+    'remember_location',
   ]);
   const READ_HEAVY = new Set([
     'find_shops',
@@ -141,7 +172,7 @@ export function registerTools(server, { repo, config, deps }) {
     {
       title: 'Find nearby shops',
       description:
-        'Find Dukaan shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. Returns distance, delivery radius, item count, and availability. Never invent a location: if the customer has not said where they are, ask for a pincode or area first.',
+        'Find Dukaan shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. When none of those is given, the location captured during Dukaan sign-in is used automatically. query filters shop NAMES only; it does not search products. Use search_products for product searches after finding a shop. Never invent a location: if no input is given and the saved location is missing or stale, ask for a pincode or area.',
       inputSchema: z.object({
         address_id: z.string().uuid().optional(),
         pincode: z.string().optional(),
@@ -156,7 +187,15 @@ export function registerTools(server, { repo, config, deps }) {
     async (input) => {
       try {
         const location = await resolveLocation(input, repo, deps);
-        if (!location.ok) return fail(location.code, location.message);
+        if (!location.ok) {
+          if (input.query && !input.address_id && !input.pincode && !input.area && input.latitude === undefined) {
+            return fail(
+              'location_required',
+              'A location is required. query filters shop names only; use search_products for products after finding a shop.'
+            );
+          }
+          return fail(location.code, location.message);
+        }
 
         const shops = await repo.loadEnabledShops();
         const ranked = rankShops(shops, location);
@@ -185,17 +224,26 @@ export function registerTools(server, { repo, config, deps }) {
         const lines = results.map(
           (shop, index) => `${index + 1}. ${shop.name} — ${shop.distance_km} km, ${shop.item_count} items`
         );
+        const fromApp = location.source === 'app_location';
+        const heading = fromApp
+          ? `Shops near ${location.label} (saved in the Dukaan app, ${describeAge(location.age_days)}):`
+          : `Shops near ${location.label}:`;
         const warning = location.needs_exact_address
-          ? '\nThis is an area-level location. Save a precise address before placing an order.'
+          ? fromApp
+            ? '\nThat position came from the app, not a typed address. Save a delivery address before quoting an order.'
+            : '\nThis is an area-level location. Save a precise address before placing an order.'
           : '';
         return ok(
-          `Shops near ${location.label}:\n${lines.join('\n')}${warning}`,
+          `${heading}\n${lines.join('\n')}${warning}`,
           {
             location: {
               label: location.label,
               match_type: location.match_type,
               source: location.source,
               needs_exact_address: Boolean(location.needs_exact_address),
+              ...(fromApp
+                ? { precision: location.precision, captured_at: location.captured_at, age_days: location.age_days }
+                : {}),
             },
             shops: results,
           }
@@ -276,7 +324,7 @@ export function registerTools(server, { repo, config, deps }) {
     'get_customer_profile',
     {
       title: 'Get customer profile',
-      description: 'Read the saved name, delivery phone, and saved addresses for this signed-in customer.',
+      description: 'Read the saved name, delivery phone, saved addresses, and the last known location captured in the Dukaan app for this signed-in customer.',
       inputSchema: z.object({}),
       annotations: READ,
     },
@@ -284,11 +332,28 @@ export function registerTools(server, { repo, config, deps }) {
       try {
         const profile = await repo.getProfile();
         const addresses = await repo.listAddresses();
+        const stored = storedLocationFromProfile(profile, deps.now ? deps.now() : Date.now());
+        const location = stored.ok
+          ? {
+              latitude: stored.lat,
+              longitude: stored.lng,
+              source: stored.source,
+              precision: stored.precision,
+              accuracy_m: stored.accuracyM,
+              captured_at: stored.capturedAt,
+              age_days: stored.ageDays,
+            }
+          : null;
+        const locationLine = stored.ok
+          ? ` Last known location: ${stored.lat.toFixed(4)}, ${stored.lng.toFixed(4)} (${stored.precision}, ${describeAge(stored.ageDays)}).`
+          : stored.code === 'location_stale'
+            ? ` The saved location is ${stored.ageDays} days old and will not be used.`
+            : '';
         return ok(
           profile
-            ? `Saved profile: ${profile.full_name || 'no name'}, ${profile.phone || 'no phone'}. ${addresses.length} saved address(es).`
-            : `No profile saved yet. ${addresses.length} saved address(es).`,
-          { profile: profile ? { full_name: profile.full_name, phone: profile.phone } : null, addresses }
+            ? `Saved profile: ${profile.full_name || 'no name'}, ${profile.phone || 'no phone'}. ${addresses.length} saved address(es).${locationLine}`
+            : `No profile saved yet. ${addresses.length} saved address(es).${locationLine}`,
+          { profile: profile ? { full_name: profile.full_name, phone: profile.phone, location } : { full_name: null, phone: null, location }, addresses }
         );
       } catch (error) {
         return fromError(error);
@@ -320,6 +385,52 @@ export function registerTools(server, { repo, config, deps }) {
         return ok(`Saved ${saved.full_name || 'customer'}${saved.phone ? `, ${saved.phone}` : ''}.`, {
           profile: { full_name: saved.full_name, phone: saved.phone },
         });
+      } catch (error) {
+        return fromError(error);
+      }
+    }
+  );
+
+  server.registerTool(
+    'remember_location',
+    {
+      title: 'Remember the customer location',
+      description:
+        'Store the coordinates the customer just shared so the next chat does not have to ask again. Use it whenever the customer sends a map pin or coordinates, even if they do not want a saved delivery address. This never places or prices an order.',
+      inputSchema: z.object({
+        latitude: z.number().min(-90).max(90),
+        longitude: z.number().min(-180).max(180),
+        accuracy_m: z.number().min(0).max(100000).optional(),
+        label: z.string().max(80).optional(),
+      }),
+      annotations: { ...WRITE, destructiveHint: false },
+    },
+    async ({ latitude, longitude, accuracy_m, label }) => {
+      try {
+        if (!coordsOk(Number(latitude), Number(longitude))) {
+          return fail('location_invalid', 'Pass a latitude between -90 and 90 and a longitude between -180 and 180.');
+        }
+        const saved = await repo.saveLocation({
+          lat: Number(latitude),
+          lng: Number(longitude),
+          accuracyM: accuracy_m ?? null,
+          source: 'chat_shared',
+          label: label || null,
+          capturedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
+        });
+        const precision = precisionForLocation({ source: 'chat_shared', accuracyM: accuracy_m ?? null });
+        return ok(
+          `Saved that location (${precision}). Later chats can find shops near it without asking again.`,
+          {
+            location: {
+              latitude: Number(saved?.location_lat ?? latitude),
+              longitude: Number(saved?.location_lng ?? longitude),
+              source: 'chat_shared',
+              precision,
+              captured_at: saved?.location_captured_at || null,
+            },
+          }
+        );
       } catch (error) {
         return fromError(error);
       }
@@ -434,6 +545,24 @@ export function registerTools(server, { repo, config, deps }) {
           source,
           is_default: input.is_default,
         });
+        // The customer just shared a real position, so remember it for the next
+        // chat instead of asking again. A geocoded area is deliberately NOT
+        // remembered: it is the geocoder's guess, not something they shared.
+        if (input.latitude !== undefined || input.longitude !== undefined) {
+          try {
+            await repo.saveLocation({
+              lat: Number(lat),
+              lng: Number(lng),
+              accuracyM: accuracyM ?? null,
+              source: 'chat_shared',
+              label: address.label || null,
+              capturedAt: new Date(deps.now ? deps.now() : Date.now()).toISOString(),
+            });
+          } catch {
+            // A stale schema must not fail the address that was just saved.
+          }
+        }
+
         return ok(
           `Saved ${address.label ? `${address.label}: ` : ''}${address.address}. Match: ${address.match_type}${address.match_type === 'area' ? ' (the shop may call to confirm)' : ''}.`,
           { address, needs_exact_address: address.match_type === 'city' }

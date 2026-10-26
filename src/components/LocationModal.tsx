@@ -11,6 +11,13 @@ interface LocationModalProps {
    * plain "Back" instead of pretending something is missing.
    */
   mode: 'onboarding' | 'required' | 'edit';
+  /**
+   * Who is being asked. `store` is the shopkeeper during onboarding; `customer`
+   * is the same sheet inside the MCP consent page, where the position is used to
+   * find nearby shops in an AI chat rather than to place the shop on the map.
+   * The visual language is deliberately identical: one location consent surface.
+   */
+  audience?: 'store' | 'customer';
   onCaptured: (location: StoreLocation) => void;
   onSetupLater?: () => void;
   onClose?: () => void;
@@ -38,6 +45,7 @@ type LocationMessage = keyof typeof MESSAGES;
 const LocationModal: React.FC<LocationModalProps> = ({
   isOpen,
   mode,
+  audience = 'store',
   onCaptured,
   onSetupLater,
   onClose,
@@ -83,11 +91,17 @@ const LocationModal: React.FC<LocationModalProps> = ({
     setFailure('unavailable');
   };
 
-  const title = mode === 'required' ? 'Store location needed' : 'Store location';
-  const subtitle =
-    mode === 'required'
-      ? 'Add your products after setting your store location.'
-      : null;
+  const isCustomer = audience === 'customer';
+  const title = isCustomer
+    ? 'Share your location?'
+    : mode === 'required'
+      ? 'Store location needed'
+      : 'Store location';
+  const subtitle = !isCustomer && mode === 'required' ? 'Add your products after setting your store location.' : null;
+  const body = isCustomer
+    ? 'We save it to your Dukaan account so your assistant can name the nearest shop straight away. Delivery still needs a full address.'
+    : "Stand inside your store and we'll save its exact location for setup.";
+  const skipLabel = isCustomer ? 'Not now' : 'Setup later';
   const canDismiss = mode === 'required' || mode === 'edit';
 
   return (
@@ -102,9 +116,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
         <h2 className="text-white text-xl font-bold mb-2">{title}</h2>
         {subtitle && <p className="text-neutral-400 text-sm mb-3">{subtitle}</p>}
 
-        <p className="text-neutral-300 text-sm mb-6">
-          Stand inside your store and we'll save its exact location for setup.
-        </p>
+        <p className="text-neutral-300 text-sm mb-6">{body}</p>
 
         {failure && (
           <p className="text-neutral-400 text-xs mb-4 leading-relaxed">{MESSAGES[failure]}</p>
@@ -137,8 +149,15 @@ const LocationModal: React.FC<LocationModalProps> = ({
             onClick={onSetupLater}
             className="w-full text-neutral-400 text-sm font-medium py-3 mt-1 hover:text-neutral-200 transition-colors"
           >
-            Setup later
+            {skipLabel}
           </button>
+        )}
+
+        {isCustomer && (
+          <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
+            Saved to your Dukaan account only. You can update or remove it any time from this page.
+            Approval is not required to share it.
+          </p>
         )}
 
         {canDismiss && onClose && (

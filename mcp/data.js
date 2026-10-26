@@ -136,13 +136,80 @@ export async function loadShopCatalog(db, shopUserId) {
 // ── customer profile and addresses ───────────────────────────────────────────
 
 export async function getCustomerProfile(db, userId) {
+  // `select('*')` on purpose: the location columns arrive in migration
+  // 2026-10-28, and naming them here would make every tool fail with
+  // "column does not exist" on a project where that migration has not run yet.
   const { data, error } = await db
     .from('customer_profiles')
-    .select('user_id,full_name,phone,created_at,updated_at')
+    .select('*')
     .eq('user_id', userId)
     .maybeSingle();
   if (error) fail('profile_unavailable', error.message);
   return data || null;
+}
+
+/**
+ * The customer's last known position, captured with consent in the app.
+ *
+ * `source` records how it was obtained, so a city-level IP guess is never read
+ * as a measured fix. Written with the customer's own token: the RLS policies on
+ * `customer_profiles` already scope the row to `auth.uid() = user_id`.
+ */
+export async function saveCustomerLocation(db, userId, { lat, lng, accuracyM = null, source = 'gps', label = null, capturedAt = null }) {
+  // `Number(null)` is 0, which would store a real-looking position on the
+  // equator. Blanks are rejected before the conversion (same rule as
+  // mcp/location.js, applied here because this is the writer).
+  const coordinate = (value) => {
+    if (value === null || value === undefined || value === '') return NaN;
+    return Number(value);
+  };
+  const latitude = coordinate(lat);
+  const longitude = coordinate(lng);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    fail('location_invalid', 'A latitude and a longitude are required.');
+  }
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    fail('location_invalid', 'The coordinates are outside the valid range.');
+  }
+
+  // Only the location keys are sent, so an upsert on an existing profile cannot
+  // blank out `full_name` or `phone` (ON CONFLICT updates just these columns).
+  const payload = {
+    user_id: userId,
+    location_lat: latitude,
+    location_lng: longitude,
+    location_accuracy_m: accuracyM === null || accuracyM === undefined ? null : Number(accuracyM),
+    location_source: source,
+    location_label: strip(label) || null,
+    location_captured_at: capturedAt || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await db
+    .from('customer_profiles')
+    .upsert(payload, { onConflict: 'user_id' })
+    .select('*')
+    .single();
+  if (error) fail('location_save_failed', error.message);
+  return data;
+}
+
+/** Removes the saved position without touching the profile itself. */
+export async function clearCustomerLocation(db, userId) {
+  const { error } = await db
+    .from('customer_profiles')
+    .update({
+      location_lat: null,
+      location_lng: null,
+      location_accuracy_m: null,
+      location_source: null,
+      location_label: null,
+      location_captured_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId);
+  if (error) fail('location_clear_failed', error.message);
+  return { cleared: true };
 }
 
 export async function upsertCustomerProfile(db, userId, { fullName, phone }) {

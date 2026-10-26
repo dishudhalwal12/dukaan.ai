@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readConfig, requireConfig } from './config.js';
+import { readConfig, requireConfig, connectUrlFor } from './config.js';
 import { createFetchHandler } from './server.js';
 import { toWebRequest, sendWebResponse } from './nodeAdapter.js';
 
@@ -13,6 +13,7 @@ import { toWebRequest, sendWebResponse } from './nodeAdapter.js';
 const port = Number(process.env.MCP_PORT || 8787);
 const config = readConfig();
 config.publicUrl = config.publicUrl || 'http://localhost:8787/mcp';
+config.documentationUrl = config.documentationUrl || connectUrlFor(config.publicUrl);
 config.allowInsecure = config.publicUrl.startsWith('http://localhost') || config.publicUrl.startsWith('http://127.');
 
 let handler;

@@ -9,6 +9,7 @@ const root = resolve(here, '..');
 const bootstrap = readFileSync(resolve(root, 'scripts/fixtures/mcp_schema_bootstrap.sql'), 'utf8');
 const migration = readFileSync(resolve(root, 'supabase/migrations/2026-10-26_mcp.sql'), 'utf8');
 const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp_default_on.sql'), 'utf8');
+const customerLocation = readFileSync(resolve(root, 'supabase/migrations/2026-10-28_mcp_customer_location.sql'), 'utf8');
 
 console.log('--- RUNNING MCP SCHEMA / RPC TESTS (PGlite) ---');
 let n = 0;
@@ -18,7 +19,8 @@ const db = new PGlite();
 await db.exec(bootstrap);
 await db.exec(migration);
 await db.exec(defaultOn);
-ok('both migrations apply to a Supabase-shaped Postgres database');
+await db.exec(customerLocation);
+ok('all three migrations apply to a Supabase-shaped Postgres database');
 
 const u1 = '11111111-1111-4111-8111-111111111111';
 const u2 = '22222222-2222-4222-8222-222222222222';
@@ -115,6 +117,70 @@ const other = await db.query('SELECT external_id FROM public.orders');
 assert.strictEqual(other.rows.length, 0);
 await db.exec('RESET ROLE; RESET request.jwt.claim.sub;');
 ok('RLS shows an order only to the customer who placed it');
+
+// ── the position captured during MCP sign-in ────────────────────────────────
+const locationColumns = await db.query(
+  "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'customer_profiles' AND column_name LIKE 'location_%'"
+);
+const columnNames = locationColumns.rows.map((row) => row.column_name).sort();
+assert.deepStrictEqual(
+  columnNames,
+  ['location_accuracy_m', 'location_captured_at', 'location_label', 'location_lat', 'location_lng', 'location_source'],
+  'every location column from 2026-10-28 exists'
+);
+ok('the customer location columns exist');
+
+// Half a position, an unknown source, and an out-of-range latitude are refused
+// by the database itself, not only by the server.
+let halfPosition = '';
+try {
+  await db.query('INSERT INTO public.customer_profiles (user_id, location_lat) VALUES ($1, 26.9)', [u1]);
+} catch (error) {
+  halfPosition = String(error.message || error);
+}
+assert.match(halfPosition, /customer_profiles_location_coords_check/);
+
+await db.query(
+  "INSERT INTO public.customer_profiles (user_id, location_lat, location_lng, location_source) VALUES ($1, 26.9124, 75.7873, 'gps') ON CONFLICT (user_id) DO UPDATE SET location_lat = 26.9124",
+  [u1]
+);
+
+let badSource = '';
+try {
+  await db.query(
+    "UPDATE public.customer_profiles SET location_source = 'telepathy' WHERE user_id = $1",
+    [u1]
+  );
+} catch (error) {
+  badSource = String(error.message || error);
+}
+assert.match(badSource, /customer_profiles_location_source_check/);
+ok('the database refuses half a position and an unknown source');
+
+await db.exec(`
+  GRANT SELECT, INSERT, UPDATE ON public.customer_profiles TO authenticated;
+  SET ROLE authenticated;
+  SET request.jwt.claim.sub = '${u1}';
+`);
+const ownerUpdate = await db.query(
+  'UPDATE public.customer_profiles SET location_accuracy_m = 18, location_captured_at = now() WHERE user_id = $1',
+  [u1]
+);
+assert.strictEqual(Number(ownerUpdate.affectedRows ?? 1), 1, 'the owner can update their own row');
+const ownProfile = await db.query('SELECT location_lat FROM public.customer_profiles');
+assert.strictEqual(ownProfile.rows.length, 1, 'the owner reads the row they just wrote');
+assert.strictEqual(Number(ownProfile.rows[0].location_lat), 26.9124);
+
+await db.exec(`SET request.jwt.claim.sub = '${u2}';`);
+const foreignProfile = await db.query('SELECT location_lat FROM public.customer_profiles');
+assert.strictEqual(foreignProfile.rows.length, 0, 'another customer never sees this position');
+const hijack = await db.query('UPDATE public.customer_profiles SET location_lat = 1 WHERE user_id = $1', [u1]);
+assert.strictEqual(Number(hijack.affectedRows ?? 0), 0, 'a foreign update touches no rows');
+await db.exec('RESET ROLE;');
+await db.exec('RESET request.jwt.claim.sub;');
+const untouched = await db.query('SELECT location_lat FROM public.customer_profiles WHERE user_id = $1', [u1]);
+assert.strictEqual(Number(untouched.rows[0].location_lat), 26.9124);
+ok('RLS lets the owner write their position and hides it from everyone else');
 
 console.log(`\nAll ${n} MCP schema checks passed.`);
 await db.close();
