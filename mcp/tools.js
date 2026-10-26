@@ -30,14 +30,21 @@ async function resolveLocation(input, repo, deps) {
   if (input.address_id) {
     const row = await repo.getAddressRow(input.address_id);
     if (!row) return { ok: false, code: 'address_not_found', message: 'That saved address does not exist.' };
+    // Only a row a geocoder actually matched may describe itself as house-level.
+    // Rows written by the old code carry `match_type: 'house'` from a GPS fix,
+    // so the label alone is not evidence.
+    const verified = Boolean(row.geocode_verified);
+    const claimed = row.match_type;
     return {
       ok: true,
       lat: Number(row.lat),
       lng: Number(row.lng),
       label: formatAddress(row),
       source: 'saved_address',
-      match_type: row.match_type,
-      needs_exact_address: needsExactAddress(row.match_type),
+      match_type: verified || claimed !== 'house' ? claimed : 'street',
+      needs_exact_address: verified ? needsExactAddress(claimed) : true,
+      precision_source: row.precision_source || (row.source === 'geocoded' ? 'geocoded' : 'typed'),
+      geocode_verified: verified,
     };
   }
 
@@ -51,8 +58,12 @@ async function resolveLocation(input, repo, deps) {
       lng: Number(input.longitude),
       label: 'Shared location',
       source: 'coordinates',
-      match_type: 'house',
-      needs_exact_address: false,
+      // A pin says where the phone is. It says nothing about which door the
+      // customer typed, so it is street level and still needs an address.
+      match_type: 'street',
+      needs_exact_address: true,
+      precision_source: 'chat_shared',
+      geocode_verified: false,
     };
   }
 
@@ -74,6 +85,8 @@ async function resolveLocation(input, repo, deps) {
       source: 'geocoded',
       match_type: geo.matchType,
       needs_exact_address: geo.needsExactAddress,
+      precision_source: 'geocoded',
+      geocode_verified: true,
     };
   }
 
@@ -93,6 +106,8 @@ async function resolveLocation(input, repo, deps) {
       captured_at: stored.capturedAt,
       age_days: stored.ageDays,
       precision: stored.precision,
+      precision_source: 'app_location',
+      geocode_verified: false,
     };
   }
 
@@ -240,6 +255,7 @@ export function registerTools(server, { repo, config, deps }) {
               label: location.label,
               match_type: location.match_type,
               source: location.source,
+              precision_source: location.precision_source || 'typed',
               needs_exact_address: Boolean(location.needs_exact_address),
               ...(fromApp
                 ? { precision: location.precision, captured_at: location.captured_at, age_days: location.age_days }
