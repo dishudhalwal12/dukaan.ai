@@ -63,11 +63,34 @@ export function addressSnapshot(row, profile) {
 
 export function publicOrder(row, shop = {}) {
   if (!row) return null;
+
+  // The popup reads src/types.ts Customer. The row stores it as JSONB, so the
+  // projection has to keep the same key names in both directions: a rename here
+  // silently empties the shopkeeper's phone/map link, not the assistant's reply.
+  const stored = row.customer && typeof row.customer === 'object' ? row.customer : {};
+  const storedLocation = stored.location && typeof stored.location === 'object' ? stored.location : {};
+  const coord = (value) => {
+    if (value === null || value === undefined || value === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+  const latitude = coord(stored.latitude) ?? coord(storedLocation.latitude);
+  const longitude = coord(stored.longitude) ?? coord(storedLocation.longitude);
+  const customer = {
+    name: stored.name || row.customer_name || 'Customer',
+    whatsappNumber: stored.whatsappNumber || row.customer_phone || '',
+    address: stored.address || row.delivery_address || '',
+    mapsUrl: stored.mapsUrl || storedLocation.mapsUrl || (latitude !== undefined && longitude !== undefined ? mapsUrl(latitude, longitude) : undefined),
+    ...(latitude !== undefined ? { latitude } : {}),
+    ...(longitude !== undefined ? { longitude } : {}),
+  };
+
   return {
     order_id: row.external_id,
     status: row.status,
     status_label: customerStatusLabel(row.status),
     shop: { shop_id: shop.public_shop_id || null, name: shop.store_name || 'Shop' },
+    customer,
     items: Array.isArray(row.items) ? row.items : [],
     total: Number(row.total) || 0,
     total_display: formatRupees(Math.round((Number(row.total) || 0) * 100)),

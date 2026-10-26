@@ -11,6 +11,7 @@ const migration = readFileSync(resolve(root, 'supabase/migrations/2026-10-26_mcp
 const defaultOn = readFileSync(resolve(root, 'supabase/migrations/2026-10-27_mcp_default_on.sql'), 'utf8');
 const customerLocation = readFileSync(resolve(root, 'supabase/migrations/2026-10-28_mcp_customer_location.sql'), 'utf8');
 const addressSource = readFileSync(resolve(root, 'supabase/migrations/2026-10-29_address_source.sql'), 'utf8');
+const orderCustomerMapsUrl = readFileSync(resolve(root, 'supabase/migrations/2026-10-31_order_customer_mapsurl.sql'), 'utf8');
 
 console.log('--- RUNNING MCP SCHEMA / RPC TESTS (PGlite) ---');
 let n = 0;
@@ -34,7 +35,8 @@ await db.query(
   [u1]
 );
 await db.exec(addressSource);
-ok('all four migrations apply to a Supabase-shaped Postgres database');
+await db.exec(orderCustomerMapsUrl);
+ok('all five migrations apply to a Supabase-shaped Postgres database');
 await db.query(
   "INSERT INTO public.business_profiles (user_id, store_name, store_lat, store_lng, mcp_enabled) VALUES ($1, 'Shop One', 26.9124, 75.7873, true), ($2, 'Shop Two', 26.92, 75.79, true)",
   [s1, s2]
@@ -80,7 +82,10 @@ assert.strictEqual(order.customer.name, 'Asha');
 assert.strictEqual(order.customer.address, '12, MG Road, Jaipur 302001');
 assert.strictEqual(Number(order.customer.latitude), 26.9124);
 assert.strictEqual(order.delivery_address, '12, MG Road, Jaipur 302001');
-ok('the RPC inserts the order from the quote snapshot');
+for (const key of ['name', 'whatsappNumber', 'address', 'mapsUrl', 'latitude', 'longitude']) {
+  assert.ok(Object.hasOwn(order.customer, key), `orders.customer.${key} is what the POS popup reads`);
+}
+ok('the order row carries every customer field the POS popup reads');
 
 const again = await db.query('SELECT * FROM public.mcp_place_order($1, $2, $3)', [quoteId, u1, 'MCP-20261026-abc123']);
 assert.strictEqual(String(again.rows[0].id), String(order.id));
