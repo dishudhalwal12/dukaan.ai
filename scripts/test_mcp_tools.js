@@ -150,6 +150,12 @@ assert.strictEqual(noMatch.isError, true);
 assert.strictEqual(noMatch.structuredContent.code, 'no_matching_shops');
 ok('find_shops distinguishes a name miss from an out-of-range address');
 
+const queryWithoutLocation = await client.callTool({ name: 'find_shops', arguments: { query: 'Barli ji biscuit' } });
+assert.strictEqual(queryWithoutLocation.isError, true);
+assert.strictEqual(queryWithoutLocation.structuredContent.code, 'location_required');
+assert.match(queryWithoutLocation.content[0].text, /search_products/);
+ok('find_shops explains that query is not a product search and needs a location');
+
 const outOfRange = await client.callTool({ name: 'find_shops', arguments: { latitude: 28.6139, longitude: 77.209 } });
 assert.strictEqual(outOfRange.isError, true);
 assert.strictEqual(outOfRange.structuredContent.code, 'out_of_range');

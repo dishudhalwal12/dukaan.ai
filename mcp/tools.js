@@ -141,7 +141,7 @@ export function registerTools(server, { repo, config, deps }) {
     {
       title: 'Find nearby shops',
       description:
-        'Find Dukaan shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. Returns distance, delivery radius, item count, and availability. Never invent a location: if the customer has not said where they are, ask for a pincode or area first.',
+        'Find Dukaan shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. A location is always required. query filters shop NAMES only; it does not search products. Use search_products for product searches after finding a shop. Never invent a location: if the customer has not said where they are, ask for a pincode or area first.',
       inputSchema: z.object({
         address_id: z.string().uuid().optional(),
         pincode: z.string().optional(),
@@ -156,7 +156,15 @@ export function registerTools(server, { repo, config, deps }) {
     async (input) => {
       try {
         const location = await resolveLocation(input, repo, deps);
-        if (!location.ok) return fail(location.code, location.message);
+        if (!location.ok) {
+          if (input.query && !input.address_id && !input.pincode && !input.area && input.latitude === undefined) {
+            return fail(
+              'location_required',
+              'A location is required. query filters shop names only; use search_products for products after finding a shop.'
+            );
+          }
+          return fail(location.code, location.message);
+        }
 
         const shops = await repo.loadEnabledShops();
         const ranked = rankShops(shops, location);
