@@ -21,14 +21,25 @@ export const isSupabaseConfigured = (): boolean => {
   );
 };
 
+/**
+ * Build a Supabase client with its own auth storage.
+ *
+ * The merchant app and the OAuth consent page must not share a session:
+ * signing in as a customer on /oauth/consent used to overwrite the
+ * shopkeeper's session under the same localStorage key, which logged the
+ * dashboard out of its own shop and hid that shop's MCP orders.
+ */
+export const createIsolatedSupabaseClient = (storageKey: string): SupabaseClient =>
+  createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      storageKey,
+      flowType: 'pkce',
+    },
+  });
+
 // Initialize Supabase Client with persistent local storage and PKCE flow for reliable OAuth token retention
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    storageKey: 'dukan_supabase_auth_token',
-    flowType: 'pkce',
-  },
-});
+export const supabase: SupabaseClient = createIsolatedSupabaseClient('dukan_supabase_auth_token');
