@@ -13,9 +13,6 @@ import { normalisePhone, normalisePincode, normaliseName } from './validation.js
 import { publicOrder, addressSnapshot } from './data.js';
 import { ok, fail, fromError } from './result.js';
 
-const READ = { readOnlyHint: true, openWorldHint: true };
-const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true };
-
 const shopPublic = (shop, km, itemCount = shop.catalogItemCount) => ({
   shop_id: shop.shopId,
   name: shop.name,
@@ -279,7 +276,7 @@ export function registerTools(server, { repo, config, deps }) {
         query: z.string().max(80).optional(),
         limit: z.number().int().min(1).max(10).optional(),
       }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async (input) => {
       try {
@@ -393,7 +390,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'Get shop details',
       description: 'Get one shop by its shop_id: name, delivery radius, catalog size, and whether it is accepting orders.',
       inputSchema: z.object({ shop_id: z.string().min(1) }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async ({ shop_id }) => {
       try {
@@ -426,7 +423,7 @@ export function registerTools(server, { repo, config, deps }) {
         query: z.string().max(80).optional(),
         limit: z.number().int().min(1).max(50).optional(),
       }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async ({ shop_id, query, limit }) => {
       try {
@@ -468,7 +465,7 @@ export function registerTools(server, { repo, config, deps }) {
         longitude: z.number().min(-180).max(180).optional(),
         limit: z.number().int().min(1).max(10).optional(),
       }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     },
     async (input) => {
       try {
@@ -561,7 +558,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'Get customer profile',
       description: 'Read the saved name, delivery phone, saved addresses, and the last known location captured in the Dukaan app for this signed-in customer.',
       inputSchema: z.object({}),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
       try {
@@ -605,7 +602,7 @@ export function registerTools(server, { repo, config, deps }) {
         full_name: z.string().max(80).optional(),
         phone: z.string().max(20).optional(),
       }),
-      annotations: { ...WRITE, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     async ({ full_name, phone }) => {
       try {
@@ -638,7 +635,7 @@ export function registerTools(server, { repo, config, deps }) {
         accuracy_m: z.number().min(0).max(100000).optional(),
         label: z.string().max(80).optional(),
       }),
-      annotations: { ...WRITE, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     async ({ latitude, longitude, accuracy_m, label }) => {
       try {
@@ -678,7 +675,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'List saved addresses',
       description: 'List the customer saved delivery addresses. Use an address_id from this list for quote_order.',
       inputSchema: z.object({}),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
       try {
@@ -718,7 +715,7 @@ export function registerTools(server, { repo, config, deps }) {
         source: z.enum(['map_pin', 'geocoded', 'manual']).optional(),
         is_default: z.boolean().optional(),
       }),
-      annotations: WRITE,
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     async (input) => {
       try {
@@ -881,7 +878,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'Delete a delivery address',
       description: 'Delete one saved delivery address. This cannot be undone.',
       inputSchema: z.object({ address_id: z.string().uuid() }),
-      annotations: { ...WRITE, destructiveHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     async ({ address_id }) => {
       try {
@@ -911,7 +908,7 @@ export function registerTools(server, { repo, config, deps }) {
       }),
       // Retrying this call is safe: the same basket inside 60 seconds returns the
       // same quote, and the database rejects a duplicate insert outright.
-      annotations: { ...WRITE, idempotentHint: true, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
     },
     async (input) => {
       try {
@@ -1017,7 +1014,7 @@ export function registerTools(server, { repo, config, deps }) {
         quote_id: z.string().uuid(),
         confirmed: z.literal(true),
       }),
-      annotations: { ...WRITE, destructiveHint: false },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
     },
     async ({ quote_id }) => {
       try {
@@ -1082,7 +1079,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'Get one order',
       description: 'Read the current status of an MCP order placed by this customer.',
       inputSchema: z.object({ order_id: z.string().min(3) }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ order_id }) => {
       try {
@@ -1103,7 +1100,7 @@ export function registerTools(server, { repo, config, deps }) {
       title: 'List recent orders',
       description: 'List the customer recent MCP orders, newest first.',
       inputSchema: z.object({ limit: z.number().int().min(1).max(10).optional() }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async ({ limit }) => {
       try {
@@ -1132,7 +1129,7 @@ export function registerTools(server, { repo, config, deps }) {
       description:
         'Render an interactive checkout card for a live quote. This does not place an order. Use it after quote_order when the host can display MCP Apps; hosts without UI support receive the same summary as text.',
       inputSchema: z.object({ quote_id: z.string().uuid() }),
-      annotations: READ,
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       _meta: { ui: { resourceUri: CHECKOUT_URI } },
     },
     async ({ quote_id }) => {
@@ -1171,7 +1168,7 @@ ${lines.join('\n')}\nTotal: ${view.total_display}\nDeliver to: ${view.address}\n
       title: 'Cancel an order',
       description: 'Cancel an order that the shop has not accepted yet. Once the shop accepts, the customer must call the shop.',
       inputSchema: z.object({ order_id: z.string().min(3) }),
-      annotations: { ...WRITE, destructiveHint: true, idempotentHint: true },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false, idempotentHint: true },
     },
     async ({ order_id }) => {
       try {

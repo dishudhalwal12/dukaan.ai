@@ -209,6 +209,38 @@ install, and `capabilities` must use whatever values the submission form lists. 
 `https://platform.openai.com` (Apps) and `https://developers.openai.com/apps-sdk`; they change, and
 guessing them invalidates the package.
 
+## What a submittable package actually is (found 2026-10-27)
+
+The official submission reference says it plainly: **a ZIP containing app references (`apps` /
+`.app.json`) or lifecycle hooks cannot be submitted.** The package that had been built pointed at an
+Apps SDK app id through `.app.json`, which is why the plugin stayed personal no matter how good the
+listing copy was.
+
+The submittable Codex package is:
+
+```
+plugin.zip
+├── .codex-plugin/plugin.json   identity, interface, review test cases, publication
+├── .mcp.json                   { "mcpServers": { "dukaan": { "url": "<endpoint>" } } }
+└── assets/                     icon.png, icon-dark.png, logo.png, logo-dark.png
+```
+
+Field notes that cost real time to learn:
+
+- `interface.composerIcon` and `logo` are what the Plugins list draws. Without them the list shows a
+  generic mark while the detail page (which uses the app icon) looks fine.
+- `interface.defaultPrompt` is an **array**. Those entries are the "Skills" chips on the listing, and
+  they replace screenshots, which are no longer displayed.
+- `websiteURL`, `supportURL`, `privacyPolicyURL`, `termsOfServiceURL` are manifest fields, so the
+  "Website: Unavailable" state is fixable from the package as well as the dashboard.
+- `extensions.com.openai.review.test_cases` takes positive and negative cases. Write them from the
+  behaviour you actually have, because a reviewer runs them.
+- `name` is the plugin identity. An update is rejected with "Plugin upload name must match the
+  existing plugin" when it changes, even though `displayName` is what users read.
+- Changing the MCP URL of an existing plugin is not supported in the update flow; it needs support.
+
+`docs/superpowers/listing/` holds the current package and the README that explains every field.
+
 ## Deploy checklist (order matters)
 
 Merge `feat/mcp-address-truth` → Vercel deploys → then run these in Supabase → SQL Editor:

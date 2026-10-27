@@ -1,5 +1,5 @@
 import { normaliseShop } from './geometry.js';
-import { toPublicProduct, formatRupees, normaliseUnit, parsePriceToPaise } from './catalog.js';
+import { toPublicProduct, formatRupees, normaliseUnit, parsePriceToPaise, isProhibitedProduct } from './catalog.js';
 import { formatAddress, mapsUrl } from './geo.js';
 import { customerStatusLabel } from './orderRules.js';
 
@@ -209,6 +209,9 @@ export async function searchNearbyProducts(db, { lat, lng, radiusKm = 10, tokens
       // The SQL only proves "stock > 0". `price` is free text typed by a
       // merchant, and a row quoting at ₹0 or "FREE" would reach the card and then
       // fail inside quote_order. Drop it here, exactly as search_products does.
+      // Same rule as the per-shop catalog: a prohibited row never reaches a tool
+      // result, whichever path it came in on.
+      if (isProhibitedProduct(row.product_name)) return null;
       const pricePaise = parsePriceToPaise(row.price);
       if (pricePaise === null) return null;
       return {

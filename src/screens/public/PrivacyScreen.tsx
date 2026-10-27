@@ -77,6 +77,26 @@ const PrivacyScreen: React.FC = () => {
         </p>
       </PublicSection>
 
+      <PublicSection title="How long we keep it">
+        <p>
+          An unused order preview is deleted 24 hours after it expires. A saved position stops being used
+          after 30 days and stays until you remove it. A saved address stays until you delete it. An order
+          stays while your account exists, because the shop and you may still need it.
+        </p>
+        <p>
+          Logs keep a hashed user id, the tool name, the duration, and the outcome. They do not keep names,
+          phone numbers, addresses, or messages.
+        </p>
+      </PublicSection>
+
+      <PublicSection title="Location is sensitive, so it is opt in">
+        <p>
+          A position is personal data. Dukaan asks for it only after you tap Allow location, tells you what
+          it is for at that moment, and never takes it silently. You can remove it on the consent page, and
+          an assistant loses access to it as soon as you revoke that assistant.
+        </p>
+      </PublicSection>
+
       <PublicSection title="Deleting your data">
         <p>
           Delete a saved address in the app, or ask the assistant to delete it. Remove the saved location on the

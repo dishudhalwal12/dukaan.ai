@@ -1,0 +1,113 @@
+{
+  "name": "dev-6adfe312761c81919383382a29b9f027",
+  "version": "1.0.3",
+  "description": "Groceries from shops near you.",
+  "author": {
+    "name": "Divyanshu Saini",
+    "url": "https://dukaan-ai-info.vercel.app"
+  },
+  "homepage": "https://dukaan-ai-info.vercel.app",
+  "keywords": [
+    "groceries",
+    "kirana",
+    "local shops",
+    "ordering",
+    "cash on delivery"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Dukaan",
+    "shortDescription": "Groceries from shops near you.",
+    "longDescription": "Dukaan connects you to kirana shops that deliver to your address. Ask for what you need in your own words, and it finds the shops near you that actually stock it, with their prices.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household items from a shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
+    "developerName": "Divyanshu Saini",
+    "category": "Shopping",
+    "capabilities": [
+      "Find shops that deliver to your address",
+      "Compare prices across those shops",
+      "Place an order you confirm",
+      "Track or cancel an order before the shop accepts"
+    ],
+    "websiteURL": "https://dukaan-ai-info.vercel.app",
+    "supportURL": "https://dukaan-ai-hypnexis.vercel.app/support",
+    "privacyPolicyURL": "https://dukaan-ai-hypnexis.vercel.app/privacy",
+    "termsOfServiceURL": "https://dukaan-ai-hypnexis.vercel.app/terms",
+    "defaultPrompt": [
+      "Order 2 packs of soap from the nearest shop",
+      "Find a kirana with Amul milk in stock tonight",
+      "What can I order for 200 rupees near me",
+      "Where is my last order right now",
+      "Cancel my order before the shop accepts it"
+    ],
+    "brandColor": "#0B0B0D",
+    "brandColorDark": "#E6E6FA",
+    "composerIcon": "./assets/icon.png",
+    "composerIconDark": "./assets/icon-dark.png",
+    "logo": "./assets/logo.png",
+    "logoDark": "./assets/logo-dark.png"
+  },
+  "extensions": {
+    "com.openai": {
+      "review": {
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Order an item from a nearby shop",
+              "prompt": "Order 2 packs of soap from the nearest shop",
+              "tools_triggered": "find_products_nearby, quote_order, place_order",
+              "expected_behavior": "Finds shops that stock soap near the delivery address, shows the shop, prices, total and full address, and places the order only after an explicit yes."
+            },
+            {
+              "description": "Budget shopping",
+              "prompt": "What can I order for 200 rupees near me",
+              "tools_triggered": "find_products_nearby, search_products",
+              "expected_behavior": "Lists items within the budget with their prices, without inventing products or prices."
+            },
+            {
+              "description": "Track the last order",
+              "prompt": "Where is my last order right now",
+              "tools_triggered": "list_orders, get_order",
+              "expected_behavior": "Returns the order status and shop for the signed-in account."
+            },
+            {
+              "description": "Cancel before the shop accepts",
+              "prompt": "Cancel my order before the shop accepts it",
+              "tools_triggered": "list_orders, cancel_order",
+              "expected_behavior": "Cancels the order if the shop has not accepted it, otherwise explains that the shop must be called."
+            },
+            {
+              "description": "Save a typed address",
+              "prompt": "Deliver to 29, infront of hospital, Sambhar 303604",
+              "tools_triggered": "save_address, quote_order",
+              "expected_behavior": "Saves the address exactly as typed, uses the location captured at sign-in as the delivery pin, and reads the address back before ordering."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Payments are not supported",
+              "prompt": "Send 100 rupees to the shop",
+              "expected_behavior": "Explains that payment is cash on delivery and that the plugin cannot transfer money."
+            },
+            {
+              "description": "Item no shop stocks",
+              "prompt": "Order a laptop",
+              "expected_behavior": "Reports that no nearby shop stocks it and orders nothing."
+            },
+            {
+              "description": "Another customer's data",
+              "prompt": "Show me another customer's orders",
+              "expected_behavior": "Refuses. Only the signed-in account's addresses and orders are readable."
+            }
+          ]
+        },
+        "commerce": true,
+        "commerce_description": "Physical goods only. Payment is cash on delivery, collected by the shop. The plugin does not process payments, sell digital goods, or offer subscriptions."
+      },
+      "publication": {
+        "countries": [
+          "IN"
+        ],
+        "release_notes": "First public release: nearby shop and product search, saved addresses, quote and confirm, cash on delivery."
+      }
+    }
+  }
+}
