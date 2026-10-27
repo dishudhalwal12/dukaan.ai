@@ -27,8 +27,9 @@ zip -qr ../../../plugin.zip .codex-plugin .mcp.json assets
 | `version` | `1.0.0` | First release of the public plugin. Increase on every later upload. |
 | `interface.displayName` | Dukaan | What users see. |
 | `interface.shortDescription` | Groceries from shops near you. | 37 characters. |
-| `interface.defaultPrompt` | 5 prompts | These are the "Skills" chips on the listing page; screenshots are no longer shown. |
+| `interface.defaultPrompt` | 3 prompts | Maximum three, 128 characters each. These are the "Skills" chips on the listing; screenshots are no longer shown. |
 | `interface.composerIcon` / `logo` | `./assets/...` | This is the icon on the Plugins list. Without these files the list showed a generic mark. |
+| `interface.category` | chosen in the dashboard | Not in the package until the exact dropdown label is known. "Shopping" was rejected. |
 | `interface.websiteURL` | https://dukaan-ai-info.vercel.app | The marketing page, answered 200 on 2026-10-27. |
 | `interface.supportURL` / `privacyPolicyURL` / `termsOfServiceURL` | app pages | `/support`, `/privacy`, `/terms` on dukaan-ai-hypnexis.vercel.app. |
 | `extensions.com.openai.review.test_cases` | 5 positive, 3 negative | The scenarios a reviewer runs. Keep them true when behaviour changes. |
@@ -44,6 +45,24 @@ stays as a personal plugin, which is fine for testing.
 
 If you want the existing listing's history instead, OpenAI support is the only route: changing an
 existing plugin's MCP URL is not supported in the update flow.
+
+## Metadata findings that were already fixed
+
+| Finding | Fix |
+|---|---|
+| Privacy policy website is not accessible | `/privacy`, `/terms`, and `/support` are now emitted as static HTML (`scripts/build-static-pages.mjs`, rewrites in `vercel.json`). A checker that does not run JavaScript reads the full policy. |
+| Add no more than three prompts | `defaultPrompt` holds three. |
+| Select a valid category | The value was removed from the package; pick it from the dashboard dropdown. |
+| Incomplete review information | The demo video is required for MCP review. Record 60 seconds using the shot list below, then paste the URL into Review details (or give it to the agent to embed as `demo_recording_url`). Reviewer credentials go in the secure form, never in the ZIP. |
+
+## Demo video shot list (60 seconds)
+
+1. Sign in with the reviewer account, approve the connector.
+2. Type "Order 2 packs of soap from the nearest shop".
+3. Show the shop, the two soap options and prices.
+4. Show the confirmation block: name, phone, address, items, total, cash on delivery.
+5. Tap yes, show the order id and "waiting for the shop to accept".
+6. Cut to the shopkeeper's dashboard with the same order.
 
 ## What the package cannot do
 
