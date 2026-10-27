@@ -145,6 +145,70 @@ curl -s https://dukaan-ai-hypnexis.vercel.app/health
 # want: "supabaseKey":"ok"
 ```
 
+## Public pages (added for the app listing)
+
+Three pages open without signing in, because a listing reviewer will not create a shop:
+
+| Route | Purpose | Source |
+|---|---|---|
+| `/privacy` | what is stored, why, how to delete it | `src/screens/public/PrivacyScreen.tsx` |
+| `/terms` | COD, shop may reject, cancel window, who sells | `src/screens/public/TermsScreen.tsx` |
+| `/support` | contact + the four common fixes | `src/screens/public/SupportScreen.tsx` |
+| `/connect` | every client, the endpoint, the phone case | `src/screens/ConnectScreen.tsx` |
+
+They share `src/components/PublicShell.tsx` (same black and off-white surfaces as the consent page),
+set their own title and description through `src/utils/pageMeta.ts`, and link to each other in the
+footer so a reviewer can navigate from any one of them.
+
+**Two env vars must be set in Vercel before submitting**, otherwise `/support` shows the in-app
+fallback instead of a contact:
+
+```
+VITE_SUPPORT_EMAIL=support@yourdomain
+VITE_SUPPORT_WHATSAPP=91XXXXXXXXXX
+```
+
+`src/screens/public/` is checked by `scripts/test_public_pages.js` (routes, required legal phrases,
+no em dashes, no sales words, contact fallback, per-page meta). It runs inside `npm test`.
+
+## The plugin package (`.codex-plugin`)
+
+A public listing uses a small package that points at the Apps SDK app id:
+
+```
+plugin.zip
+├── .app.json                      { "apps": { "<slug>": { "id": "asdk_app_..." } } }
+└── .codex-plugin/plugin.json      name, version, author, interface{...}
+```
+
+The corrected manifest, with three different lengths for three different places and no repeated
+copy, is:
+
+```json
+{
+  "apps": "./.app.json",
+  "author": { "name": "Dukaan" },
+  "description": "Order groceries and household essentials from kirana shops that deliver to your address. Live prices and stock, cash on delivery.",
+  "interface": {
+    "capabilities": [],
+    "category": "Shopping",
+    "defaultPrompt": "buy me 2 packs of soap",
+    "developerName": "Dukaan",
+    "displayName": "Dukaan",
+    "longDescription": "Dukaan connects you to kirana shops that deliver to your address. Ask for what you need in your own words and it finds nearby shops with live prices and stock from each one.\n\nYou see the items, the total, and the full delivery address before anything reaches a shop. The order is placed only after you confirm it. Payment is cash on delivery, in India.\n\nSign in happens on Dukaan's own page. The assistant never sees your password, and you can revoke its access at any time.",
+    "shortDescription": "Groceries from kirana shops near you."
+  },
+  "name": "dukaan",
+  "version": "1.0.0"
+}
+```
+
+Rules that got us there: `developerName` must equal the verified business name, `category` must not
+be `Other`, the three description fields must differ, `defaultPrompt` is the line that pre-fills on
+install, and `capabilities` must use whatever values the submission form lists. Confirm the labels on
+`https://platform.openai.com` (Apps) and `https://developers.openai.com/apps-sdk`; they change, and
+guessing them invalidates the package.
+
 ## Deploy checklist (order matters)
 
 Merge `feat/mcp-address-truth` → Vercel deploys → then run these in Supabase → SQL Editor:
@@ -155,6 +219,14 @@ Merge `feat/mcp-address-truth` → Vercel deploys → then run these in Supabase
 4. `supabase/migrations/2026-11-01_mcp_nearby_search.sql`
 
 Then redeploy (env/migration changes only take effect on a new deployment) and re-check `/health`.
+
+Before submitting to OpenAI, also confirm:
+
+- `VITE_SUPPORT_EMAIL` and `VITE_SUPPORT_WHATSAPP` are set, so `/support` shows a real contact.
+- `/privacy`, `/terms`, `/support` and `/connect` answer 200 on the production domain.
+- The listing has an icon at 1024, two or three screenshots, and a demo video under a minute.
+- The submission notes include the review coordinates (26.9091549, 75.1845856) and the seeded shop,
+  otherwise a reviewer in another country finds no shop and marks the app broken.
 
 ---
 

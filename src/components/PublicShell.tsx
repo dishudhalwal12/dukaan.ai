@@ -36,11 +36,11 @@ const PublicShell: React.FC<{
       <div className="rounded-2xl border border-neutral-800 bg-[#1A1A1A] p-5 sm:p-6">
         <h1 className="text-2xl font-bold tracking-tight text-white">{title}</h1>
         {intro && <p className="mt-2 text-sm leading-relaxed text-neutral-400">{intro}</p>}
-        {updated && <p className="mt-2 text-[11px] text-neutral-500">Last updated {updated}</p>}
+        {updated && <p className="mt-2 text-[11px] text-neutral-400">Last updated {updated}</p>}
         <div className="mt-5 space-y-5">{children}</div>
       </div>
 
-      <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-neutral-500">
+      <nav className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-neutral-400">
         <a href="/privacy" className="hover:text-neutral-200">Privacy</a>
         <a href="/terms" className="hover:text-neutral-200">Terms</a>
         <a href="/support" className="hover:text-neutral-200">Support</a>

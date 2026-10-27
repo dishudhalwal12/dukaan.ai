@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import PublicShell, { PublicSection } from '../components/PublicShell.tsx';
 import { setPageMeta } from '../utils/pageMeta.ts';
 
-const ENDPOINT = (import.meta as any).env?.VITE_MCP_URL || 'https://mcp.dukaan.ai/mcp';
+// The live endpoint. The old fallback here was mcp.dukaan.ai, a host this project
+// does not own, so a build without VITE_MCP_URL printed a URL that answers nothing.
+const ENDPOINT = (import.meta as any).env?.VITE_MCP_URL || 'https://dukaan-ai-hypnexis.vercel.app/mcp';
 
 type ClientGuide = { id: string; label: string; steps: string[]; code?: string };
 
