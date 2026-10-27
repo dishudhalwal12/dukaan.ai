@@ -1,6 +1,6 @@
 {
   "name": "dukaan",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Groceries from shops near you.",
   "author": {
     "name": "Divyanshu Saini",
@@ -40,7 +40,8 @@
     "composerIcon": "./assets/icon.png",
     "composerIconDark": "./assets/icon-dark.png",
     "logo": "./assets/logo.png",
-    "logoDark": "./assets/logo-dark.png"
+    "logoDark": "./assets/logo-dark.png",
+    "category": "Food & Drink"
   },
   "extensions": {
     "com.openai": {
@@ -97,7 +98,8 @@
           ]
         },
         "commerce": true,
-        "commerce_description": "Physical goods only. Payment is cash on delivery, collected by the shop. The plugin does not process payments, sell digital goods, or offer subscriptions."
+        "commerce_description": "Physical goods only. Payment is cash on delivery, collected by the shop. The plugin does not process payments, sell digital goods, or offer subscriptions.",
+        "demo_recording_url": "https://youtu.be/hz5WBK9tprw"
       },
       "publication": {
         "countries": [
