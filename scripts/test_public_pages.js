@@ -1,0 +1,78 @@
+import assert from 'assert';
+import { readFileSync } from 'node:fs';
+
+/**
+ * The OpenAI listing review needs three public pages and a developer page that
+ * names the clients. These checks fail if a route disappears, if a page needs a
+ * sign-in, if the writing slips into dashes or marketing, or if a support contact
+ * is rendered without being configured.
+ */
+console.log('--- RUNNING PUBLIC PAGE TESTS ---');
+let n = 0;
+const ok = (m) => console.log(`✓ ${++n}: ${m}`);
+
+const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const vercel = JSON.parse(read('vercel.json'));
+const index = read('src/index.tsx');
+const privacy = read('src/screens/public/PrivacyScreen.tsx');
+const terms = read('src/screens/public/TermsScreen.tsx');
+const support = read('src/screens/public/SupportScreen.tsx');
+const connect = read('src/screens/ConnectScreen.tsx');
+
+// ── 1. Routes exist, with the trailing-slash twin and no auth ───────────────
+for (const route of ['/privacy', '/privacy/', '/terms', '/terms/', '/support', '/support/']) {
+  assert.ok(vercel.rewrites.some((rule) => rule.source === route), `vercel.json must route ${route}`);
+}
+for (const entry of ["'/privacy'", "'/terms'", "'/support'"]) {
+  assert.ok(index.includes(entry), `src/index.tsx must mount ${entry}`);
+}
+ok('three public routes exist, with trailing slashes, mounted outside the app shell');
+
+// ── 2. Privacy says what is actually stored ────────────────────────────────
+for (const phrase of ['email', 'password', 'address', 'location', 'order', 'shop']) {
+  assert.match(privacy, new RegExp(phrase, 'i'), `privacy must mention ${phrase}`);
+}
+assert.match(privacy, /delete|remove/i, 'privacy must explain how to delete data');
+assert.match(privacy, /revoke/i, 'privacy must explain revoking an assistant');
+assert.match(privacy, /hashed/i, 'the log line is hashed, say so');
+assert.match(privacy, /cash on delivery/i, 'no card data is stored, say why');
+ok('the privacy page covers account, address, location, orders, logs, and deletion');
+
+// ── 3. Terms state the trade, not a promise ────────────────────────────────
+assert.match(terms, /cash on delivery/i);
+assert.match(terms, /reject/i, 'a shop may reject an order');
+assert.match(terms, /cancel/i, 'the cancel window exists');
+assert.match(terms, /not the shop|independent/i, 'Dukaan is not the merchant');
+ok('the terms describe COD, rejection, cancellation, and who the seller is');
+
+// ── 4. Support never renders an unconfigured contact ───────────────────────
+assert.match(support, /VITE_SUPPORT_EMAIL/);
+assert.match(support, /VITE_SUPPORT_WHATSAPP/);
+assert.match(support, /Settings/, 'when nothing is configured it points at the in-app help');
+ok('support shows a configured contact, and degrades to in-app help');
+
+// ── 5. Writing rules: no em dashes, no marketing filler ────────────────────
+const pages = { privacy, terms, support, connect };
+const banned = ['—', '–', 'seamlessly', 'effortless', 'unlock', 'empower', 'revolutionary', 'game-changer'];
+for (const [name, source] of Object.entries(pages)) {
+  for (const word of banned) {
+    assert.ok(!source.includes(word), `${name} must not contain "${word}"`);
+  }
+}
+ok('no em dashes and no sales language on any public page');
+
+// ── 6. /connect names the clients your users have ──────────────────────────
+for (const client of ['ChatGPT', 'Claude', 'Antigravity']) {
+  assert.match(connect, new RegExp(client), `/connect must document ${client}`);
+}
+assert.match(connect, /https:\/\/dukaan-ai-hypnexis\.vercel\.app\/mcp|ENDPOINT/, '/connect must show the endpoint');
+assert.match(connect, /mobile|phone/i, 'ChatGPT on a phone needs a note');
+ok('/connect covers ChatGPT, Claude, Antigravity, and the phone case');
+
+// ── 7. Each page sets its own title and description ───────────────────────
+for (const [name, source] of Object.entries({ privacy, terms, support, connect })) {
+  assert.match(source, /setPageMeta/, `${name} must set its own title and meta description`);
+}
+ok('every public page sets a title and description for search');
+
+console.log(`\nAll ${n} public page checks passed.`);

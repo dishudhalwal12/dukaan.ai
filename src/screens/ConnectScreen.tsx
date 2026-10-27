@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import PublicShell, { PublicSection } from '../components/PublicShell.tsx';
+import { setPageMeta } from '../utils/pageMeta.ts';
 
 const ENDPOINT = (import.meta as any).env?.VITE_MCP_URL || 'https://mcp.dukaan.ai/mcp';
 
@@ -10,8 +12,19 @@ const GUIDES: ClientGuide[] = [
     label: 'ChatGPT',
     steps: [
       'Open Settings → Connectors → Advanced and turn on Developer mode.',
-      'Choose Create, paste the endpoint below, and save.',
-      'Complete the Dukaan sign-in and approve access.',
+      'Choose Create, paste the endpoint below, and save. Authentication is OAuth.',
+      'Complete the Dukaan sign-in, allow location if you want shops found automatically, and approve.',
+      'On a phone: create the connector on the web once. It belongs to your account, so the ChatGPT app and the mobile browser both have it.',
+    ],
+  },
+  {
+    id: 'antigravity',
+    label: 'Antigravity',
+    steps: [
+      'Open the MCP panel in Antigravity and add a server.',
+      'Choose HTTP or remote, not stdio, and paste the endpoint below.',
+      'Run the prompt once. The first tool call opens the Dukaan consent page.',
+      'If the panel asks for JSON, use { "mcpServers": { "dukaan": { "httpUrl": "<endpoint>" } } }.',
     ],
   },
   {
@@ -50,15 +63,30 @@ const GUIDES: ClientGuide[] = [
   {
     id: 'terminal',
     label: 'Other clients',
-    steps: ['If your client only speaks stdio, bridge it to the remote server:'],
+    steps: ['If your client only speaks stdio, bridge it to the remote server. The bridge handles the OAuth flow:'],
     code: `npx mcp-remote ${ENDPOINT}`,
   },
 ];
 
+/**
+ * The page a customer and a reviewer land on.
+ *
+ * It is the only surface search engines can index, so the heading and the intro
+ * say what the product does in the words people use ("order groceries from a
+ * shop near me in ChatGPT"), and the client guides cover the assistants people
+ * actually install, including a phone.
+ */
 const ConnectScreen: React.FC = () => {
   const [active, setActive] = useState(GUIDES[0].id);
   const [copied, setCopied] = useState<string | null>(null);
   const guide = GUIDES.find((entry) => entry.id === active) || GUIDES[0];
+
+  useEffect(() => {
+    setPageMeta({
+      title: 'Order from a shop near you in ChatGPT, Claude, or Antigravity · Dukaan',
+      description: 'Connect Dukaan to ChatGPT, Claude, Cursor, VS Code, or Antigravity with one endpoint. It finds a kirana shop that delivers to you, shows live prices, and places the order after you confirm. Cash on delivery.',
+    });
+  }, []);
 
   const copy = async (value: string) => {
     try {
@@ -71,102 +99,92 @@ const ConnectScreen: React.FC = () => {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#3A3E98]">Dukaan.AI</p>
-        <h1 className="mt-2 text-3xl font-bold text-gray-900">Order from your neighbourhood shop in any AI chat</h1>
-        <p className="mt-3 text-gray-600">
-          Connect Dukaan once. Then ask your assistant for milk, bread, or the week's groceries. It shows nearby shops,
-          real prices, and a delivery address, and places the order only after you say yes.
+    <PublicShell
+      title="Order from your neighbourhood shop in any AI chat"
+      intro="Connect Dukaan once. Then ask your assistant for milk, bread, or the week's groceries. It finds a nearby kirana shop that delivers to you, shows real prices and stock, and places the order only after you confirm. Cash on delivery, in India."
+    >
+      <PublicSection title="MCP endpoint">
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="flex-1 overflow-x-auto rounded-lg bg-black px-3 py-2 text-sm text-neutral-100">{ENDPOINT}</code>
+          <button
+            type="button"
+            onClick={() => copy(ENDPOINT)}
+            className="rounded-lg bg-[#E6E6FA] px-3 py-2 text-sm font-bold text-black"
+          >
+            {copied === ENDPOINT ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+        <p className="text-xs text-neutral-500">
+          Authentication is OAuth. You approve the assistant on Dukaan, and it never receives your password.
         </p>
+      </PublicSection>
 
-        <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
-          <p className="text-sm font-medium text-gray-700">MCP endpoint</p>
-          <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto rounded-lg bg-gray-900 px-3 py-2 text-sm text-gray-100">{ENDPOINT}</code>
+      <div className="flex flex-wrap gap-2">
+        {GUIDES.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            onClick={() => setActive(entry.id)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+              active === entry.id
+                ? 'bg-[#E6E6FA] text-black'
+                : 'border border-neutral-800 text-neutral-300 hover:bg-neutral-900'
+            }`}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-neutral-800 p-4">
+        <ol className="list-decimal list-inside space-y-2 text-sm leading-relaxed text-neutral-300">
+          {guide.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+        {guide.code && (
+          <div className="mt-4">
+            <pre className="overflow-x-auto rounded-lg bg-black p-4 text-xs leading-relaxed text-neutral-100">
+              <code>{guide.code}</code>
+            </pre>
             <button
               type="button"
-              onClick={() => copy(ENDPOINT)}
-              className="rounded-lg bg-[#3A3E98] px-3 py-2 text-sm font-semibold text-white"
+              onClick={() => copy(guide.code!)}
+              className="mt-2 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs font-semibold text-neutral-200 hover:bg-neutral-800"
             >
-              {copied === ENDPOINT ? 'Copied' : 'Copy'}
+              {copied === guide.code ? 'Copied' : 'Copy config'}
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">
-            You will sign in to Dukaan and approve access. Your password is never shared with the AI assistant.
-          </p>
-        </section>
-
-        <section className="mt-6">
-          <div className="flex flex-wrap gap-2">
-            {GUIDES.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() => setActive(entry.id)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                  active === entry.id ? 'bg-[#3A3E98] text-white' : 'bg-white text-gray-700 border border-gray-200'
-                }`}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-5">
-            <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
-              {guide.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-            {guide.code && (
-              <div className="mt-4">
-                <pre className="overflow-x-auto rounded-lg bg-gray-900 p-4 text-xs leading-relaxed text-gray-100">
-                  <code>{guide.code}</code>
-                </pre>
-                <button
-                  type="button"
-                  onClick={() => copy(guide.code!)}
-                  className="mt-2 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-700"
-                >
-                  {copied === guide.code ? 'Copied' : 'Copy config'}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="mt-8 grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-gray-200 bg-white p-5">
-            <h2 className="font-semibold text-gray-900">For customers</h2>
-            <p className="mt-2 text-sm text-gray-600">
-              Save an address once. Ask for items in your language. The assistant reads back the basket and the full
-              delivery address before placing anything. Cash on delivery in this beta.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-5">
-            <h2 className="font-semibold text-gray-900">For shopkeepers</h2>
-            <p className="mt-2 text-sm text-gray-600">
-              AI ordering is on automatically for every shop. Open Settings → Online Store & AI Orders to set a delivery
-              radius between 1 and 10 km, and pause orders whenever the shop is closed. WhatsApp orders keep working.
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          <h2 className="font-semibold">Location and privacy</h2>
-          <p className="mt-1">
-            A shop's location is used only to find nearby shops. A delivery address is saved only when you choose to
-            save it, is shared only with the shop you order from, and can be deleted at any time. A pincode or city is
-            never treated as a precise delivery address.
-          </p>
-        </section>
-
-        <p className="mt-8 text-center text-xs text-gray-500">
-          Dukaan.AI · The shop around the corner, now in your AI chat.
-        </p>
+        )}
       </div>
-    </main>
+
+      <PublicSection title="What you can ask for">
+        <p>
+          Groceries, household items, personal care, and anything else the shop lists. Ask in English, Hindi, or
+          Hinglish. The assistant reads back the items, the total, and the full address before anything is
+          placed.
+        </p>
+      </PublicSection>
+
+      <PublicSection title="For shopkeepers">
+        <p>
+          AI ordering is on for every shop. Open Settings → Online Store &amp; AI Orders to set a delivery radius
+          between 1 and 10 km, and pause orders when the shop is closed. WhatsApp orders keep working the same
+          way.
+        </p>
+      </PublicSection>
+
+      <PublicSection title="Location and privacy">
+        <p>
+          A shop's location is used only to find shops near you. A delivery address is saved only when you choose
+          to save it, is shared only with the shop you order from, and can be deleted at any time. A pincode or a
+          city is never treated as a precise address.
+        </p>
+        <p>
+          Details are on the <a className="text-[#E6E6FA] underline" href="/privacy">privacy page</a>.
+        </p>
+      </PublicSection>
+    </PublicShell>
   );
 };
 
