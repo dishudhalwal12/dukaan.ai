@@ -18,7 +18,7 @@ const { default: handler } = await import('../api/mcp.js');
 
 console.log('--- RUNNING MCP VERCEL ENTRY TESTS ---');
 const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8'));
-for (const route of ['/health', '/mcp', '/.well-known/oauth-protected-resource', '/oauth/consent', '/oauth/consent/', '/connect', '/connect/']) {
+for (const route of ['/health', '/mcp', '/.well-known/oauth-protected-resource', '/oauth/consent', '/oauth/consent/', '/connect', '/connect/', '/privacy', '/privacy/', '/terms', '/terms/', '/support', '/support/']) {
   assert(vercel.rewrites.some((rule) => rule.source === route), `vercel.json must route ${route}`);
 }
 console.log('✓ 0: vercel.json routes health, MCP, discovery, and consent');

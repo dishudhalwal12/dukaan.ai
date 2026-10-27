@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import OAuthConsentScreen from './screens/OAuthConsentScreen.tsx';
 import ConnectScreen from './screens/ConnectScreen.tsx';
+import PrivacyScreen from './screens/public/PrivacyScreen.tsx';
+import TermsScreen from './screens/public/TermsScreen.tsx';
+import SupportScreen from './screens/public/SupportScreen.tsx';
 import { getInstallId, instrumentRequestFailures } from './utils/telemetry.ts';
 import './styles/walkthrough.css';
 
@@ -25,14 +28,19 @@ if (!root) {
   (rootElement as any)._reactRootContainer = root;
 }
 
+// Public pages mount outside the merchant app: they must render for a customer,
+// a search crawler, and a reviewer who has never signed in.
+const publicPath = window.location.pathname.replace(/\/+$/, '');
+const publicPage =
+  publicPath === '/oauth/consent' ? <OAuthConsentScreen />
+    : publicPath === '/connect' ? <ConnectScreen />
+      : publicPath === '/privacy' ? <PrivacyScreen />
+        : publicPath === '/terms' ? <TermsScreen />
+          : publicPath === '/support' ? <SupportScreen />
+            : null;
+
 root.render(
   <React.StrictMode>
-    {window.location.pathname.replace(/\/+$/, '') === '/oauth/consent' ? (
-      <OAuthConsentScreen />
-    ) : window.location.pathname.replace(/\/+$/, '') === '/connect' ? (
-      <ConnectScreen />
-    ) : (
-      <App />
-    )}
+    {publicPage ?? <App />}
   </React.StrictMode>
 );
