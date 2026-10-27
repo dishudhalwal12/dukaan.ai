@@ -715,7 +715,11 @@ export function registerTools(server, { repo, config, deps }) {
         source: z.enum(['map_pin', 'geocoded', 'manual']).optional(),
         is_default: z.boolean().optional(),
       }),
-      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      // openWorldHint is true here because the address is an arbitrary destination:
+      // with no coordinate on file the server resolves free text through an external
+      // geocoder, and the result is delivered to a shop we do not control. Marking it
+      // closed made the scanner read the geocoder call as hidden external behaviour.
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
     async (input) => {
       try {
