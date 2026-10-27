@@ -36,7 +36,11 @@ assert.match(privacy, /delete|remove/i, 'privacy must explain how to delete data
 assert.match(privacy, /revoke/i, 'privacy must explain revoking an assistant');
 assert.match(privacy, /hashed/i, 'the log line is hashed, say so');
 assert.match(privacy, /cash on delivery/i, 'no card data is stored, say why');
+for (const claim of ['24 hours', '30 days', 'stays until you delete it', 'sensitive']) {
+  assert.ok(privacy.includes(claim), `privacy must state the retention/consent fact: ${claim}`);
+}
 ok('the privacy page covers account, address, location, orders, logs, and deletion');
+ok('the privacy page states retention timelines and treats location as opt in');
 
 // ── 3. Terms state the trade, not a promise ────────────────────────────────
 assert.match(terms, /cash on delivery/i);

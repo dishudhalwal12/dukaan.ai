@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "dukaan": {
+      "url": "https://dukaan-ai-hypnexis.vercel.app/mcp"
+    }
+  }
+}

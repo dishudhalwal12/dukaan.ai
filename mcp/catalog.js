@@ -121,11 +121,33 @@ export function isPlaceholderImage(url) {
   return PLACEHOLDER_HOSTS.some((host) => value.includes(host));
 }
 
+
+/**
+ * Goods OpenAI's plugin guidelines do not allow a listing to sell, plus the
+ * categories a kirana can end up with by accident. A blocked row is dropped
+ * before it is scored, so it can never appear in a tool result or a card.
+ *
+ * The list is deliberately short and word-boundary anchored: blocking every
+ * string that contains "rum" would remove "Rumali Roti".
+ */
+const PROHIBITED_PATTERNS = [
+  /\b(cigarettes?|cigars?|bidi|beedi|gutkha|khaini|zarda|pan masala|tobacco|nicotine|vape|vaping|e-?liquid|hookah|sheesha)\b/i,
+  /\b(beer|wine|whisky|whiskey|vodka|rum|gin|liquor|alcohol|breezer|toddy)\b/i,
+  /\b(prescription|antibiotics?|insulin|opioids?|tramadol|codeine|sildenafil|viagra|ozempic|morphine)\b/i,
+];
+
+/** True when a product name is on the prohibited list. */
+export function isProhibitedProduct(name) {
+  const text = String(name ?? '');
+  return PROHIBITED_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 /** Maps a Supabase `products` row to the public MCP product shape. */
 export function toPublicProduct(row) {
   if (!row || typeof row !== 'object') return null;
   const name = sanitiseCatalogText(row.name);
   if (!name) return null;
+  if (isProhibitedProduct(name)) return null;
 
   const pricePaise = parsePriceToPaise(row.price);
   if (pricePaise === null) return null;
