@@ -1,6 +1,6 @@
 {
   "name": "dukaan",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Groceries from shops near you.",
   "author": {
     "name": "Divyanshu Saini",
@@ -40,7 +40,8 @@
     "composerIcon": "./assets/icon.png",
     "composerIconDark": "./assets/icon-dark.png",
     "logo": "./assets/logo.png",
-    "logoDark": "./assets/logo-dark.png"
+    "logoDark": "./assets/logo-dark.png",
+    "category": "Food & Drink"
   },
   "extensions": {
     "com.openai": {
