@@ -8,6 +8,8 @@ listing/
 ├── .codex-plugin/plugin.json   identity, interface, review test cases, publication
 ├── .mcp.json                   the remote MCP server URL
 └── assets/                     composer icons and logos, light and dark
+                                (both are public/logo.png: the light pair as is,
+                                 the dark pair inverted, same mark throughout)
 ```
 
 Build the upload file from this folder:
