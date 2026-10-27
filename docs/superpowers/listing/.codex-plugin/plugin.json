@@ -1,6 +1,6 @@
 {
   "name": "dukaan",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Order groceries from kirana shops near you.",
   "author": {
     "name": "Divyanshu Saini",
@@ -10,20 +10,20 @@
   "keywords": [
     "groceries",
     "kirana",
+    "quick reorder",
     "local shops",
-    "ordering",
     "cash on delivery"
   ],
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Dukaan",
-    "shortDescription": "Order groceries from kirana shops near you.",
-    "longDescription": "Dukaan is a grocery ordering app for neighbourhood kirana shops in India. It is for people who want milk, soap, atta, or the week's vegetables delivered from a shop near them, and for the shopkeepers who take those orders.\n\nAsk for what you need in your own words. Dukaan finds the shops near your delivery address that actually stock it, shows their prices, and builds the basket.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household essentials from a kirana shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
+    "shortDescription": "Groceries, ordered in chat.",
+    "longDescription": "Dukaan brings your household reorder into the conversation, so a run for milk or soap does not need another app. Ask for what you need, and it finds a kirana shop that delivers to your address, shows live prices and stock, and places the order after you confirm. Cash on delivery, in India.\n\nIt is built for the small repeated task: one message instead of opening a delivery app, searching, and checking out. The shop still calls if it needs to.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household essentials from a kirana shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
     "developerName": "Divyanshu Saini",
     "capabilities": [
-      "Find grocery shops that deliver to your address",
+      "Order essentials without leaving the chat",
+      "Reorder the same basket in one message",
       "Compare prices across nearby kirana shops",
-      "Place and confirm a grocery order",
       "Track or cancel an order before the shop accepts"
     ],
     "websiteURL": "https://dukaan-ai-info.vercel.app",
@@ -32,7 +32,7 @@
     "termsOfServiceURL": "https://dukaan-ai-hypnexis.vercel.app/terms",
     "defaultPrompt": [
       "Order 2 packs of soap from the nearest shop",
-      "Find a kirana with Amul milk in stock tonight",
+      "Reorder last week's groceries",
       "Where is my last order right now"
     ],
     "brandColor": "#0B0B0D",
@@ -41,7 +41,7 @@
     "composerIconDark": "./assets/icon-dark.png",
     "logo": "./assets/logo.png",
     "logoDark": "./assets/logo-dark.png",
-    "category": "Food & Drink"
+    "category": "Productivity"
   },
   "extensions": {
     "com.openai": {
