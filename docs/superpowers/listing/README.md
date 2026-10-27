@@ -23,8 +23,8 @@ zip -qr ../../../plugin.zip .codex-plugin .mcp.json assets
 
 | Field | Value | Note |
 |---|---|---|
-| `name` | `dev-6adfe312761c81919383382a29b9f027` | Identity of the existing plugin. An update is rejected when this changes. |
-| `version` | `1.0.3` | Must increase on every upload. |
+| `name` | `dukaan` | Identity of the **new public plugin**. The first plugin (app-backed, id `dev-6adfe…`) can only ever accept its own `.app.json`, so it cannot become public. |
+| `version` | `1.0.0` | First release of the public plugin. Increase on every later upload. |
 | `interface.displayName` | Dukaan | What users see. |
 | `interface.shortDescription` | Groceries from shops near you. | 37 characters. |
 | `interface.defaultPrompt` | 5 prompts | These are the "Skills" chips on the listing page; screenshots are no longer shown. |
@@ -33,6 +33,17 @@ zip -qr ../../../plugin.zip .codex-plugin .mcp.json assets
 | `interface.supportURL` / `privacyPolicyURL` / `termsOfServiceURL` | app pages | `/support`, `/privacy`, `/terms` on dukaan-ai-hypnexis.vercel.app. |
 | `extensions.com.openai.review.test_cases` | 5 positive, 3 negative | The scenarios a reviewer runs. Keep them true when behaviour changes. |
 | `extensions.com.openai.commerce` | `true` | Physical goods, cash on delivery, no payment processing. |
+
+## Why this is a new plugin, not an update
+
+Uploading this package to the old plugin fails with
+`Plugin upload must contain exactly the existing canonical app`, because that plugin was created from
+an app reference (`asapp_…` / `.app.json`). A package that contains `.app.json` is not submittable
+for public review. The two rules leave one path: submit a new plugin from this package. The old one
+stays as a personal plugin, which is fine for testing.
+
+If you want the existing listing's history instead, OpenAI support is the only route: changing an
+existing plugin's MCP URL is not supported in the update flow.
 
 ## What the package cannot do
 
