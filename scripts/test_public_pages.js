@@ -75,4 +75,20 @@ for (const [name, source] of Object.entries({ privacy, terms, support, connect }
 }
 ok('every public page sets a title and description for search');
 
+// ── 8. Crawlers and hardening ──────────────────────────────────────────────
+const robots = read('public/robots.txt');
+const sitemap = read('public/sitemap.xml');
+assert.match(robots, /Sitemap: https:\/\/dukaan-ai-hypnexis\.vercel\.app\/sitemap\.xml/);
+for (const path of ['/connect', '/privacy', '/terms', '/support']) {
+  assert.ok(sitemap.includes(`https://dukaan-ai-hypnexis.vercel.app${path}`), `sitemap must list ${path}`);
+}
+const security = vercel.headers.find((rule) => rule.source === '/(.*)');
+assert.ok(security, 'a catch-all header rule exists');
+const headerKeys = security.headers.map((h) => h.key.toLowerCase());
+for (const key of ['x-content-type-options', 'referrer-policy', 'x-frame-options', 'permissions-policy']) {
+  assert.ok(headerKeys.includes(key), `missing ${key}`);
+}
+assert.match(JSON.stringify(security.headers), /geolocation=\(self\)/, 'the consent page needs geolocation for its own origin');
+ok('robots.txt, sitemap.xml, and the security headers are in place');
+
 console.log(`\nAll ${n} public page checks passed.`);

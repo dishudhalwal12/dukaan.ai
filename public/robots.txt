@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://dukaan-ai-hypnexis.vercel.app/sitemap.xml
