@@ -165,6 +165,11 @@ const pages = {
 
 const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 if (isMain) {
+  // Printed in the Vercel build log so "the variable was not in the build" is one
+  // line to spot instead of a guessing game about environment scopes.
+  const email = String(process.env.VITE_SUPPORT_EMAIL || '').trim();
+  const whatsapp = String(process.env.VITE_SUPPORT_WHATSAPP || '').replace(/[^0-9]/g, '');
+  console.log(`support contact: ${email ? 'email set' : whatsapp ? 'whatsapp set' : 'none (VITE_SUPPORT_EMAIL / VITE_SUPPORT_WHATSAPP missing at build time)'}`);
   mkdirSync(out, { recursive: true });
   for (const [name, html] of Object.entries(pages)) {
     writeFileSync(resolve(out, name), html);
