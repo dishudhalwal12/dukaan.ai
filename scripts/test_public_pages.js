@@ -1,5 +1,6 @@
 import assert from 'assert';
 import { readFileSync } from 'node:fs';
+import { privacyHtml, supportHtml, termsHtml } from '../scripts/build-static-pages.mjs';
 
 /**
  * The OpenAI listing review needs three public pages and a developer page that
@@ -78,6 +79,25 @@ for (const [name, source] of Object.entries({ privacy, terms, support, connect }
   assert.match(source, /setPageMeta/, `${name} must set its own title and meta description`);
 }
 ok('every public page sets a title and description for search');
+
+// ── 7b. The legal pages exist as real HTML for checkers without JS ────────
+// OpenAI's metadata check fetches the privacy URL without running JavaScript and
+// reported the React-only page as inaccessible.
+const privacyStatic = privacyHtml();
+const termsStatic = termsHtml();
+const supportStatic = supportHtml();
+for (const claim of ['Supabase', '24 hours', '30 days', 'sensitive', 'How long we keep it', 'Delete a saved address']) {
+  assert.ok(privacyStatic.includes(claim), `static privacy must contain: ${claim}`);
+}
+for (const claim of ['cash on delivery', 'reject', 'cancel', 'independent business']) {
+  assert.ok(termsStatic.includes(claim), `static terms must contain: ${claim}`);
+}
+assert.ok(supportStatic.includes('Help Center') || supportStatic.includes('mailto:') || supportStatic.includes('wa.me'), 'static support must show a contact or the in-app path');
+for (const route of ['/privacy', '/privacy/', '/terms', '/terms/', '/support', '/support/']) {
+  const rule = vercel.rewrites.find((entry) => entry.source === route);
+  assert.ok(rule && rule.destination.endsWith('.html'), `${route} must serve a static page, not the app shell`);
+}
+ok('the legal pages are emitted as static HTML and the routes serve them');
 
 // ── 8. Crawlers and hardening ──────────────────────────────────────────────
 const robots = read('public/robots.txt');

@@ -46,27 +46,27 @@
     },
     {
       "source": "/privacy",
-      "destination": "/index.html"
+      "destination": "/privacy.html"
     },
     {
       "source": "/privacy/",
-      "destination": "/index.html"
+      "destination": "/privacy.html"
     },
     {
       "source": "/terms",
-      "destination": "/index.html"
+      "destination": "/terms.html"
     },
     {
       "source": "/terms/",
-      "destination": "/index.html"
+      "destination": "/terms.html"
     },
     {
       "source": "/support",
-      "destination": "/index.html"
+      "destination": "/support.html"
     },
     {
       "source": "/support/",
-      "destination": "/index.html"
+      "destination": "/support.html"
     }
   ],
   "headers": [

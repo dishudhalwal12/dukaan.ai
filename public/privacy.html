@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy policy · Dukaan</title>
+<meta name="description" content="What Dukaan stores when you order from a kirana shop in the app or through an AI assistant, why it is stored, and how to delete it." />
+<meta name="theme-color" content="#000000" />
+<link rel="icon" href="/favicon.ico" sizes="any" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: #fff; font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Manrope, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 18px 64px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+  .mark { width: 44px; height: 44px; border-radius: 14px; background: #E6E6FA; color: #000; display: grid; place-items: center; font-weight: 800; font-size: 20px; }
+  .brand { font-weight: 800; color: #E6E6FA; text-decoration: none; }
+  .kicker { font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: #737373; }
+  .card { border: 1px solid #262626; background: #1A1A1A; border-radius: 16px; padding: 22px; }
+  h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: -.4px; }
+  h2 { font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: #E6E6FA; margin: 26px 0 8px; }
+  p, li { color: #D4D4D4; margin: 0 0 10px; }
+  .meta { color: #A3A3A3; font-size: 12px; }
+  a { color: #E6E6FA; }
+  nav { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 24px; font-size: 12px; color: #A3A3A3; }
+  nav a { color: #A3A3A3; text-decoration: none; }
+  .contact { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 18px; }
+  .btn { display: inline-block; background: #E6E6FA; color: #000; font-weight: 700; text-decoration: none; padding: 10px 16px; border-radius: 12px; }
+  .btn.ghost { background: transparent; color: #E5E5E5; border: 1px solid #404040; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="mark" href="/" aria-label="Dukaan home">D</a>
+    <div>
+      <a class="brand" href="/">Dukaan.AI</a>
+      <div class="kicker">Order from the shop around the corner</div>
+    </div>
+  </header>
+  <div class="card">
+    <h1>Privacy</h1>
+    <p>Dukaan connects customers to kirana shops, in the app and through an AI assistant. This page describes what is stored and why. It applies to the app and to the connector at dukaan-ai-hypnexis.vercel.app/mcp.</p>
+    <p class="meta">Last updated 26 October 2026</p>
+    
+    <h2>Account</h2>
+    <p>Signing in uses an email address and a password, or Google. Supabase handles the sign in and stores a hash of the password. Dukaan never receives the password itself, and neither does the assistant.</p>
+    <h2>Delivery details</h2>
+    <p>You type a name, a phone number, and an address line. The shop uses them to deliver and to call you. The maps position attached to an order is the location you allowed in the app, or a pin you shared in the chat.</p>
+    <h2>Location</h2>
+    <p>A position is captured only when you tap Allow location on the consent page, or when you send a map pin in the chat. It is used to find shops that deliver near you. A position older than 30 days is ignored, and the assistant asks for a pincode instead.</p>
+    <p>You can remove the saved position on the consent page at any time.</p>
+    <h2>Orders</h2>
+    <p>An order stores the items, quantities, prices, the shop, the delivery details, and the status. The shop you order from sees that order. Other shops do not.</p>
+    <h2>Who sees what</h2>
+    <p>The shop sees your name, phone, address, and the basket it has to prepare. The AI assistant sees shop names, prices, the addresses you saved, and your orders. It does not see your password or another customer's data.</p>
+    <p>Dukaan does not sell data.</p>
+    <h2>Server logs</h2>
+    <p>The connector logs a hashed user id, the tool name, the duration, and whether it succeeded. Names, phone numbers, addresses, and messages are not written to those lines.</p>
+    <h2>Payments</h2>
+    <p>Payment is cash on delivery. Dukaan does not take a card payment and does not store card numbers.</p>
+    <h2>How long we keep it</h2>
+    <p>An unused order preview is deleted 24 hours after it expires. A saved position stops being used after 30 days and stays until you remove it. A saved address stays until you delete it. An order stays while your account exists, because the shop and you may still need it.</p>
+    <p>Logs keep a hashed user id, the tool name, the duration, and the outcome. They do not keep names, phone numbers, addresses, or messages.</p>
+    <h2>Location is sensitive, so it is opt in</h2>
+    <p>A position is personal data. Dukaan asks for it only after you tap Allow location, tells you what it is for at that moment, and never takes it silently. You can remove it on the consent page, and an assistant loses access to it as soon as you revoke that assistant.</p>
+    <h2>Deleting your data</h2>
+    <p>Delete a saved address in the app, or ask the assistant to delete it. Remove the saved location on the consent page. Revoke an assistant from the connected apps in your account.</p>
+    <p>For anything else, including deleting the account itself, contact us through the <a href="/support">support page</a>.</p>
+    <h2>Contact</h2>
+    <p>Questions about this page go to <a href="/support">support</a>.</p>
+  </div>
+  <nav>
+    <a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a><a href="/connect">Connect an assistant</a>
+  </nav>
+</main>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "dukaan",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Groceries from shops near you.",
   "author": {
     "name": "Divyanshu Saini",
@@ -20,7 +20,6 @@
     "shortDescription": "Groceries from shops near you.",
     "longDescription": "Dukaan connects you to kirana shops that deliver to your address. Ask for what you need in your own words, and it finds the shops near you that actually stock it, with their prices.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household items from a shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
     "developerName": "Divyanshu Saini",
-    "category": "Shopping",
     "capabilities": [
       "Find shops that deliver to your address",
       "Compare prices across those shops",
@@ -34,9 +33,7 @@
     "defaultPrompt": [
       "Order 2 packs of soap from the nearest shop",
       "Find a kirana with Amul milk in stock tonight",
-      "What can I order for 200 rupees near me",
-      "Where is my last order right now",
-      "Cancel my order before the shop accepts it"
+      "Where is my last order right now"
     ],
     "brandColor": "#0B0B0D",
     "brandColorDark": "#E6E6FA",
