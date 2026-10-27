@@ -99,6 +99,23 @@ for (const route of ['/privacy', '/privacy/', '/terms', '/terms/', '/support', '
 }
 ok('the legal pages are emitted as static HTML and the routes serve them');
 
+// ── 7c. OpenAI domain verification challenge ──────────────────────────────
+// The portal serves a token at the origin-root well-known URL and checks the body
+// byte for byte. A missing file, a stray newline, or a binary content type fails
+// the check, so all three are pinned here.
+const challenge = read('public/.well-known/openai-apps-challenge');
+assert.ok(challenge.length > 10, 'the challenge file must contain the token');
+assert.strictEqual(challenge.trim(), challenge, 'no surrounding whitespace');
+assert.ok(/^[A-Za-z0-9_-]+$/.test(challenge), 'the token is opaque characters only');
+const challengeHeaders = vercel.headers.find((rule) => rule.source === '/.well-known/openai-apps-challenge');
+assert.ok(challengeHeaders, 'a header rule exists for the challenge path');
+assert.match(
+  JSON.stringify(challengeHeaders.headers),
+  /text\/plain/,
+  'the challenge must be served as text/plain, not a binary type'
+);
+ok('the OpenAI domain challenge file is present, exact, and served as text');
+
 // ── 8. Crawlers and hardening ──────────────────────────────────────────────
 const robots = read('public/robots.txt');
 const sitemap = read('public/sitemap.xml');
