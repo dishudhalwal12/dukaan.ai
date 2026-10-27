@@ -83,6 +83,7 @@ for (const name of ['place_order', 'cancel_order', 'delete_address', 'save_addre
   assert.strictEqual(hint(name).readOnlyHint, false, `${name} changes state`);
   assert.strictEqual(hint(name).destructiveHint, true, `${name} is irreversible or overwrites`);
 }
+assert.strictEqual(hint('save_address').openWorldHint, true, 'an address is an arbitrary destination resolved through an external geocoder');
 assert.strictEqual(hint('place_order').destructiveHint, true, 'placing an order is an irreversible transaction');
 assert.strictEqual(hint('cancel_order').destructiveHint, true, 'cancelling cannot be undone');
 ok('each annotation matches what the tool actually does');
