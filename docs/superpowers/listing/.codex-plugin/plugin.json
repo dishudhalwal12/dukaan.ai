@@ -1,7 +1,7 @@
 {
   "name": "dukaan",
-  "version": "1.0.3",
-  "description": "Groceries from shops near you.",
+  "version": "2.0.0",
+  "description": "Order groceries from kirana shops near you.",
   "author": {
     "name": "Divyanshu Saini",
     "url": "https://dukaan-ai-info.vercel.app"
@@ -17,13 +17,13 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Dukaan",
-    "shortDescription": "Groceries from shops near you.",
-    "longDescription": "Dukaan connects you to kirana shops that deliver to your address. Ask for what you need in your own words, and it finds the shops near you that actually stock it, with their prices.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household items from a shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
+    "shortDescription": "Order groceries from kirana shops near you.",
+    "longDescription": "Dukaan is a grocery ordering app for neighbourhood kirana shops in India. It is for people who want milk, soap, atta, or the week's vegetables delivered from a shop near them, and for the shopkeepers who take those orders.\n\nAsk for what you need in your own words. Dukaan finds the shops near your delivery address that actually stock it, shows their prices, and builds the basket.\n\nWith Dukaan in ChatGPT you can:\nOrder groceries and household essentials from a kirana shop near you.\nCompare prices across the shops that deliver to your address.\nTrack an order, or cancel it before the shop accepts.\nSave a delivery address once and reuse it in any chat.\nPay cash on delivery.\n\nThe assistant reads back the items, the total and the full address before it places anything. Sign in happens on Dukaan's own page, so your password is never shared.",
     "developerName": "Divyanshu Saini",
     "capabilities": [
-      "Find shops that deliver to your address",
-      "Compare prices across those shops",
-      "Place an order you confirm",
+      "Find grocery shops that deliver to your address",
+      "Compare prices across nearby kirana shops",
+      "Place and confirm a grocery order",
       "Track or cancel an order before the shop accepts"
     ],
     "websiteURL": "https://dukaan-ai-info.vercel.app",
@@ -58,7 +58,7 @@
               "description": "Budget shopping",
               "prompt": "What can I order for 200 rupees near me",
               "tools_triggered": "find_products_nearby, search_products",
-              "expected_behavior": "Lists items within the budget with their prices, without inventing products or prices."
+              "expected_behavior": "Lists grocery items within the budget with their prices, without inventing products or prices."
             },
             {
               "description": "Track the last order",

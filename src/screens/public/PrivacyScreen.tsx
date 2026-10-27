@@ -24,6 +24,33 @@ const PrivacyScreen: React.FC = () => {
       intro="Dukaan connects customers to kirana shops, in the app and through an AI assistant. This page describes what is stored and why. It applies to the app and to the connector at dukaan-ai-hypnexis.vercel.app/mcp."
       updated="26 October 2026"
     >
+      <PublicSection title="At a glance">
+        <p>
+          <strong>Data collected:</strong> email address and a password hash, your name, phone number and
+          delivery address, the map position you choose to share, and the items and status of your orders.
+        </p>
+        <p>
+          <strong>Purposes:</strong> to let you order groceries from a nearby shop, to pass the order and
+          delivery details to that shop, and to show you its status.
+        </p>
+        <p>
+          <strong>Recipients:</strong> the shop you order from receives your name, phone, address and basket.
+          Supabase provides authentication and database hosting. We do not sell data or share it further.
+        </p>
+        <p>
+          <strong>Retention:</strong> an unused order preview is deleted 24 hours after it expires. A saved
+          position stops being used after 30 days and stays until you remove it. A saved address stays until
+          you delete it. An order stays while your account exists.
+        </p>
+        <p>
+          <strong>Your controls:</strong> delete a saved address, remove the saved position on the consent
+          page, or revoke an assistant from your account. Contact support to delete the account itself.
+        </p>
+        <p>
+          <strong>Contact:</strong> support@dukan.ai, or the <a className="text-[#E6E6FA] underline" href="/support">support page</a>.
+        </p>
+      </PublicSection>
+
       <PublicSection title="Account">
         <p>
           Signing in uses an email address and a password, or Google. Supabase handles the sign in and stores a
