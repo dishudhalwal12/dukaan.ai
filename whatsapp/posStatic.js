@@ -9,6 +9,18 @@ import fs from 'fs';
 const RESERVED_PREFIXES = ['/api', '/ops'];
 const RESERVED_EXACT = ['/events'];
 
+/**
+ * A last path segment that carries an extension is a FILE, not a client-side
+ * route. The SPA fallback used to answer every unmatched GET, so a hashed asset
+ * that no longer exists after a redeploy arrived as `index.html` with a 200 and
+ * the browser died on "Unexpected token '<'" instead of seeing a clean 404.
+ * The same fallback handed out HTML for `/manifest.json` and `/sw.js`, which no
+ * parser can use. Missing files now 404 like files.
+ */
+const FILE_EXTENSION = /\.[a-z0-9]{1,8}$/i;
+
+const looksLikeFile = (p) => FILE_EXTENSION.test(String(p || '').split('/').pop() || '');
+
 const isReserved = (p) => {
   const lower = p.toLowerCase();
   return (
@@ -69,6 +81,12 @@ export function installPosRoutes(app, distDir) {
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (isReserved(req.path)) return next();
+    // Checked BEFORE `accepts('html')`: a browser asks for a script or an icon
+    // with `Accept: */*`, which `accepts('html')` answers "yes" to.
+    if (looksLikeFile(req.path)) {
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(404).type('text/plain').send('Not found');
+    }
     if (!req.accepts('html')) return next();
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(distDir, 'index.html'), (err) => (err ? next() : undefined));

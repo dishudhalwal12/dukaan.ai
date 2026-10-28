@@ -96,6 +96,30 @@ try {
   res = await fetch(`${base}/ops/typo`);
   assert.notStrictEqual(res.status, 200, 'a mistyped ops URL must not serve the POS');
 
+  // ── Test 11: a missing hashed asset is a 404, never the app shell ──────────
+  console.log('\nTest 11: a missing asset 404s instead of returning index.html');
+  res = await fetch(`${base}/assets/index-STALE0000.js`);
+  assert.strictEqual(res.status, 404, 'a missing bundle must not arrive as HTML with a 200');
+  assert.doesNotMatch(
+    res.headers.get('content-type') || '',
+    /html/,
+    'a JS request answered with HTML dies on "Unexpected token <" instead of a 404'
+  );
+
+  // ── Test 12: any missing file-looking path 404s, even with Accept: */* ─────
+  console.log('\nTest 12: manifest/sw/robots and nested assets 404 with a browser Accept');
+  for (const p of ['/manifest.json', '/sw.js', '/robots.txt', '/assets/img/nope.png', '/i18n/locales/zz.json']) {
+    res = await fetch(`${base}${p}`, { headers: { accept: '*/*' } });
+    assert.strictEqual(res.status, 404, `${p} must 404, not be handed the app shell`);
+    assert.doesNotMatch(res.headers.get('content-type') || '', /html/, `${p} must not be answered with HTML`);
+  }
+
+  // ── Test 13: a real asset beside a missing one is untouched ───────────────
+  console.log('\nTest 13: the file guard does not break existing assets');
+  res = await fetch(`${base}/assets/app-abc123.js`);
+  assert.strictEqual(res.status, 200);
+  assert.match(await res.text(), /console\.log\(1\)/);
+
   console.log('\n========================================');
   console.log('🎉 ALL POS STATIC SERVING TESTS PASSED 🎉');
   console.log('========================================');
