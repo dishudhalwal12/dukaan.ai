@@ -371,6 +371,25 @@ recognised quickly.
   icons, manifest, and the 1200x630 OG/X card from it. `index.html` carries the
   icon + social metadata.
 
+### 7.10 Missing files answered with the app shell
+
+- **Symptom:** after a redeploy, a stale hashed asset (`/assets/index-<old>.js`)
+  arrived as `index.html` with a 200 and the browser died on
+  "Unexpected token '<'". `/manifest.json` and `/sw.js` were handed the same
+  shell.
+- **Cause:** the SPA fallback in `whatsapp/posStatic.js` answered every
+  unmatched GET, including paths that are obviously files.
+- **Fix:** a last path segment carrying an extension is treated as a file and
+  answered `404 text/plain` **before** the `accepts('html')` check (a browser
+  requests a script or icon with `Accept: */*`). Real files still come from
+  `express.static` first; dot-free client routes still get the shell.
+- **Proof:** `whatsapp/test_static_serving.js` tests 11-13, the bot suite, and
+  a live `whatsapp/master_stress_test_v2.js` run: **41/41** checkpoints.
+- **Build note:** the browser-side local-SLM URL (`VITE_LLM_BASE_URL`) belongs
+  in `.env.development.local`, never `.env`. Vite inlines every `VITE_*` value
+  into the bundle, and `scripts/check-secrets.mjs` correctly fails the build on
+  a loopback URL, which also blocks `deploy/laptop/update.sh`.
+
 ---
 
 ## 8. VERIFICATION & COMMANDS
