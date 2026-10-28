@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 /**
  * Source-level checks for the MCP consent page.
  *
- * The page is the only customer-facing auth surface Dukaan has, and three things
+ * The page is the only customer-facing auth surface Nukkad has, and three things
  * there are easy to regress without any runtime error: the Google button drifting
  * away from the POS sheet, the location sheet losing its customer copy, and the
  * consent page borrowing the merchant app's OAuth marker (which would make the

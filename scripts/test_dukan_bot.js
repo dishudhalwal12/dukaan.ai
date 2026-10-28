@@ -21,7 +21,7 @@ async function runTests() {
     pushName: "Pulkit Khowal",
     text: "hey /dukaan.ai"
   }, null);
-  assert(res1.reply.includes("Welcome to Dukaan"), "Greets warmly");
+  assert(res1.reply.includes("Welcome to Nukkad"), "Greets warmly");
   assert(!res1.reply.includes("Aashirvaad") && !res1.reply.includes("Atta"), "Does NOT blindly push Atta");
   assert(res1.newOrder === null, "No order created on greeting");
 
@@ -98,7 +98,7 @@ async function runTests() {
     pushName: "Pulkit Khowal",
     text: "show your menu"
   }, null);
-  assert(res8.reply.includes("Welcome to Dukaan") && res8.reply.includes("Dairy & Eggs") && res8.reply.includes("Instant Food"), "Shows compact categories");
+  assert(res8.reply.includes("Welcome to Nukkad") && res8.reply.includes("Dairy & Eggs") && res8.reply.includes("Instant Food"), "Shows compact categories");
   const lineCount = res8.reply.split("\n").length;
   assert(lineCount < 20, `Menu is bite-sized (${lineCount} lines, not 50+ lines)`);
 

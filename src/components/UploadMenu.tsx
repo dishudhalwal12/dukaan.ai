@@ -189,7 +189,7 @@ const UploadMenu: React.FC<UploadMenuProps> = ({ isOpen, onClose, onAddOrders })
             <p className="text-neutral-300 mb-4">{t('whatsapp_ready_desc') || 'Paste your WhatsApp order text below.'}</p>
             
             <textarea
-              className="w-full h-32 p-3 rounded-lg bg-[#2D2D2D] text-white border-none outline-none resize-none mb-3 placeholder-neutral-500"
+              className="w-full h-32 p-3 rounded-lg bg-[#2D2D2D] text-white border-none outline-none resize-none mb-3 placeholder-neutral-400"
               placeholder="e.g. 1x Milk 50rs, 2x Bread 40rs"
               value={waText}
               onChange={(e) => setWaText(e.target.value)}

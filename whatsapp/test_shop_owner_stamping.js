@@ -22,7 +22,7 @@ const withShop = (userId) => {
   activeShops.clear();
   activeShops.set(jid, {
     shopId: 'local',
-    shopName: 'Dukaan Store',
+    shopName: 'Nukkad Store',
     userId,
     catalog: [{ id: 'p1', name: 'Parle-G Biscuits', category: 'Biscuits', price: 10, unit: 'pack', inStock: true, keywords: ['parle-g', 'biscuit'] }],
   });

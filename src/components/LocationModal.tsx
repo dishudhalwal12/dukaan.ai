@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { captureApproximateLocation, captureStoreLocation, StoreLocation } from '../utils/location.ts';
+import { BRAND } from '../config/brand.ts';
 
 interface LocationModalProps {
   isOpen: boolean;
@@ -99,7 +100,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
       : 'Store location';
   const subtitle = !isCustomer && mode === 'required' ? 'Add your products after setting your store location.' : null;
   const body = isCustomer
-    ? 'We save it to your Dukaan account so your assistant can name the nearest shop straight away. Delivery still needs a full address.'
+    ? `We save it to your ${BRAND.name} account so your assistant can name the nearest shop straight away. Delivery still needs a full address.`
     : "Stand inside your store and we'll save its exact location for setup.";
   const skipLabel = isCustomer ? 'Not now' : 'Setup later';
   const canDismiss = mode === 'required' || mode === 'edit';
@@ -138,7 +139,7 @@ const LocationModal: React.FC<LocationModalProps> = ({
             >
               Use approximate location
             </button>
-            <p className="mt-2 text-[11px] leading-relaxed text-neutral-500">
+            <p className="mt-2 text-[11px] leading-relaxed text-neutral-400">
               Uses your network's city instead of GPS. You can update the exact spot later in Settings.
             </p>
           </div>
@@ -154,8 +155,8 @@ const LocationModal: React.FC<LocationModalProps> = ({
         )}
 
         {isCustomer && (
-          <p className="mt-3 text-[11px] leading-relaxed text-neutral-500">
-            Saved to your Dukaan account only. You can update or remove it any time from this page.
+          <p className="mt-3 text-[11px] leading-relaxed text-neutral-400">
+            Saved to your {BRAND.name} account only. You can update or remove it any time from this page.
             Approval is not required to share it.
           </p>
         )}

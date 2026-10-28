@@ -12,16 +12,22 @@ export interface LanguageOption {
   code: string;
   name: string;
   nativeName: string;
+  /**
+   * Reading direction. Urdu is the only right-to-left language this build
+   * ships, and until this field existed the app translated the words but kept
+   * the layout left-to-right: sentences ran to the wrong edge.
+   */
+  direction: 'ltr' | 'rtl';
 }
 
 export const LANGUAGES: LanguageOption[] = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-  { code: 'ur', name: 'Urdu', nativeName: 'اردو' },
-  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ' },
-  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી' },
-  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
+  { code: 'en', name: 'English', nativeName: 'English', direction: 'ltr' },
+  { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', direction: 'ltr' },
+  { code: 'ur', name: 'Urdu', nativeName: 'اردو', direction: 'rtl' },
+  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', direction: 'ltr' },
+  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', direction: 'ltr' },
+  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', direction: 'ltr' },
+  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ', direction: 'ltr' },
 ];
 
 export const LANGUAGE_CODES: string[] = LANGUAGES.map((language) => language.code);
@@ -46,3 +52,7 @@ export const shouldAdoptRemoteLanguage = (
 /** The option for `code`, or undefined. */
 export const languageByCode = (code?: string | null): LanguageOption | undefined =>
   LANGUAGES.find((language) => language.code === code);
+
+/** `rtl` only for Urdu, `ltr` for everything else and for an unknown code. */
+export const languageDirection = (code?: string | null): 'ltr' | 'rtl' =>
+  languageByCode(code)?.direction === 'rtl' ? 'rtl' : 'ltr';

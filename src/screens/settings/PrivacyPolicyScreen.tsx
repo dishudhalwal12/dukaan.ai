@@ -23,13 +23,13 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div className="w-14 h-14 bg-[#E6E6FA]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="material-symbols-outlined text-[#E6E6FA] text-3xl">privacy_tip</span>
           </div>
-          <h1 className="text-xl font-bold text-white mb-1">Dukan<span className="text-[#E6E6FA]">.AI</span> Privacy Policy</h1>
-          <p className="text-xs text-neutral-500">Last updated: February 2026</p>
+          <h1 className="text-xl font-bold text-white mb-1">Nukkad<span className="text-[#E6E6FA]">.AI</span> Privacy Policy</h1>
+          <p className="text-xs text-neutral-400">Last updated: February 2026</p>
         </div>
 
         <Section title="Our Commitment">
           <p>
-            Dukan.AI is built for small business owners across India. We believe your business data belongs to you — not us.
+            Nukkad is built for small business owners across India. We believe your business data belongs to you — not us.
             This policy explains simply and clearly what we do (and don't do) with your information.
           </p>
         </Section>
@@ -65,7 +65,7 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         <Section title="AI & Gemini API">
           <p>
-            Dukan.AI uses Google's <span className="text-white font-semibold">Gemini AI</span> for:
+            Nukkad uses Google's <span className="text-white font-semibold">Gemini AI</span> for:
           </p>
           <ul className="list-disc list-inside space-y-1 text-neutral-400 pl-1">
             <li>Generating personalised business insights</li>
@@ -101,7 +101,7 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         <Section title="Children's Privacy">
           <p className="text-neutral-400">
-            Dukan.AI is designed for business owners aged 18 and above. We do not knowingly
+            Nukkad is designed for business owners aged 18 and above. We do not knowingly
             collect data from minors.
           </p>
         </Section>
@@ -117,8 +117,8 @@ const PrivacyPolicyScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               support@dukan.ai
             </a>
           </div>
-          <p className="text-neutral-500 text-xs mt-4">
-            Dukan.AI is a product of Breeze'26 at Shiv Nadar University, supported by Masters' Union.
+          <p className="text-neutral-400 text-xs mt-4">
+            Nukkad is a product of Breeze'26 at Shiv Nadar University, supported by Masters' Union.
           </p>
         </Section>
 

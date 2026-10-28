@@ -124,7 +124,7 @@ async function geocodeNominatim(query, fetchImpl, minIntervalMs) {
   await throttleNominatim(minIntervalMs);
   const url = `${NOMINATIM_URL}?format=jsonv2&addressdetails=1&countrycodes=in&limit=1&q=${encodeURIComponent(query)}`;
   const body = await fetchJson(fetchImpl, url, {
-    'User-Agent': 'DukaanAI-MCP/1.0 (https://dukaan.ai; support@dukaan.ai)',
+    'User-Agent': 'Nukkad-MCP/1.0 (https://dukaan.ai; support@dukaan.ai)',
     'Accept-Language': 'en',
     Accept: 'application/json',
   });

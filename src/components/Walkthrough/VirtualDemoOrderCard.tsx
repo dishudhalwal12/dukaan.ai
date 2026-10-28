@@ -175,7 +175,7 @@ export const VirtualDemoOrderCard: React.FC<VirtualDemoOrderCardProps> = ({
                 <button
                   type="button"
                   onClick={handleAcceptSwipe}
-                  className="text-xs text-neutral-500 hover:text-neutral-400"
+                  className="text-xs text-neutral-400 hover:text-neutral-400"
                 >
                   {t('tour_demo_decline')}
                 </button>

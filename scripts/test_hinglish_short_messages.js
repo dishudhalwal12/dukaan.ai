@@ -33,7 +33,7 @@ async function runHinglishTests() {
   await testCase("kya haal hai", r => !r.reply.includes("Atta") && !r.reply.includes("₹245"), "Hinglish Greeting 1");
   await testCase("namaste bhai", r => !r.reply.includes("Atta"), "Hinglish Greeting 2");
   await testCase("bhai dukaan khuli hai?", r => r.reply.includes("7:00 AM") || r.reply.includes("open"), "Shop hours in Hinglish");
-  await testCase("kya kya milta hai yahan?", r => r.reply.includes("categories") || r.reply.includes("Dukaan"), "Ask categories in Hinglish");
+  await testCase("kya kya milta hai yahan?", r => r.reply.includes("categories") || r.reply.includes("Nukkad"), "Ask categories in Hinglish");
 
   // 2. Specific item queries in Hinglish
   await testCase("doodh hai kya?", r => r.reply.includes("Milk") || r.reply.includes("Amul"), "Milk query in Hinglish");

@@ -1,6 +1,6 @@
 /** The UPI account the shop is paid into. */
 export const STORE_UPI_ID = 'divyarth12@ybl';
-export const STORE_UPI_NAME = 'Dukan.AI Store';
+export const STORE_UPI_NAME = 'Nukkad Store';
 
 /**
  * A real, scannable UPI payment QR for an order.

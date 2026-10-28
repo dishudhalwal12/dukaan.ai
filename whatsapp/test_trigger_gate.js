@@ -223,7 +223,7 @@ const ackReply = await dukanBot.handleMessage(
 assert.ok(/connected to/.test(ackReply.reply), 'location must produce a "connected to <shop>" reply');
 assert.strictEqual(isAwaitingLocation(flowJid), false, 'handshake complete after the pin');
 assert.ok(activeShops.has(flowJid), 'the matched shop must be remembered for this customer');
-assert.strictEqual(activeShops.get(flowJid).shopName, 'Dukaan Store', 'dev fallback shop when no Supabase registry is wired');
+assert.strictEqual(activeShops.get(flowJid).shopName, 'Nukkad Store', 'dev fallback shop when no Supabase registry is wired');
 passed++;
 console.log('✓ Test 16: the location pin connects a shop and ends the handshake');
 
@@ -279,7 +279,7 @@ ok('Test 21: reconcileMissedActions settles quantity instead of doubling it', ()
   // connect the local shop — exactly as Test 24 does.
   activeShops.set(jid, {
     shopId: 'local',
-    shopName: 'Dukaan Store',
+    shopName: 'Nukkad Store',
     userId: 'dev-owner',
     catalog: dukanCatalog.getAll(),
   });
@@ -358,7 +358,7 @@ ok('Test 24: the safety net ignores products the customer never named', () => {
   // An order requires a matched shop and its catalog, so connect the local one.
   activeShops.set(jid, {
     shopId: 'local',
-    shopName: 'Dukaan Store',
+    shopName: 'Nukkad Store',
     userId: 'dev-owner',
     catalog: dukanCatalog.getAll(),
   });

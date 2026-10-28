@@ -1,7 +1,7 @@
 {
   "name": "dukaan-whatsapp",
   "version": "1.0.0",
-  "description": "WhatsApp AI Ordering Engine & Shopkeeper POS for Dukaan.ai",
+  "description": "WhatsApp AI Ordering Engine & Shopkeeper POS for Nukkad.ai",
   "type": "module",
   "main": "server.js",
   "scripts": {

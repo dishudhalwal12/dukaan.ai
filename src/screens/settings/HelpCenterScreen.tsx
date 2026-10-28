@@ -25,7 +25,7 @@ const FAQ_ITEMS: FAQItem[] = [
     icon: 'auto_awesome',
     question: 'How do AI insights work?',
     answer:
-      'Dukan.AI analyses your inventory and sales data using Google Gemini to generate 5 actionable insights daily. Tap the sync icon on the Dashboard to refresh them anytime. Insights are tailored to your specific business type.',
+      'Nukkad analyses your inventory and sales data using Google Gemini to generate 5 actionable insights daily. Tap the sync icon on the Dashboard to refresh them anytime. Insights are tailored to your specific business type.',
   },
   {
     icon: 'receipt_long',
@@ -37,7 +37,7 @@ const FAQ_ITEMS: FAQItem[] = [
     icon: 'language',
     question: 'How do I change the app language?',
     answer:
-      'Go to Settings → Change Language. Dukan.AI supports English, Hindi, Gujarati, Tamil, Punjabi, Kannada, and Urdu. All app text adapts immediately after selection.',
+      'Go to Settings → Change Language. Nukkad supports English, Hindi, Gujarati, Tamil, Punjabi, Kannada, and Urdu. All app text adapts immediately after selection.',
   },
   {
     icon: 'cloud_sync',
@@ -47,9 +47,9 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   {
     icon: 'storefront',
-    question: 'What is Dukan.AI?',
+    question: 'What is Nukkad?',
     answer:
-      'Dukan.AI is an AI-Adaptive Commerce OS — one app that transforms to fit your business type. Whether you run a Kirana store, Salon, Restaurant, or Chemist, Dukan.AI adapts its interface, labels, and AI advice to suit your specific context.',
+      'Nukkad is an AI-Adaptive Commerce OS — one app that transforms to fit your business type. Whether you run a Kirana store, Salon, Restaurant, or Chemist, Nukkad adapts its interface, labels, and AI advice to suit your specific context.',
   },
   {
     icon: 'bar_chart',
@@ -85,7 +85,7 @@ const FAQCard: React.FC<{ item: FAQItem }> = ({ item }) => {
         </div>
         <p className="flex-1 font-semibold text-white text-sm leading-snug">{item.question}</p>
         <span
-          className={`material-symbols-outlined text-neutral-500 text-lg shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+          className={`material-symbols-outlined text-neutral-400 text-lg shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
         >
           expand_more
         </span>
@@ -113,7 +113,7 @@ const HelpCenterScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <span className="material-symbols-outlined text-[#E6E6FA] text-3xl">help_outline</span>
           </div>
           <h1 className="text-xl font-bold text-white mb-1">How can we help?</h1>
-          <p className="text-xs text-neutral-500">Find answers to common questions below</p>
+          <p className="text-xs text-neutral-400">Find answers to common questions below</p>
         </div>
 
         {/* FAQ */}
@@ -167,7 +167,7 @@ const HelpCenterScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </section>
 
         <p className="text-center text-xs text-neutral-600 pb-4">
-          Dukan<span className="text-[#E6E6FA]/40">.AI</span> · Breeze'26 · Shiv Nadar University
+          Nukkad<span className="text-[#E6E6FA]/40">.AI</span> · Breeze'26 · Shiv Nadar University
         </p>
       </div>
     </div>

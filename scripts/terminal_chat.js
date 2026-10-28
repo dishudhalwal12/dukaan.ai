@@ -50,7 +50,7 @@ rl.on('line', async (line) => {
 
   // Command: /exit
   if (input === '/exit' || input === 'exit' || input === 'quit') {
-    console.log('\n👋 Exiting Dukaan Terminal Chat. Goodbye!\n');
+    console.log('\n👋 Exiting Nukkad Terminal Chat. Goodbye!\n');
     process.exit(0);
   }
 
@@ -135,7 +135,7 @@ Commands:
     } else {
       msgs.slice(-10).forEach(m => {
         const time = new Date(m.timestamp).toLocaleTimeString();
-        const prefix = m.fromMe ? '\x1b[35m[Dukan AI]\x1b[0m' : `\x1b[36m[${m.pushName || 'User'}]\x1b[0m`;
+        const prefix = m.fromMe ? '\x1b[35m[Nukkad]\x1b[0m' : `\x1b[36m[${m.pushName || 'User'}]\x1b[0m`;
         console.log(`   ${time} ${prefix}: ${m.text}`);
       });
     }
@@ -170,7 +170,7 @@ Commands:
   };
 
   try {
-    // 3. Process via Dukan Bot
+    // 3. Process via Nukkad Bot
     const botResult = await dukanBot.handleMessage(messageRecord, mockSock, null);
 
     if (botResult && botResult.reply) {
@@ -179,7 +179,7 @@ Commands:
         remoteJid: currentProfile.jid,
         from: currentProfile.phone,
         fromMe: true,
-        pushName: 'Dukan Assistant',
+        pushName: 'Nukkad Assistant',
         text: botResult.reply,
         timestamp: Date.now(),
         isGroup: false,
@@ -190,7 +190,7 @@ Commands:
       store.addMessage(replyRecord);
 
       // Print bot response
-      console.log(`\n\x1b[35m[Dukan AI]\x1b[0m:\n${botResult.reply}\n`);
+      console.log(`\n\x1b[35m[Nukkad]\x1b[0m:\n${botResult.reply}\n`);
 
       if (botResult.newOrder) {
         console.log(`\x1b[32m🛎️ ORDER CONFIRMED & RECORDED!\x1b[0m`);
@@ -200,7 +200,7 @@ Commands:
         console.log(`   Total:    ₹${botResult.newOrder.totalAmount}\n`);
       }
     } else {
-      console.log(`\n\x1b[33m[Dukan AI]\x1b[0m: (No reply generated)\n`);
+      console.log(`\n\x1b[33m[Nukkad]\x1b[0m: (No reply generated)\n`);
     }
   } catch (err) {
     console.error(`\x1b[31m[Error]:\x1b[0m`, err);
@@ -211,6 +211,6 @@ Commands:
 });
 
 rl.on('close', () => {
-  console.log('\n👋 Exiting Dukaan Terminal Chat. Goodbye!\n');
+  console.log('\n👋 Exiting Nukkad Terminal Chat. Goodbye!\n');
   process.exit(0);
 });

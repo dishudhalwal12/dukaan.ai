@@ -535,7 +535,7 @@ const AppContent: React.FC = () => {
   useEffect(() => { activeScreenRef.current = activeScreen; }, [activeScreen]);
   useEffect(() => { isOtherModalShowingRef.current = isOtherModalShowing; }, [isOtherModalShowing]);
 
-  // Normalize real WhatsApp order payload to Dukaan Order interface
+  // Normalize real WhatsApp order payload to Nukkad Order interface
   const normalizeIncomingOrder = useCallback((raw: Record<string, any>): Order => {
     const rawItems = Array.isArray(raw.items) ? raw.items : [];
     const items: OrderItem[] = rawItems.map((item: any) => {
@@ -643,7 +643,7 @@ const AppContent: React.FC = () => {
         });
       }
     }).catch(err => {
-      console.warn('[Dukan] Failed to fetch backend orders on mount:', err);
+      console.warn('[Nukkad] Failed to fetch backend orders on mount:', err);
     });
   }, [normalizeIncomingOrder, currentUser?.id]);
 

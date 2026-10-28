@@ -52,7 +52,7 @@ const fetchImpl = async (url, init) => {
   calls++;
   assert.match(String(url), /nominatim\.openstreetmap\.org\/search/);
   assert.match(String(url), /countrycodes=in/);
-  assert.match(init.headers['User-Agent'], /Dukaan/);
+  assert.match(init.headers['User-Agent'], /Nukkad/);
   return new Response(JSON.stringify(nominatimBody), { status: 200 });
 };
 const cache = new Map();

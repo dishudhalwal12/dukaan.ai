@@ -1,12 +1,12 @@
 import type { User } from '@supabase/supabase-js';
 
-const DEFAULT_AVATAR = '/logo.png';
+const DEFAULT_AVATAR = '/brand/nukkad-mark.svg';
 
 /**
  * Which photo to show for an account.
  *
  * Order: a photo the shopkeeper uploaded, then the Google account photo, then
- * the Dukaan logo. Email/password accounts have no provider photo, so without
+ * the Nukkad logo. Email/password accounts have no provider photo, so without
  * the logo they fell back to a generic person glyph.
  */
 export function resolveProfileImage(user?: User | null, uploaded?: string | null): string {

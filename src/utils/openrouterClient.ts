@@ -1,4 +1,4 @@
-// OpenRouter Client for Dukaan.AI 2.0
+// OpenRouter Client for Nukkad 2.0
 // Uses openrouter/free model with automatic fallback and failover
 
 import { apiUrl, authHeaders } from '../services/apiSession.ts';

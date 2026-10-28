@@ -203,7 +203,7 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
                 <p className="text-sm font-semibold text-neutral-400 truncate">{customerFirstName} &bull; {order.customer?.address ?? '—'}</p>
               </div>
               {/* Countdown in seconds */}
-              <span className={`text-xs font-bold tabular-nums shrink-0 mt-0.5 ${timeLeft < 120 ? 'text-red-400' : 'text-neutral-500'}`}>
+              <span className={`text-xs font-bold tabular-nums shrink-0 mt-0.5 ${timeLeft < 120 ? 'text-red-400' : 'text-neutral-400'}`}>
                 {Math.ceil(timeLeft / 10)}s
               </span>
             </div>
@@ -253,7 +253,7 @@ const NewOrderModal: React.FC<NewOrderModalProps> = ({ isOpen, order, onUpdateSt
                   {/* Decline button */}
                   <button
                     onClick={handleCloseAndReject}
-                    className="w-full py-3 text-sm font-semibold text-neutral-500 hover:text-red-400 active:text-red-400 transition-colors"
+                    className="w-full py-3 text-sm font-semibold text-neutral-400 hover:text-red-400 active:text-red-400 transition-colors"
                   >
                     Decline Order
                   </button>

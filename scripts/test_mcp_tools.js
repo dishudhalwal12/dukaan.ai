@@ -302,7 +302,7 @@ assert.strictEqual(fromApp.structuredContent.location.source, 'app_location');
 assert.strictEqual(fromApp.structuredContent.location.needs_exact_address, true);
 assert.strictEqual(fromApp.structuredContent.location.age_days, 2);
 assert.strictEqual(fromApp.structuredContent.shops.length, 1);
-assert.match(fromApp.content[0].text, /saved in the Dukaan app/i);
+assert.match(fromApp.content[0].text, /saved in the Nukkad app/i);
 ok('find_shops uses the location captured at sign-in when none is given');
 
 const explicitPincode = await withLocation.client.callTool({ name: 'find_shops', arguments: { pincode: '302001' } });

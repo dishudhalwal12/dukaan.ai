@@ -151,7 +151,7 @@ export const whatsappService = {
   },
 
   /**
-   * Synchronizes Dukaan POS products into the Baileys catalog
+   * Synchronizes Nukkad POS products into the Baileys catalog
    */
   async syncCatalog(products: Product[]): Promise<{ success: boolean; count?: number }> {
     const res = await fetch(apiUrl('/api/dukan/catalog/sync'), {

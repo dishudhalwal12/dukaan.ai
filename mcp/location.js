@@ -1,7 +1,7 @@
 /**
  * The customer's last known position and whether it may still be used.
  *
- * The Dukaan app captures a fix during MCP sign-in (the same consent sheet the
+ * The Nukkad app captures a fix during MCP sign-in (the same consent sheet the
  * shopkeeper sees at onboarding) and `save_address` / `remember_location` refresh
  * it whenever the customer shares coordinates in the chat. This module decides
  * whether that stored fix is still good enough to find a shop, and how the

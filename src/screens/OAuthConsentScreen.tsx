@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createIsolatedSupabaseClient, isSupabaseConfigured } from '../supabase.ts';
 import { GoogleIcon } from '../components/Icons.tsx';
+import { BRAND } from '../config/brand.ts';
 import LocationModal from '../components/LocationModal.tsx';
 import type { StoreLocation } from '../utils/location.ts';
 import {
@@ -73,7 +74,7 @@ const PRIVACY_SECTIONS: { title: string; body: string[] }[] = [
     title: 'What this page collects',
     body: [
       'Your email and password, handled by Supabase Auth. The assistant never receives your password.',
-      'A position, only if you tap Allow location. It is stored on your own Dukaan account.',
+      `A position, only if you tap Allow location. It is stored on your own ${BRAND.name} account.`,
     ],
   },
   {
@@ -157,7 +158,7 @@ const LocationRow: React.FC<{
         <p className="text-xs font-semibold text-white">
           {location ? 'Location saved' : 'No location yet'}
         </p>
-        <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-500">
+        <p className="mt-0.5 text-[11px] leading-relaxed text-neutral-400">
           {location
             ? `${describeSavedLocation(location)}. Used to find shops near you.`
             : 'Share it once and your assistant names the nearest shop without asking. Delivery still needs a full address.'}
@@ -179,7 +180,7 @@ const LocationRow: React.FC<{
           type="button"
           onClick={onRemove}
           disabled={disabled}
-          className="rounded-lg px-3 py-1.5 text-[11px] font-semibold text-neutral-500 transition-colors hover:text-red-300 disabled:opacity-50"
+          className="rounded-lg px-3 py-1.5 text-[11px] font-semibold text-neutral-400 transition-colors hover:text-red-300 disabled:opacity-50"
         >
           Remove
         </button>
@@ -236,7 +237,7 @@ const OAuthConsentScreen: React.FC = () => {
 
     if (!isSupabaseConfigured()) {
       setDetails(null);
-      setError('Sign-in is not configured for this build. Try again from the published Dukaan app.');
+      setError(`Sign-in is not configured for this build. Try again from the published ${BRAND.name} app.`);
       setChecking(false);
       return;
     }
@@ -294,7 +295,7 @@ const OAuthConsentScreen: React.FC = () => {
       // A thrown (not returned) Supabase/network error used to leave the page
       // on "Checking your session…" forever.
       setDetails(null);
-      setError(caught?.message || 'Could not reach Dukaan sign-in. Check your connection and try again.');
+      setError(caught?.message || `Could not reach ${BRAND.name} sign-in. Check your connection and try again.`);
     } finally {
       setChecking(false);
     }
@@ -465,7 +466,7 @@ const OAuthConsentScreen: React.FC = () => {
       }
       setError('The authorization server did not return a redirect. Close this tab and try again.');
     } catch (caught: any) {
-      setError(caught?.message || 'The decision did not reach Dukaan. Check your connection and try again.');
+      setError(caught?.message || `The decision did not reach ${BRAND.name}. Check your connection and try again.`);
     } finally {
       setBusy(null);
     }
@@ -594,12 +595,10 @@ const OAuthConsentScreen: React.FC = () => {
     <main className="min-h-screen w-full bg-black px-4 py-8 text-white sm:py-12">
       <section className="mx-auto w-full max-w-md">
         <header className="mb-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#E6E6FA] text-black">
-            <span className="font-manrope text-xl font-extrabold leading-none">D</span>
-          </div>
+          <img src="/brand/nukkad-glyph.svg" alt="" width={44} height={44} className="h-11 w-11 shrink-0" />
           <div className="min-w-0">
-            <p className="text-base font-bold leading-tight tracking-tight text-[#E6E6FA]">Dukaan.AI</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+            <p className="text-base font-bold leading-tight tracking-tight text-[#E6E6FA]">{BRAND.name}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
               Connect an AI assistant
             </p>
           </div>
@@ -611,7 +610,7 @@ const OAuthConsentScreen: React.FC = () => {
               <div className="h-5 w-2/3 animate-pulse rounded bg-[#2D2D2D]" />
               <div className="h-3 w-full animate-pulse rounded bg-[#2D2D2D]" />
               <div className="h-3 w-4/5 animate-pulse rounded bg-[#2D2D2D]" />
-              <p className="flex items-center gap-2 pt-1 text-xs text-neutral-500">
+              <p className="flex items-center gap-2 pt-1 text-xs text-neutral-400">
                 <Spinner className="h-3 w-3" /> Checking your session…
               </p>
             </div>
@@ -622,7 +621,7 @@ const OAuthConsentScreen: React.FC = () => {
               </h1>
               <p className="mt-2 text-sm leading-relaxed text-neutral-400">
                 {signedInEmail && details
-                  ? 'It will act inside Dukaan as you. Approve only if you started this from your own AI app.'
+                  ? `It will act inside ${BRAND.name} as you. Approve only if you started this from your own AI app.`
                   : 'Sign in so your assistant can look up nearby shops and place orders you confirm. It never receives your password.'}
               </p>
 
@@ -654,7 +653,7 @@ const OAuthConsentScreen: React.FC = () => {
 
                     {/* Google's own consent screen is configured in the Google and
                         Supabase dashboards; this is the in-app half. */}
-                    <p className="text-center text-[11px] leading-relaxed text-neutral-500">
+                    <p className="text-center text-[11px] leading-relaxed text-neutral-400">
                       By continuing you agree to our{' '}
                       <button
                         type="button"
@@ -667,7 +666,7 @@ const OAuthConsentScreen: React.FC = () => {
 
                     <div className="flex items-center py-1">
                       <div className="h-px flex-1 bg-neutral-800" />
-                      <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+                      <span className="px-3 text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
                         or email
                       </span>
                       <div className="h-px flex-1 bg-neutral-800" />
@@ -675,7 +674,7 @@ const OAuthConsentScreen: React.FC = () => {
 
                     <form onSubmit={signIn} className="space-y-3">
                       <label htmlFor="consent-email" className="block">
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">Email</span>
+                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400">Email</span>
                         <input
                           id="consent-email"
                           type="email"
@@ -683,13 +682,13 @@ const OAuthConsentScreen: React.FC = () => {
                           autoComplete="email"
                           value={email}
                           onChange={(event) => setEmail(event.target.value)}
-                          className="mt-1.5 w-full rounded-xl border border-transparent bg-[#2D2D2D] px-3 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-[#E6E6FA] focus:outline-none focus:ring-2 focus:ring-[#E6E6FA]/60"
+                          className="mt-1.5 w-full rounded-xl border border-transparent bg-[#2D2D2D] px-3 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-[#E6E6FA] focus:outline-none focus:ring-2 focus:ring-[#E6E6FA]/60"
                           placeholder="you@example.com"
                         />
                       </label>
 
                       <label htmlFor="consent-password" className="block">
-                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">Password</span>
+                        <span className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-400">Password</span>
                         <input
                           id="consent-password"
                           type="password"
@@ -698,7 +697,7 @@ const OAuthConsentScreen: React.FC = () => {
                           autoComplete="current-password"
                           value={password}
                           onChange={(event) => setPassword(event.target.value)}
-                          className="mt-1.5 w-full rounded-xl border border-transparent bg-[#2D2D2D] px-3 py-3 text-sm text-white placeholder:text-neutral-500 focus:border-[#E6E6FA] focus:outline-none focus:ring-2 focus:ring-[#E6E6FA]/60"
+                          className="mt-1.5 w-full rounded-xl border border-transparent bg-[#2D2D2D] px-3 py-3 text-sm text-white placeholder:text-neutral-400 focus:border-[#E6E6FA] focus:outline-none focus:ring-2 focus:ring-[#E6E6FA]/60"
                           placeholder="At least 6 characters"
                         />
                       </label>
@@ -738,7 +737,7 @@ const OAuthConsentScreen: React.FC = () => {
                   {locationNote && <Alert tone="success">{locationNote}</Alert>}
 
                   <div className="rounded-xl bg-[#2D2D2D] p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">Requested by</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">Requested by</p>
                     <p className="mt-1 text-base font-bold text-white">
                       {details.client?.name || 'An AI assistant'}
                     </p>
@@ -746,7 +745,7 @@ const OAuthConsentScreen: React.FC = () => {
                   </div>
 
                   <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">This will let it</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">This will let it</p>
                     <ul className="mt-2 space-y-2.5">
                       {PERMISSIONS.map((permission) => (
                         <li key={permission.icon} className="flex items-start gap-3">
@@ -760,7 +759,7 @@ const OAuthConsentScreen: React.FC = () => {
                   </div>
 
                   <div className="rounded-xl border border-neutral-800 p-3">
-                    <p className="truncate text-xs text-neutral-500">
+                    <p className="truncate text-xs text-neutral-400">
                       Signed in as <span className="text-neutral-300">{signedInEmail}</span>
                     </p>
                     <button
@@ -795,8 +794,8 @@ const OAuthConsentScreen: React.FC = () => {
                     </button>
                   </div>
 
-                  <p className="text-[11px] leading-relaxed text-neutral-500">
-                    Your location stays in your Dukaan account and is used only to find shops. It is not shared with
+                  <p className="text-[11px] leading-relaxed text-neutral-400">
+                    Your location stays in your {BRAND.name} account and is used only to find shops. It is not shared with
                     this assistant beyond that lookup, and you can update or remove it above at any time. Cash on
                     delivery in this beta.
                   </p>
@@ -829,7 +828,7 @@ const OAuthConsentScreen: React.FC = () => {
         </div>
 
         <p className="mt-4 text-center text-[11px] leading-relaxed text-neutral-600">
-          Secure sign-in by Dukaan.AI. The assistant only sees what you approve here.
+          Secure sign-in by {BRAND.name}. The assistant only sees what you approve here.
         </p>
       </section>
 

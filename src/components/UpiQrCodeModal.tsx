@@ -64,7 +64,7 @@ const UpiQrCodeModal: React.FC<UpiQrCodeModalProps> = ({ isOpen, onClose, onDone
             <div className="text-center">
                 <p className="text-sm text-neutral-400">Amount to be paid</p>
                 <p className="text-3xl font-bold text-[#E6E6FA] tracking-tight">₹{Number(order.total ?? 0).toFixed(2)}</p>
-                <p className="text-xs text-neutral-500 mt-1">UPI ID: {STORE_UPI_ID}</p>
+                <p className="text-xs text-neutral-400 mt-1">UPI ID: {STORE_UPI_ID}</p>
             </div>
         </div>
 

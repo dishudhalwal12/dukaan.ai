@@ -1,6 +1,15 @@
 import React, { useState } from 'react';
+import { BRAND } from '../config/brand.ts';
 
-const ENDPOINT = (import.meta as any).env?.VITE_MCP_URL || 'https://mcp.dukaan.ai/mcp';
+/**
+ * Falls back to the origin this build actually answers on. The old fallback was
+ * a host with no DNS record, so anyone who copied a command without
+ * VITE_MCP_URL set pointed their client at nothing at all.
+ */
+const ENDPOINT = (import.meta as any).env?.VITE_MCP_URL || BRAND.mcpEndpoint;
+
+/** Local alias the client stores. Cosmetic, but it is what shows in /mcps. */
+const CLIENT_ALIAS = 'nukkad';
 
 type ClientGuide = { id: string; label: string; steps: string[]; code?: string };
 
@@ -11,7 +20,7 @@ const GUIDES: ClientGuide[] = [
     steps: [
       'Open Settings → Connectors → Advanced and turn on Developer mode.',
       'Choose Create, paste the endpoint below, and save.',
-      'Complete the Dukaan sign-in and approve access.',
+      `Complete the ${BRAND.name} sign-in and approve access.`,
     ],
   },
   {
@@ -20,32 +29,32 @@ const GUIDES: ClientGuide[] = [
     steps: [
       'Open Settings → Connectors → Add custom connector.',
       'Paste the endpoint below and choose Add.',
-      'Sign in to Dukaan and approve the connection.',
+      `Sign in to ${BRAND.name} and approve the connection.`,
     ],
   },
   {
     id: 'claude-code',
     label: 'Claude Code',
-    steps: ['Run this once. The browser opens for Dukaan sign-in.'],
-    code: `claude mcp add --transport http dukaan ${ENDPOINT}`,
+    steps: [`Run this once. The browser opens for ${BRAND.name} sign-in.`],
+    code: `claude mcp add --transport http ${CLIENT_ALIAS} ${ENDPOINT}`,
   },
   {
     id: 'opencode',
     label: 'OpenCode',
-    steps: ['Run this once. Then open /mcps and sign in to Dukaan. Config hot-reloads; no restart is needed.'],
-    code: `opencode mcp add dukaan --global --url ${ENDPOINT}`,
+    steps: [`Run this once. Then open /mcps and sign in to ${BRAND.name}. Config hot-reloads; no restart is needed.`],
+    code: `opencode mcp add ${CLIENT_ALIAS} --global --url ${ENDPOINT}`,
   },
   {
     id: 'cursor',
     label: 'Cursor',
     steps: ['Add this to ~/.cursor/mcp.json, then restart Cursor.'],
-    code: JSON.stringify({ mcpServers: { dukaan: { url: ENDPOINT } } }, null, 2),
+    code: JSON.stringify({ mcpServers: { [CLIENT_ALIAS]: { url: ENDPOINT } } }, null, 2),
   },
   {
     id: 'vscode',
     label: 'VS Code',
     steps: ['Add this to .vscode/mcp.json, then start the server from the MCP panel.'],
-    code: JSON.stringify({ servers: { dukaan: { type: 'http', url: ENDPOINT } } }, null, 2),
+    code: JSON.stringify({ servers: { [CLIENT_ALIAS]: { type: 'http', url: ENDPOINT } } }, null, 2),
   },
   {
     id: 'terminal',
@@ -73,27 +82,28 @@ const ConnectScreen: React.FC = () => {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#3A3E98]">Dukaan.AI</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-brand-accentInk">{BRAND.name}</p>
         <h1 className="mt-2 text-3xl font-bold text-gray-900">Order from your neighbourhood shop in any AI chat</h1>
         <p className="mt-3 text-gray-600">
-          Connect Dukaan once. Then ask your assistant for milk, bread, or the week's groceries. It shows nearby shops,
+          Connect {BRAND.name} once. Then ask your assistant for milk, bread, or the week's groceries. It shows nearby shops,
           real prices, and a delivery address, and places the order only after you say yes.
         </p>
 
         <section className="mt-6 rounded-2xl border border-gray-200 bg-white p-5">
           <p className="text-sm font-medium text-gray-700">MCP endpoint</p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="flex-1 overflow-x-auto rounded-lg bg-gray-900 px-3 py-2 text-sm text-gray-100">{ENDPOINT}</code>
+            {/* A URL that wraps mid-host is unreadable and un-copyable by eye. */}
+            <code className="flex-1 overflow-x-auto whitespace-nowrap rounded-lg bg-gray-900 px-3 py-2 text-sm text-gray-100">{ENDPOINT}</code>
             <button
               type="button"
               onClick={() => copy(ENDPOINT)}
-              className="rounded-lg bg-[#3A3E98] px-3 py-2 text-sm font-semibold text-white"
+              className="rounded-lg bg-brand-accentInk px-3 py-2 text-sm font-semibold text-white"
             >
               {copied === ENDPOINT ? 'Copied' : 'Copy'}
             </button>
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            You will sign in to Dukaan and approve access. Your password is never shared with the AI assistant.
+            You will sign in to {BRAND.name} and approve access. Your password is never shared with the AI assistant.
           </p>
         </section>
 
@@ -105,7 +115,7 @@ const ConnectScreen: React.FC = () => {
                 type="button"
                 onClick={() => setActive(entry.id)}
                 className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                  active === entry.id ? 'bg-[#3A3E98] text-white' : 'bg-white text-gray-700 border border-gray-200'
+                  active === entry.id ? 'bg-brand-accentInk text-white' : 'bg-white text-gray-700 border border-gray-200'
                 }`}
               >
                 {entry.label}
@@ -163,7 +173,7 @@ const ConnectScreen: React.FC = () => {
         </section>
 
         <p className="mt-8 text-center text-xs text-gray-500">
-          Dukaan.AI · The shop around the corner, now in your AI chat.
+          {BRAND.name} · {BRAND.tagline}
         </p>
       </div>
     </main>

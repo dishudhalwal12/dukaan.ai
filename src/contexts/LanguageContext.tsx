@@ -1,6 +1,6 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
-import { isSupportedLanguage, shouldAdoptRemoteLanguage } from '../data/languages.ts';
+import { isSupportedLanguage, languageDirection, shouldAdoptRemoteLanguage } from '../data/languages.ts';
 import { saveMerchantPreferencesToCloud } from '../services/cloudSync.ts';
 
 // Define translations structure
@@ -71,6 +71,19 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [languageReady, setLanguageReady] = useState(false);
   const [translations, setTranslations] = useState<Translations>({});
   const [translationsLanguage, setTranslationsLanguage] = useState<string | null>(null);
+
+  /**
+   * The document carries the reading language, and with it the direction.
+   *
+   * `:lang(hi)` and friends in index.html pick up the extra leading Indic scripts
+   * need, `[dir="rtl"]` mirrors the icons that point a direction, and Urdu stops
+   * rendering as left-to-right text in left-aligned boxes.
+   */
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang = isSupportedLanguage(language) ? language : 'en';
+    document.documentElement.dir = languageDirection(language);
+  }, [language]);
 
   useEffect(() => {
     const fetchTranslations = async (lang: string) => {

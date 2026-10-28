@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { GoogleIcon } from '../components/Icons.tsx';
 import { signInWithGoogle } from '../services/auth.ts';
+import { BRAND } from '../config/brand.ts';
 
 interface LoginScreenProps {
   onLogin: () => void;
@@ -23,24 +24,21 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onGuestContinue }) =
 
   return (
     <div className="flex flex-col h-full w-full bg-black text-white">
+      {/* The mark carries the brand; no alt text, because the wordmark below it
+          says the same thing and a screen reader would read the name twice. */}
       <div className="p-8 text-center">
-        <h1 className="text-4xl font-bold text-[#E6E6FA]">Dukan.AI</h1>
+        <img src="/brand/nukkad-glyph.svg" alt="" width={64} height={64} className="mx-auto mb-4 h-16 w-16" />
+        <h1 className="text-4xl font-extrabold tracking-tight text-brand-accent">{BRAND.wordmark}</h1>
+        <p className="mt-2 text-sm font-medium text-neutral-400">{BRAND.descriptor}</p>
       </div>
       <div className="flex-grow flex flex-col justify-center items-center p-8 text-center">
-        <div className="w-64 h-48 bg-neutral-900 rounded-2xl flex items-center justify-center mb-8 border border-neutral-800">
-          <div className="w-32 h-40 bg-neutral-800 rounded-xl shadow-md p-3 flex flex-col space-y-2 border border-neutral-700">
-            <div className="w-full h-4 bg-emerald-500/40 rounded-sm"></div>
-            <div className="w-full h-4 bg-amber-500/40 rounded-sm"></div>
-            <div className="w-3/4 h-4 bg-indigo-500/40 rounded-sm"></div>
-            <div className="flex-grow"></div>
-            <div className="w-1/2 h-2 bg-neutral-600 rounded-sm"></div>
-            <div className="w-full h-2 bg-neutral-600 rounded-sm"></div>
-          </div>
-        </div>
-        
-        <h2 className="text-2xl font-bold text-white">अपने दुकान को दो AI की शक्ति।</h2>
-        <p className="text-sm text-neutral-400 mt-2">Give your business AI Superpowers with cloud sync.</p>
-        {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
+        {/* This used to be a hardcoded Devanagari line, so an English reader and a
+            Tamil reader both got Hindi. The tagline is brand voice: it stays in
+            one language on purpose, and it is now the same string as the app
+            title, the social card and the store listing. */}
+        <h2 className="text-2xl font-bold leading-snug text-white">{BRAND.tagline}</h2>
+        <p className="mx-auto mt-3 max-w-xs text-sm text-neutral-400">{BRAND.description}</p>
+        {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
       </div>
       <div className="p-6 space-y-3">
         <button

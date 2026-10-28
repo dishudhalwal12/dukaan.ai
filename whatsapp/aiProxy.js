@@ -63,7 +63,7 @@ export function buildUpstreamRequest({
   body = {},
   apiKey = '',
   referer = '',
-  title = 'Dukaan.AI',
+  title = 'Nukkad',
   model = DEFAULT_UPSTREAM_MODEL,
   models = [],
   dataCollection = 'deny',

@@ -2,14 +2,15 @@
 <html lang="en" class="hide-scrollbar">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dukaan.AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Nukkad — the corner shop, now answering on WhatsApp</title>
     <meta
       name="description"
       content="AI-powered commerce for Indian shops: WhatsApp orders, stock and insights in one POS."
     />
     <meta name="theme-color" content="#000000" />
 
+    <link rel="icon" type="image/svg+xml" href="/brand/nukkad-mark.svg" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -17,8 +18,8 @@
     <link rel="manifest" href="/site.webmanifest" />
 
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Dukaan.AI" />
-    <meta property="og:title" content="Dukaan.AI — the shop around the corner, on WhatsApp" />
+    <meta property="og:site_name" content="Nukkad" />
+    <meta property="og:title" content="Nukkad — the corner shop, now answering on WhatsApp" />
     <meta
       property="og:description"
       content="Take WhatsApp orders, track stock and see AI insights from one shopkeeper POS."
@@ -28,21 +29,29 @@
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Dukaan.AI logo" />
+    <meta property="og:image:alt" content="Nukkad logo" />
 
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Dukaan.AI — the shop around the corner, on WhatsApp" />
+    <meta name="twitter:title" content="Nukkad — the corner shop, now answering on WhatsApp" />
     <meta
       name="twitter:description"
       content="Take WhatsApp orders, track stock and see AI insights from one shopkeeper POS."
     />
     <meta name="twitter:image" content="https://dukaan-ai-hypnexis.vercel.app/og-image.png" />
-    <meta name="twitter:image:alt" content="Dukaan.AI logo" />
+    <meta name="twitter:image:alt" content="Nukkad logo" />
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      One request for the seven languages this build ships. The old request asked
+      for Manrope and "Noto Sans", which has no Devanagari, Gurmukhi, Gujarati,
+      Tamil, Kannada or Arabic glyph: five of the seven languages rendered in the
+      phone's own font. It also skipped weight 600, so every `font-semibold` was
+      a synthesised bold. Keep this href identical to GOOGLE_FONTS_HREF in
+      src/config/brand.ts, or the brand test fails.
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans:wght@400;500;700;900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=Noto+Naskh+Arabic:wght@400..700&family=Noto+Sans+Devanagari:wght@400..800&family=Noto+Sans+Gujarati:wght@400..800&family=Noto+Sans+Gurmukhi:wght@400..800&family=Noto+Sans+Kannada:wght@400..800&family=Noto+Sans+Tamil:wght@400..800&display=swap"
       rel="stylesheet"
     />
     <link
@@ -59,7 +68,12 @@
                 dark: "#1A1A1A",
                 accent: "#E6E6FA",
                 accentHover: "#D8D8F0",
-                neutral: "#737373",
+                // Deep accent for the light public pages. The pale accent above
+                // is 1.23:1 on white and never goes there.
+                accentInk: "#3A3E98",
+                surfaceRaised: "#2D2D2D",
+                // 4.66:1 on the raised surface. #737373 was 2.90:1 there.
+                neutral: "#969696",
                 light: "#F5F5F5",
                 white: "#FFFFFF",
                 success: "#4ADE80",
@@ -68,14 +82,29 @@
               },
             },
             fontFamily: {
-              sans: ["Noto Sans", "sans-serif"],
+              // The full stack: Manrope draws Latin, the Noto families draw the
+              // six scripts it cannot, and the browser picks per glyph.
+              sans: [
+                "Manrope",
+                "Noto Naskh Arabic",
+                "Noto Sans Devanagari",
+                "Noto Sans Gujarati",
+                "Noto Sans Gurmukhi",
+                "Noto Sans Kannada",
+                "Noto Sans Tamil",
+                "system-ui",
+                "-apple-system",
+                "sans-serif",
+              ],
               manrope: ["Manrope", "sans-serif"],
+            },
+            transitionDuration: {
+              DEFAULT: "180ms",
             },
           },
         },
       };
     </script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
       html,
       body,
@@ -86,9 +115,33 @@
         padding: 0;
       }
       body {
-        font-family: "Manrope", "Noto Sans", sans-serif;
+        /* Manrope first, then one Noto family per script. Kept in step with
+           FONT_STACK in src/config/brand.ts. */
+        font-family:
+          "Manrope", "Noto Naskh Arabic", "Noto Sans Devanagari", "Noto Sans Gujarati",
+          "Noto Sans Gurmukhi", "Noto Sans Kannada", "Noto Sans Tamil", system-ui, -apple-system,
+          sans-serif;
         overscroll-behavior: contain; /* Allows for a 'bounce' effect without triggering navigation or pull-to-refresh */
         overflow-x: hidden; /* Ensures horizontal content doesn't create a scrollbar */
+        -webkit-font-smoothing: antialiased; /* Dark-on-black text needs this or stems look fatter */
+      }
+      /* Indic scripts carry marks above and below the headline stroke, so they
+         need more leading than Latin at the same size. */
+      :lang(hi),
+      :lang(gu),
+      :lang(pa),
+      :lang(ta),
+      :lang(kn),
+      :lang(ur) {
+        line-height: 1.7;
+      }
+      [dir="rtl"] .material-symbols-outlined {
+        transform: scaleX(-1);
+      }
+      /* Prices and quantities line up in a column instead of drifting. */
+      .tabular {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1;
       }
       .material-symbols-outlined {
         font-variation-settings:
@@ -123,16 +176,6 @@
         }
       }
     </style>
-    <script type="importmap">
-      {
-        "imports": {
-          "react-dom/": "https://aistudiocdn.com/react-dom@^19.1.1/",
-          "react": "https://aistudiocdn.com/react@^19.1.1",
-          "react/": "https://aistudiocdn.com/react@^19.1.1/",
-          "@google/genai": "https://aistudiocdn.com/@google/genai@^1.19.0"
-        }
-      }
-    </script>
   </head>
   <body class="bg-black">
     <div id="root"></div>

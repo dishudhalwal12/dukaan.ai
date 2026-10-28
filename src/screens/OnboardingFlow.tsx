@@ -165,7 +165,7 @@ const LanguageStep: React.FC<{ onNext: () => void }> = ({ onNext }) => {
             >
               <span>
                 <span className="block font-semibold text-base">{option.nativeName}</span>
-                <span className="block text-xs text-neutral-500">{option.name}</span>
+                <span className="block text-xs text-neutral-400">{option.name}</span>
               </span>
               {selected && <span className="material-symbols-outlined text-[#E6E6FA]">check_circle</span>}
             </button>
@@ -584,7 +584,7 @@ Return format:
          <div className="animate-pulse flex flex-col items-center px-4">
            <div className="w-8 h-8 rounded-full border-2 border-neutral-600 border-t-[#E6E6FA] animate-spin mb-6" />
            <p className="text-neutral-300 text-sm font-medium text-center">{t('onboarding_personalizing_title')}</p>
-           <p className="text-neutral-500 text-xs mt-2 text-center leading-relaxed">{t('onboarding_personalizing_hint')}</p>
+           <p className="text-neutral-400 text-xs mt-2 text-center leading-relaxed">{t('onboarding_personalizing_hint')}</p>
          </div>
       </div>
     );
@@ -616,7 +616,7 @@ Return format:
         <div className={`absolute inset-0 flex flex-col ${isTransitioning ? 'dust-exit' : 'dust-enter'}`}>
           <label className="text-white font-bold block mb-4 text-xl leading-tight">
             {currentQ.title} 
-            {currentQ.subtext && <span className="text-neutral-500 font-normal text-sm font-sans block mt-1">{currentQ.subtext}</span>}
+            {currentQ.subtext && <span className="text-neutral-400 font-normal text-sm font-sans block mt-1">{currentQ.subtext}</span>}
           </label>
           
           <div className="space-y-3 overflow-y-auto hide-scrollbar pb-4 flex-1">
@@ -667,7 +667,7 @@ Return format:
             {currentQ.type === 'select' && (currentQ.options?.length || 0) > 3 && (
               <button
                 onClick={() => setIsOptionsExpanded(!isOptionsExpanded)}
-                className="w-full text-center text-sm text-neutral-500 mt-2 hover:text-neutral-300 transition-colors font-medium py-2"
+                className="w-full text-center text-sm text-neutral-400 mt-2 hover:text-neutral-300 transition-colors font-medium py-2"
               >
                 {isOptionsExpanded ? 'Show less' : 'Show more'}
               </button>
@@ -678,7 +678,7 @@ Return format:
               <div className="pt-2 animate-dust-in">
                  <input
                    autoFocus
-                   className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-3.5 text-white text-base focus:outline-none focus:border-[#E6E6FA] transition-colors placeholder-neutral-500"
+                   className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-3.5 text-white text-base focus:outline-none focus:border-[#E6E6FA] transition-colors placeholder-neutral-400"
                    placeholder="Please specify..."
                    type="text"
                    value={customInput}
@@ -692,7 +692,7 @@ Return format:
               <div className="pt-2">
                  <input
                    autoFocus
-                   className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-3.5 text-white text-base focus:outline-none focus:border-[#E6E6FA] transition-colors placeholder-neutral-500"
+                   className="w-full bg-black border border-neutral-700 rounded-xl px-4 py-3.5 text-white text-base focus:outline-none focus:border-[#E6E6FA] transition-colors placeholder-neutral-400"
                    placeholder={currentQ.placeholder}
                    type="text"
                    value={customInput}

@@ -75,7 +75,7 @@ resetAllContext();
 dukanOrders.clear();
 let reply = await connect('dev-no-owner@s.whatsapp.net');
 assert.ok(!activeShops.has('dev-no-owner@s.whatsapp.net'), 'no owner source → no shop is connected');
-assert.ok(/no Dukaan store/i.test(reply.reply), 'the customer is told no store serves them');
+assert.ok(/no Nukkad store/i.test(reply.reply), 'the customer is told no store serves them');
 // A refusal is terminal: the bot stops answering, so the chat cannot keep spending tokens.
 assert.strictEqual(shouldEngage('dev-no-owner@s.whatsapp.net', 'hello'), false, 'a refusal ends the chat');
 assert.ok(/\/hey/.test(reply.reply), 'the refusal tells the customer how to start again');
@@ -154,7 +154,7 @@ process.env.DUKAN_DEFAULT_OWNER_ID = 'should-not-be-used';
 stubCloud({ profiles: [], products: {} });
 reply = await connect('no-shops@s.whatsapp.net');
 assert.ok(!activeShops.has('no-shops@s.whatsapp.net'), 'an empty live registry never falls back to the default owner');
-assert.ok(/no Dukaan store/i.test(reply.reply));
+assert.ok(/no Nukkad store/i.test(reply.reply));
 ok('a live registry with no shops never uses the dev owner');
 
 // ── 8. a stale shop is cleared when the next pin matches nothing ──────────────

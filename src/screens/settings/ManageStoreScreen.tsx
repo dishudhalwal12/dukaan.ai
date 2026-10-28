@@ -205,7 +205,7 @@ const ManageStoreScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             onChange={(e) => setSupplierWhatsapp(e.target.value)}
                             className="w-full bg-transparent border-b-2 border-neutral-600 text-white text-lg py-2 focus:outline-none focus:border-[#E6E6FA] placeholder-neutral-400 transition-colors duration-300"
                         />
-                        <p className="text-xs text-neutral-500 mt-1.5 px-1">{t('manage_store_whatsapp_hint')}</p>
+                        <p className="text-xs text-neutral-400 mt-1.5 px-1">{t('manage_store_whatsapp_hint')}</p>
                     </div>
                 </div>
             </div>

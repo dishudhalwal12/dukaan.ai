@@ -43,7 +43,7 @@ const DATABASE_CODES = new Set([
  * key", the server's own anon key has been refused (usually a rotated key still
  * sitting in a Vercel env var). Passed through untouched, that surfaces as
  * `profile_unavailable: Invalid API key`, which sounds like the customer's
- * credential and made an assistant advise "re-authenticate the Dukaan MCP
+ * credential and made an assistant advise "re-authenticate the Nukkad MCP
  * server" — advice that can never work, because the key lives on the server.
  * Naming the variable and the operator is what lets the assistant say something
  * true instead.
@@ -55,9 +55,9 @@ export function fromError(error, fallbackCode = 'internal_error') {
   if (DATABASE_CODES.has(code) && /invalid api key/i.test(message)) {
     code = 'anon_key_invalid';
     message =
-      'The Dukaan MCP server cannot reach the database: its SUPABASE_ANON_KEY is not valid for the project. '
+      'The Nukkad MCP server cannot reach the database: its SUPABASE_ANON_KEY is not valid for the project. '
       + 'This is a server configuration problem, not a customer credential — re-authenticating will not fix it. '
-      + 'Tell the Dukaan operator to update SUPABASE_ANON_KEY (or check /health).';
+      + 'Tell the Nukkad operator to update SUPABASE_ANON_KEY (or check /health).';
   }
 
   return fail(code, message);

@@ -1,4 +1,4 @@
-// Dukan Shopkeeper Web App Logic
+// Nukkad Shopkeeper Web App Logic
 let state = {
   orders: [],
   catalog: [],

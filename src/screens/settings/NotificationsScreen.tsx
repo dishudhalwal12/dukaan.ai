@@ -60,7 +60,7 @@ const NotificationsScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 />
                  <NotificationItem 
                     id="promotions"
-                    label="Dukan.AI News"
+                    label="Nukkad News"
                     description="News and special promotions from us."
                     initialState={true}
                 />

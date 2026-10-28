@@ -917,7 +917,7 @@ const SCENARIOS = [
   {
     name: "Vishi Mama Final Signature Test",
     turns: [
-      { user: "hey dukkan.ai", check: r => r.reply.includes("Welcome to Dukaan") && !r.reply.includes("Atta") },
+      { user: "hey dukkan.ai", check: r => r.reply.includes("Welcome to Nukkad") && !r.reply.includes("Atta") },
       { user: "2 packet maggi bhej do", check: r => r.reply.includes("Maggi") },
       { user: "pulkit\njaipur street number 17", check: r => r.reply.includes("jaipur street number 17") },
       { user: "confirm", check: r => r.newOrder !== null && r.reply.includes("Order confirmed") },

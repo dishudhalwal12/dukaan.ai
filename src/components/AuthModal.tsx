@@ -367,7 +367,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
           {/* Consent line. Google's own consent screen is configured in the
               Google/Supabase dashboards; this is the in-app half, so the person
               signing in knows what they are agreeing to. */}
-          <p className="mt-3 text-[11px] leading-relaxed text-neutral-500 text-center">
+          <p className="mt-3 text-[11px] leading-relaxed text-neutral-400 text-center">
             By continuing you agree to our{' '}
             <button
               type="button"
@@ -381,7 +381,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onOpenPrivacy }) => {
           {/* Divider */}
           <div className="flex items-center my-4">
             <div className="flex-1 border-t border-neutral-800"></div>
-            <span className="px-3 text-xs text-neutral-500 uppercase tracking-wider font-medium">or email</span>
+            <span className="px-3 text-xs text-neutral-400 uppercase tracking-wider font-medium">or email</span>
             <div className="flex-1 border-t border-neutral-800"></div>
           </div>
 

@@ -436,12 +436,12 @@ async function initWhatsApp() {
           if (!fromMe && (text || locationData)) {
             forwardToN8n(messageRecord);
 
-            // Dukan AI Bot order automation (for individual customer chats)
+            // Nukkad Bot order automation (for individual customer chats)
             if (!isGroup) {
               if (!dukanBot.shouldEngage(remoteJid, text)) {
                 // Not engaged: the bot only answers after the customer sends "/hey".
                 // Personal contacts messaging the shopkeeper's number are left untouched.
-                console.log(`[Dukan Bot] Ignored (no "/hey" trigger): ${remoteJid}`);
+                console.log(`[Nukkad Bot] Ignored (no "/hey" trigger): ${remoteJid}`);
               } else {
                 try {
                   const botResult = await dukanBot.handleMessage(messageRecord, sock, locationData);
@@ -452,7 +452,7 @@ async function initWhatsApp() {
                       remoteJid,
                       from: customerPhone || remoteJid.replace(/@.*$/, ''),
                       fromMe: true,
-                      pushName: 'Dukan Assistant',
+                      pushName: 'Nukkad Assistant',
                       text: botResult.reply,
                       timestamp: Date.now(),
                       isGroup: false,
@@ -464,7 +464,7 @@ async function initWhatsApp() {
                   }
 
                   if (botResult?.newOrder) {
-                    console.log(`\n🛎️ [Dukan] NEW ORDER CREATED & BROADCAST!`);
+                    console.log(`\n🛎️ [Nukkad] NEW ORDER CREATED & BROADCAST!`);
                     console.log(`   Order ID: #${botResult.newOrder.id}`);
                     console.log(`   Customer: ${botResult.newOrder.customerName} (${botResult.newOrder.customerPhone})`);
                     console.log(`   Address:  ${botResult.newOrder.deliveryAddress}`);
@@ -480,7 +480,7 @@ async function initWhatsApp() {
                     });
                   }
                 } catch (botErr) {
-                  console.error('[Dukan Bot Error]:', botErr);
+                  console.error('[Nukkad Bot Error]:', botErr);
                 }
               }
             }
@@ -541,7 +541,7 @@ app.post('/api/ai/chat/completions', async (req, res) => {
       body: req.body,
       apiKey,
       referer: `${req.protocol}://${req.get('host')}`,
-      title: 'Dukaan.AI',
+      title: 'Nukkad',
       ...aiConfig(),
     });
 
@@ -892,7 +892,7 @@ app.post('/api/dukan/ai-test', async (req, res) => {
         body: JSON.stringify({
           model: groqModel,
           messages: [
-            { role: 'system', content: 'You are Bhaiya from Dukan shop. Reply in 1 warm sentence in Hinglish.' },
+            { role: 'system', content: 'You are Bhaiya from Nukkad shop. Reply in 1 warm sentence in Hinglish.' },
             { role: 'user', content: 'Bhaiya, Maggi hai kya?' }
           ],
           temperature: 0.6,
@@ -936,13 +936,13 @@ app.post('/api/dukan/ai-test', async (req, res) => {
       headers: {
         'Authorization': `Bearer ${openRouterKey}`,
         'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'Dukan AI Assistant',
+        'X-Title': 'Nukkad Assistant',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
         model: openRouterModel,
         messages: [
-          { role: 'system', content: 'You are Bhaiya from Dukan shop. Reply in 1 warm sentence in Hinglish.' },
+          { role: 'system', content: 'You are Bhaiya from Nukkad shop. Reply in 1 warm sentence in Hinglish.' },
           { role: 'user', content: 'Bhaiya, Maggi hai kya?' }
         ],
         max_tokens: 60
@@ -986,7 +986,7 @@ app.post('/api/dukan/catalog/sync', (req, res) => {
   }
   const updatedCatalog = dukanCatalog.syncFromStore(products);
   broadcastSSE({ type: 'dukan_catalog_updated' });
-  console.log(`[Dukan Catalog] Synced ${updatedCatalog.length} products from store.`);
+  console.log(`[Nukkad Catalog] Synced ${updatedCatalog.length} products from store.`);
   res.json({ success: true, count: updatedCatalog.length, catalog: updatedCatalog });
 });
 
@@ -1022,7 +1022,7 @@ app.get('/api/dukan/orders', (req, res) => {
   res.json({ orders: selectOrders(ordersQueryFor(req)) });
 });
 
-// Get Dukan Stats
+// Get Nukkad Stats
 app.get('/api/dukan/stats', (req, res) => {
   const all = selectOrders(ordersQueryFor(req));
   const pending = all.filter(o => o.status === 'PENDING').length;
@@ -1061,7 +1061,7 @@ app.post('/api/dukan/orders/:id/accept', async (req, res) => {
 
   await mirrorOrderQuietly(order);
   broadcastSSE({ type: 'dukan_order_updated', order });
-  console.log(`[Dukan] Order #${order.id} ACCEPTED by shopkeeper.`);
+  console.log(`[Nukkad] Order #${order.id} ACCEPTED by shopkeeper.`);
   res.json({ success: true, order });
 });
 
@@ -1078,7 +1078,7 @@ app.post('/api/dukan/orders/:id/ready', async (req, res) => {
   if (sock && order.customerJid) {
     try {
       await notifyCustomer(sock, order, 'atPickup');
-      console.log(`[Dukan] Sent doorstep notification for Order #${order.id} to ${order.customerJid}`);
+      console.log(`[Nukkad] Sent doorstep notification for Order #${order.id} to ${order.customerJid}`);
     } catch (e) {
       console.error('Failed to notify customer of delivery partner at doorstep:', e.message);
     }
@@ -1106,7 +1106,7 @@ app.post('/api/dukan/orders/:id/delivered', async (req, res) => {
   if (sock && order.customerJid) {
     try {
       await notifyCustomer(sock, order, 'delivered');
-      console.log(`[Dukan] Sent delivered notification for Order #${order.id} to ${order.customerJid}`);
+      console.log(`[Nukkad] Sent delivered notification for Order #${order.id} to ${order.customerJid}`);
     } catch (e) {
       console.error('Failed to notify customer of delivery completion:', e.message);
     }

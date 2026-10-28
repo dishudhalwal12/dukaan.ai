@@ -1,14 +1,14 @@
-# Dukaan MCP ordering
+# Nukkad MCP ordering
 
-One public MCP endpoint lets any MCP-capable AI client order from nearby Dukaan shops. WhatsApp stays as a channel; it is no longer the only one.
+One public MCP endpoint lets any MCP-capable AI client order from nearby Nukkad shops. WhatsApp stays as a channel; it is no longer the only one.
 
-> The examples below use `https://mcp.dukaan.ai/mcp`. If you do not own that domain, replace it with your Vercel URL, e.g. `https://dukaan-ai-hypnexis.vercel.app/mcp`. Use the same URL in Vercel, Supabase Site URL, and the AI client.
+> The examples below use the deployed origin, `https://dukaan-ai-hypnexis.vercel.app/mcp`. Use that same URL in Vercel, Supabase Site URL, and the AI client. The resource identifier in the discovery document must match the URL a client types, `/mcp` included.
 
 ```
 ChatGPT / Claude / Claude Code / OpenCode / Cursor / VS Code
                     │  MCP over HTTPS + OAuth 2.1
                     ▼
-          https://mcp.dukaan.ai/mcp
+          https://dukaan-ai-hypnexis.vercel.app/mcp
              │            │
      Supabase Auth     Supabase DB
      (OAuth server)    (shops, catalog, orders)
@@ -63,7 +63,7 @@ AI ordering is on by default. The shop still needs `store_lat`/`store_lng` captu
 Verify discovery:
 
 ```bash
-MCP_PUBLIC_URL=https://mcp.dukaan.ai/mcp \
+MCP_PUBLIC_URL=https://dukaan-ai-hypnexis.vercel.app/mcp \
 SUPABASE_URL=https://<project-ref>.supabase.co \
 MCP_AUTH_ISSUER=https://<project-ref>.supabase.co/auth/v1 \
 node scripts/mcp/check_oauth_config.mjs
@@ -79,7 +79,7 @@ Set these server-side environment variables on the project (never `VITE_`):
 SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_SERVICE_KEY=<service-role-key>
 SUPABASE_ANON_KEY=<anon-key>
-MCP_PUBLIC_URL=https://mcp.dukaan.ai/mcp
+MCP_PUBLIC_URL=https://dukaan-ai-hypnexis.vercel.app/mcp
 MCP_AUTH_ISSUER=https://<project-ref>.supabase.co/auth/v1
 MCP_ENABLED=true
 # optional, for better geocoding
@@ -89,7 +89,7 @@ MCP_GEOCODER_PROVIDER=google
 
 `VITE_MCP_URL` is build-time and is already pinned in `vercel.json`.
 
-Point `mcp.dukaan.ai` at the Vercel project (or use the project's own domain and set `MCP_PUBLIC_URL` to that). The resource identifier in the discovery document must match the URL clients type, including `/mcp`.
+A custom domain is optional. If you add one, set `MCP_PUBLIC_URL` to it before deploying: the resource identifier in the discovery document must match the URL clients type, `/mcp` included.
 
 `vercel.json` rewrites:
 
@@ -103,7 +103,7 @@ The function performs no OAuth issuance. Supabase is the authorization server; t
 
 AI ordering is **on by default** for every registered shop. The shopkeeper does not need to find an enable switch.
 
-1. Sign in to Dukaan as the shopkeeper.
+1. Sign in to Nukkad as the shopkeeper.
 2. Open **Settings → Online Store & AI Orders**.
 3. Set the delivery radius (1–10 km).
 4. Use **Pause AI orders** when the shop is closed.
@@ -112,17 +112,17 @@ Only shops with a real `store_lat`/`store_lng`, at least one priced product in s
 
 ## 4. Connect a client
 
-The public endpoint is `https://mcp.dukaan.ai/mcp`.
+The public endpoint is `https://dukaan-ai-hypnexis.vercel.app/mcp`.
 
 | Client | How |
 |---|---|
 | ChatGPT | Settings → Connectors → Advanced → Developer mode → Create → paste URL → OAuth |
 | Claude | Settings → Connectors → Add custom connector → paste URL → OAuth |
-| Claude Code | `claude mcp add --transport http dukaan https://mcp.dukaan.ai/mcp` |
+| Claude Code | `claude mcp add --transport http nukkad https://dukaan-ai-hypnexis.vercel.app/mcp` |
 | Cursor | `~/.cursor/mcp.json` with `{ "mcpServers": { "dukaan": { "url": "..." } } }` |
 | VS Code | `.vscode/mcp.json` with `{ "servers": { "dukaan": { "type": "http", "url": "..." } } }` |
-| OpenCode | `opencode mcp add dukaan --global --url https://mcp.dukaan.ai/mcp`, then `/mcps` → sign in |
-| stdio-only clients | `npx mcp-remote https://mcp.dukaan.ai/mcp` |
+| OpenCode | `opencode mcp add nukkad --global --url https://dukaan-ai-hypnexis.vercel.app/mcp`, then `/mcps` → sign in |
+| stdio-only clients | `npx mcp-remote https://dukaan-ai-hypnexis.vercel.app/mcp` |
 
 The `/connect` page carries the same snippets with copy buttons.
 

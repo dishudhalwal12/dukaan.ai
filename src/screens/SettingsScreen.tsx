@@ -72,7 +72,7 @@ const SettingsItem: React.FC<SettingsItemProps> = ({ icon, label, onClick, custo
             )}
             <p className="font-semibold text-white">{label}</p>
         </div>
-        <span className="material-symbols-outlined text-neutral-500">chevron_right</span>
+        <span className="material-symbols-outlined text-neutral-400">chevron_right</span>
     </button>
 );
 

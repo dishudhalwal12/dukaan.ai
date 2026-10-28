@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Nukkad">
+  <!--
+    The corner, and the light that stays on.
+    A rounded tile keeps the mark visible on a white tab bar, where the old
+    transparent white "D" disappeared. Two strokes and a dot: still legible at
+    16px. The wordmark is the primary lockup; this is the app icon and favicon.
+  -->
+  <rect width="64" height="64" rx="16" fill="#000000" />
+  <path d="M20 48 L20 30 A10 10 0 0 1 30 20 L48 20" fill="none" stroke="#E6E6FA" stroke-width="7" stroke-linecap="round" />
+  <circle cx="43" cy="43" r="5.5" fill="#E6E6FA" />
+</svg>

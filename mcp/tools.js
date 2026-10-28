@@ -77,7 +77,7 @@ async function resolveLocation(input, repo, deps) {
     };
   }
 
-  // Nothing explicit was said. The Dukaan app may already know where the
+  // Nothing explicit was said. The Nukkad app may already know where the
   // customer is, because MCP sign-in captures a position with consent.
   const profile = await repo.getProfile();
   const stored = storedLocationFromProfile(profile, deps.now ? deps.now() : Date.now());
@@ -161,9 +161,9 @@ export function registerTools(server, { repo, config, deps }) {
 
   registerAppResource(
     server,
-    'Dukaan checkout card',
+    'Nukkad checkout card',
     CHECKOUT_URI,
-    { description: 'Interactive checkout card for a priced Dukaan order preview.' },
+    { description: 'Interactive checkout card for a priced Nukkad order preview.' },
     async () => checkoutResourceContents()
   );
 
@@ -172,7 +172,7 @@ export function registerTools(server, { repo, config, deps }) {
     {
       title: 'Find nearby shops',
       description:
-        'Find Dukaan shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. When none of those is given, the location captured during Dukaan sign-in is used automatically. query filters shop NAMES only; it does not search products. Use search_products for product searches after finding a shop. Never invent a location: if no input is given and the saved location is missing or stale, ask for a pincode or area.',
+        'Find Nukkad shops that deliver to a customer location. Use a saved address_id, a six-digit pincode, an area name, or latitude/longitude. When none of those is given, the location captured during Nukkad sign-in is used automatically. query filters shop NAMES only; it does not search products. Use search_products for product searches after finding a shop. Never invent a location: if no input is given and the saved location is missing or stale, ask for a pincode or area.',
       inputSchema: z.object({
         address_id: z.string().uuid().optional(),
         pincode: z.string().optional(),
@@ -210,7 +210,7 @@ export function registerTools(server, { repo, config, deps }) {
           }
           const nearest = ranked[0];
           if (!nearest) {
-            return fail('no_shops', 'No Dukaan shop is taking AI orders yet. Nothing was ordered.');
+            return fail('no_shops', 'No Nukkad shop is taking AI orders yet. Nothing was ordered.');
           }
           return fail(
             'out_of_range',
@@ -226,7 +226,7 @@ export function registerTools(server, { repo, config, deps }) {
         );
         const fromApp = location.source === 'app_location';
         const heading = fromApp
-          ? `Shops near ${location.label} (saved in the Dukaan app, ${describeAge(location.age_days)}):`
+          ? `Shops near ${location.label} (saved in the Nukkad app, ${describeAge(location.age_days)}):`
           : `Shops near ${location.label}:`;
         const warning = location.needs_exact_address
           ? fromApp
@@ -324,7 +324,7 @@ export function registerTools(server, { repo, config, deps }) {
     'get_customer_profile',
     {
       title: 'Get customer profile',
-      description: 'Read the saved name, delivery phone, saved addresses, and the last known location captured in the Dukaan app for this signed-in customer.',
+      description: 'Read the saved name, delivery phone, saved addresses, and the last known location captured in the Nukkad app for this signed-in customer.',
       inputSchema: z.object({}),
       annotations: READ,
     },

@@ -120,7 +120,7 @@ const base = {
 {
   const { init } = buildUpstreamRequest({ body: { prompt: 'x' }, apiKey: 'k' });
   assert.strictEqual(init.headers['HTTP-Referer'], undefined, 'no Referer header when none is given');
-  assert.strictEqual(init.headers['X-Title'], 'Dukaan.AI');
+  assert.strictEqual(init.headers['X-Title'], 'Nukkad');
   ok('a missing referer does not produce a bogus header');
 }
 

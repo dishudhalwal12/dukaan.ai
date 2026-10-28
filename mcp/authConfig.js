@@ -46,7 +46,7 @@ export function protectedResourceMetadata({
     authorization_servers: [normalizedIssuer],
     bearer_methods_supported: ['header'],
     scopes_supported: scopes,
-    resource_name: 'Dukaan AI Ordering',
+    resource_name: 'Nukkad AI Ordering',
     ...(documentationUrl ? { resource_documentation: documentationUrl } : {}),
   };
 }

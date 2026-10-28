@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Nukkad">
+  <!--
+    The mark without its tile, for dark surfaces where a black square would
+    disappear into the background. Same geometry as nukkad-mark.svg: the corner,
+    and the light that stays on.
+  -->
+  <path d="M14 50 L14 26 A12 12 0 0 1 26 14 L50 14" fill="none" stroke="#E6E6FA" stroke-width="8" stroke-linecap="round" />
+  <circle cx="45" cy="45" r="6" fill="#E6E6FA" />
+</svg>

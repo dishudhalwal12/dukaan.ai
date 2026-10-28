@@ -97,7 +97,7 @@ const SupplierDetailsModal: React.FC<SupplierDetailsModalProps> = ({ isOpen, onC
           <div>
             <label htmlFor="supplier-whatsapp" className="text-sm font-medium text-neutral-400">Supplier WhatsApp Number</label>
             <input id="supplier-whatsapp" type="tel" value={whatsapp} onChange={e => setWhatsapp(e.target.value)} placeholder="+91 98765 43210" className="w-full bg-[#2D2D2D] mt-1 text-white rounded-md p-2 border-transparent focus:ring-2 focus:ring-[#E6E6FA] focus:outline-none" required/>
-            <p className="text-xs text-neutral-500 mt-1.5 px-1">Use country code (e.g., +91).</p>
+            <p className="text-xs text-neutral-400 mt-1.5 px-1">Use country code (e.g., +91).</p>
           </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}

@@ -114,7 +114,7 @@ const UnityDealCard: React.FC<UnityDealCardProps> = ({ deal, onJoin, isJoined, j
                              </p>
                         </div>
                         <div className="text-right">
-                             <p className="text-xs text-neutral-500">{t('unity_retail_price')}</p>
+                             <p className="text-xs text-neutral-400">{t('unity_retail_price')}</p>
                              <p className="text-lg font-semibold text-red-500 line-through">₹{deal.retailPrice}</p>
                         </div>
                     </div>
@@ -155,9 +155,9 @@ const UnityDealCard: React.FC<UnityDealCardProps> = ({ deal, onJoin, isJoined, j
                                     value={quantity}
                                     onChange={(e) => setQuantity(e.target.value)}
                                     placeholder={t('unity_enter_quantity')}
-                                    className="w-full h-full bg-[#2D2D2D] text-white rounded-l-lg p-3 pr-8 border-2 border-r-0 border-[#2D2D2D] focus:border-[#E6E6FA] focus:ring-0 focus:outline-none placeholder-neutral-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    className="w-full h-full bg-[#2D2D2D] text-white rounded-l-lg p-3 pr-8 border-2 border-r-0 border-[#2D2D2D] focus:border-[#E6E6FA] focus:ring-0 focus:outline-none placeholder-neutral-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
-                                <div className="absolute inset-y-0 right-0 flex flex-col items-center justify-center w-8 text-neutral-500 pointer-events-none">
+                                <div className="absolute inset-y-0 right-0 flex flex-col items-center justify-center w-8 text-neutral-400 pointer-events-none">
                                     <span className="material-symbols-outlined text-sm leading-none">arrow_drop_up</span>
                                     <span className="material-symbols-outlined text-sm leading-none -mt-1">arrow_drop_down</span>
                                 </div>
@@ -261,7 +261,7 @@ const UnityModal: React.FC<UnityModalProps> = ({ isOpen, onClose, deals, joinedD
                         />
                     ))}
                     {filteredDeals.length === 0 && (
-                         <div className="text-center py-20 text-neutral-500">
+                         <div className="text-center py-20 text-neutral-400">
                              <p className="font-semibold">No deals in this category.</p>
                          </div>
                     )}

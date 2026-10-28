@@ -19,7 +19,7 @@ assert.strictEqual(meta.resource, 'https://mcp.dukaan.ai/mcp');
 assert.deepStrictEqual(meta.authorization_servers, ['https://project.supabase.co/auth/v1']);
 assert.deepStrictEqual(meta.bearer_methods_supported, ['header']);
 assert.deepStrictEqual(meta.scopes_supported, ['openid', 'email', 'profile']);
-assert.strictEqual(meta.resource_name, 'Dukaan AI Ordering');
+assert.strictEqual(meta.resource_name, 'Nukkad AI Ordering');
 assert.strictEqual(meta.resource_documentation, 'https://dukaan.ai/connect');
 ok('protected resource metadata names the resource and the Supabase issuer');
 

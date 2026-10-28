@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
  * Shop registry + nearest-shop matcher.
  *
  * WHY THIS FILE EXISTS
- * A customer may be served by any nearby Dukaan shop. When a customer shares a
+ * A customer may be served by any nearby Nukkad shop. When a customer shares a
  * WhatsApp location pin, we must pick WHICH shop should fulfil the order and
  * hand that shop's catalog to the ordering bot.
  *
@@ -134,7 +134,7 @@ export function matchNearestShop(location, shops = [], options = {}) {
         shop: {
           shopId: 'local',
           userId: fallbackOwner,
-          shopName: 'Dukaan Store',
+          shopName: 'Nukkad Store',
           latitude: location.latitude,
           longitude: location.longitude,
           catalogItemCount: dukanCatalog.getAll().length,

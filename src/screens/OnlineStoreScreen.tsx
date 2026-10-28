@@ -80,7 +80,7 @@ const OnlineStoreScreen: React.FC<OnlineStoreScreenProps> = ({ onBack }) => {
               onChange={(event) => setSettings({ ...settings, deliveryRadiusKm: Number(event.target.value) })}
               onMouseUp={(event) => save({ ...settings, deliveryRadiusKm: Number((event.target as HTMLInputElement).value) })}
               onTouchEnd={(event) => save({ ...settings, deliveryRadiusKm: Number((event.target as HTMLInputElement).value) })}
-              className="mt-2 w-full accent-[#3A3E98]"
+              className="mt-2 w-full accent-brand-accentInk"
             />
             <span className="text-xs text-gray-500">Applies to AI orders only. WhatsApp orders are unaffected.</span>
           </label>
@@ -89,14 +89,14 @@ const OnlineStoreScreen: React.FC<OnlineStoreScreenProps> = ({ onBack }) => {
             <span className="text-sm font-medium text-gray-700">Pause AI orders</span>
             <input
               type="checkbox"
-              className="h-5 w-5 accent-[#3A3E98]"
+              className="h-5 w-5 accent-brand-accentInk"
               checked={settings.ordersPaused}
               onChange={(event) => save({ ...settings, ordersPaused: event.target.checked })}
             />
           </label>
 
           <div className="flex items-center justify-between gap-3">
-            <a href="/connect" className="text-sm font-semibold text-[#3A3E98] underline">
+            <a href="/connect" className="text-sm font-semibold text-brand-accentInk underline">
               How customers connect
             </a>
             <span className="text-xs text-gray-500">{saving ? 'Saving…' : saved}</span>
@@ -115,7 +115,7 @@ const OnlineStoreScreen: React.FC<OnlineStoreScreenProps> = ({ onBack }) => {
       <p className="text-gray-600 mb-8">Let's fix that!</p>
       <button
         onClick={onCreate}
-        className="w-full max-w-xs bg-[#FFC857] text-[#3A3E98] font-bold py-3 px-4 rounded-lg text-md shadow-md hover:opacity-90 transition-opacity active:scale-95 transform"
+        className="w-full max-w-xs bg-brand-accent text-black font-bold py-3 px-4 rounded-lg text-md shadow-md hover:bg-brand-accentHover transition-colors active:scale-95 transform"
       >
         Create My Free Online Store in 2 Minutes
       </button>
@@ -125,10 +125,8 @@ const OnlineStoreScreen: React.FC<OnlineStoreScreenProps> = ({ onBack }) => {
   const ActiveState: React.FC = () => (
     <div className="p-4 space-y-5">
       <Card>
-        <p className="text-sm text-gray-500 mb-1">Your store is live at:</p>
-        <a href="#" className="font-semibold text-lg text-[#3A3E98] break-all">
-          sunil-kirana.dukaan.ai
-        </a>
+        <p className="text-sm text-gray-500 mb-1">Your store link goes live with the public storefront.</p>
+        <p className="font-semibold text-lg text-brand-accentInk">Not available in this beta</p>
       </Card>
 
       <button className="w-full bg-[#27AE60] text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center text-lg shadow-md hover:opacity-90 transition-opacity active:scale-95 transform">

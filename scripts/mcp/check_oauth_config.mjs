@@ -90,7 +90,7 @@ if (discovery.error) {
   }
 }
 
-console.log('\nDukaan MCP — OAuth configuration check\n');
+console.log('\nNukkad MCP — OAuth configuration check\n');
 for (const check of checks) {
   console.log(`${check.ok ? '✓' : '✗'} ${check.name}${check.detail ? ` — ${check.detail}` : ''}`);
 }

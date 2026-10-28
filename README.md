@@ -1,11 +1,11 @@
 <!-- prettier-ignore -->
 <div align="center">
 
-<img src="./public/logo.png" alt="Dukaan.AI logo" width="88" height="88" />
+<img src="./public/brand/nukkad-mark.svg" alt="Nukkad logo" width="88" height="88" />
 
-# Dukaan.AI
+# Nukkad
 
-**The shop around the corner, now taking orders on WhatsApp.**
+**The corner shop, now answering on WhatsApp.**
 
 [![React](https://img.shields.io/badge/React-19.1-blue?style=flat-square&logo=react)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js->=20-3c873a?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -18,8 +18,8 @@
 
 <div align="center">
 
-<a href="https://youtu.be/hz5WBK9tprw" title="Watch the Dukaan.AI demo">
-  <img src="./docs/demo-cover.jpg" alt="Dukaan.AI demo: a WhatsApp order arriving on the shop dashboard" width="100%" />
+<a href="https://youtu.be/hz5WBK9tprw" title="Watch the Nukkad demo">
+  <img src="./docs/demo-cover.jpg" alt="Nukkad demo: a WhatsApp order arriving on the shop dashboard" width="100%" />
 </a>
 
 <sub><a href="https://youtu.be/hz5WBK9tprw">Watch the 51 second demo</a>. WhatsApp on the right, the shop dashboard on the left.</sub>
@@ -46,9 +46,9 @@ flowchart LR
 
 ## Order from an AI chat
 
-Dukaan also exposes an MCP endpoint, so customers can order from ChatGPT, Claude, Claude Code, OpenCode, Cursor, VS Code, or any MCP-capable client. The assistant finds nearby shops, reads real prices, builds a bill, reads back the address, and places the order only after the customer confirms it.
+Nukkad also exposes an MCP endpoint, so customers can order from ChatGPT, Claude, Claude Code, OpenCode, Cursor, VS Code, or any MCP-capable client. The assistant finds nearby shops, reads real prices, builds a bill, reads back the address, and places the order only after the customer confirms it.
 
-- Endpoint: `https://mcp.dukaan.ai/mcp`
+- Endpoint: `https://dukaan-ai-hypnexis.vercel.app/mcp`
 - Setup and caveats: [docs/mcp.md](docs/mcp.md)
 - Merchant control: **Settings → Online Store & AI Orders → Pause AI orders** (AI ordering is on by default)
 
@@ -219,7 +219,7 @@ Everything about deploying is in [deploy/README.md](deploy/README.md): the produ
 ## Project structure
 
 ```
-dukaan.ai/
+dukaan.ai/                      # repository name; the product is Nukkad
 ├── index.html                   # Vite entry document
 ├── vite.config.ts               # Dev server (3000) + /api & /events proxy -> 5001
 ├── tsconfig.json                # TypeScript config (scopes src/ + vite.config.ts)

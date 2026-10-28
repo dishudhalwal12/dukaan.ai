@@ -36,7 +36,7 @@ const ChangeLanguageScreen: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </button>
         ))}
       </div>
-      <p className="text-center text-xs text-neutral-500 p-4 mt-4">
+      <p className="text-center text-xs text-neutral-400 p-4 mt-4">
           {t('change_language_footer')}
       </p>
     </div>

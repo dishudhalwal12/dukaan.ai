@@ -42,13 +42,13 @@ async function runExtreme100Tests() {
 
   // GROUP 1: Greetings & Pings (1-10)
   await testCase(1, "hey dukkan.ai", r => !r.reply.includes("Atta") && !r.reply.includes("₹245") && r.newOrder === null, "Greetings");
-  await testCase(2, "hey /dukaan.ai", r => !r.reply.includes("Atta") && r.reply.includes("Welcome to Dukaan"), "Greetings");
+  await testCase(2, "hey /dukaan.ai", r => !r.reply.includes("Atta") && r.reply.includes("Welcome to Nukkad"), "Greetings");
   await testCase(3, "namaste", r => r.reply.includes("Hello") || r.reply.includes("Welcome"), "Greetings");
-  await testCase(4, "hello", r => r.reply.includes("Welcome to Dukaan"), "Greetings");
-  await testCase(5, "good morning", r => r.reply.includes("Welcome to Dukaan"), "Greetings");
-  await testCase(6, "dukaan", r => r.reply.includes("Welcome to Dukaan"), "Greetings");
-  await testCase(7, "hi", r => r.reply.includes("Welcome to Dukaan"), "Greetings");
-  await testCase(8, "start", r => r.reply.includes("Welcome to Dukaan"), "Greetings");
+  await testCase(4, "hello", r => r.reply.includes("Welcome to Nukkad"), "Greetings");
+  await testCase(5, "good morning", r => r.reply.includes("Welcome to Nukkad"), "Greetings");
+  await testCase(6, "dukaan", r => r.reply.includes("Welcome to Nukkad"), "Greetings");
+  await testCase(7, "hi", r => r.reply.includes("Welcome to Nukkad"), "Greetings");
+  await testCase(8, "start", r => r.reply.includes("Welcome to Nukkad"), "Greetings");
   await testCase(9, "..", r => r.reply.includes("How can I help you") && !r.reply.includes("order totaling"), "Pings");
   await testCase(10, "?", r => r.reply.includes("How can I help you"), "Pings");
 

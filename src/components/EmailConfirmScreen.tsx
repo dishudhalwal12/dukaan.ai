@@ -105,7 +105,7 @@ const EmailConfirmScreen: React.FC<EmailConfirmScreenProps> = ({ params, authErr
               <p className="text-red-400 text-xs leading-relaxed">
                 {message || 'The confirmation link is invalid or has expired.'}
               </p>
-              <p className="text-neutral-500 text-xs leading-relaxed mt-2">
+              <p className="text-neutral-400 text-xs leading-relaxed mt-2">
                 If you already confirmed, just sign in — otherwise request a new link from the sign-in screen.
               </p>
               <button

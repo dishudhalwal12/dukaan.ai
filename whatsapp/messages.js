@@ -17,17 +17,17 @@
 export const MESSAGE_TEMPLATES = {
   // --- Onboarding: the customer sent "/hey", we need their location pin --------
   welcome: [
-    `Hi, welcome to Dukaan. 📍\n\nFirst send me your location so I can find the store closest to you.\n\nTap + next to the message box, then Location, then Send your current location.`,
+    `Hi, welcome to Nukkad. 📍\n\nFirst send me your location so I can find the store closest to you.\n\nTap + next to the message box, then Location, then Send your current location.`,
     `Hello! Good to have you here.\n\nShare your location pin and I will connect you to the nearest store.\n\nTap +, choose Location, and tap Send your current location. 📍`,
-    `Welcome to Dukaan.\n\nI only need one thing to start: your location pin. That is how I pick the right store for your area.\n\nTap + then Location then Send your current location.`,
+    `Welcome to Nukkad.\n\nI only need one thing to start: your location pin. That is how I pick the right store for your area.\n\nTap + then Location then Send your current location.`,
     `Hi there. 📍\n\nTo order, please send your current location first so I can match you with the nearest store.\n\nTap + next to the message box, then Location, then Send your current location.`,
     `Thanks for reaching out.\n\nPlease share your location pin and I will find the store closest to you.\n\nTap +, tap Location, then Send your current location. 📍`,
     `Hello and welcome.\n\nYour location tells me which store serves you, so send that first.\n\nTap +, choose Location, and tap Send your current location.`,
     `Hi! Let us get your order to the right store. 📍\n\nSend me your current location and I will connect you to the nearest one.\n\nTap + then Location then Send your current location.`,
     `Welcome aboard.\n\nOne quick step: send your location pin so I know which store is closest to you.\n\nTap +, pick Location, and tap Send your current location. 📍`,
-    `Hello! I am the Dukaan ordering assistant.\n\nSend your current location and I will set you up with the nearest store.\n\nTap + then Location then Send your current location.`,
+    `Hello! I am the Nukkad ordering assistant.\n\nSend your current location and I will set you up with the nearest store.\n\nTap + then Location then Send your current location.`,
     `Hi, glad you are here. 📍\n\nShare your location and I will route you to the closest store.\n\nTap + next to the message box, then Location, then Send your current location.`,
-    `Welcome to Dukaan.\n\nTo connect you to a nearby store I need your location pin first.\n\nTap +, tap Location, then Send your current location. 📍`,
+    `Welcome to Nukkad.\n\nTo connect you to a nearby store I need your location pin first.\n\nTap +, tap Location, then Send your current location. 📍`,
     `Good to see you. 📍\n\nSend your location pin and I will take care of the rest.\n\nTap +, choose Location, then Send your current location.`,
   ],
 
@@ -113,12 +113,12 @@ export const MESSAGE_TEMPLATES = {
 
   // --- No store for this location, distance unknown --------------------------
   noStoreServing: [
-    `Sorry, there is no Dukaan store serving your area right now, so I cannot take an order.\n\nNothing has been ordered. Send /hey with your location to try again later.`,
+    `Sorry, there is no Nukkad store serving your area right now, so I cannot take an order.\n\nNothing has been ordered. Send /hey with your location to try again later.`,
     `I could not find a store for your location, so no order was placed.\n\nSend /hey with your location whenever you want to try again. 📍`,
     `No store is available for your area at the moment.\n\nNothing was ordered. Send /hey with your location to retry.`,
     `There is no store covering your location just now.\n\nNothing has been ordered. Please try /hey with your location again later. 📍`,
     `I have no store that can serve your address right now.\n\nNothing was ordered. Send /hey with your location and I will check again later.`,
-    `Your area is not covered by a Dukaan store yet.\n\nNothing has been ordered. Send /hey with your location to try again. 📍`,
+    `Your area is not covered by a Nukkad store yet.\n\nNothing has been ordered. Send /hey with your location to try again. 📍`,
     `I could not match a store to your location, so I stopped short of ordering.\n\nNothing was placed. Send /hey with your location to retry later.`,
     `No store could take this location, so no order was created.\n\nPlease send /hey with your location again in a while. 📍`,
     `There is nothing serving your address right now.\n\nNothing was ordered. Send /hey with your location whenever you would like to try again.`,
@@ -222,18 +222,18 @@ export const MESSAGE_TEMPLATES = {
 
   // --- Order delivered / completed ------------------------------------------
   delivered: [
-    `Order #{id} delivered. 🚚\n\nAmount paid: ₹{total}. Thanks for ordering with Dukaan.`,
-    `Order #{id} is complete. 🚚\n\n₹{total} settled. Thank you for choosing Dukaan.`,
+    `Order #{id} delivered. 🚚\n\nAmount paid: ₹{total}. Thanks for ordering with Nukkad.`,
+    `Order #{id} is complete. 🚚\n\n₹{total} settled. Thank you for choosing Nukkad.`,
     `Delivered, order #{id}. 🚚\n\nAmount paid: ₹{total}. Hope to see you again soon.`,
-    `Order #{id} has been delivered. 🚚\n\n₹{total} paid. Thanks for shopping with Dukaan.`,
+    `Order #{id} has been delivered. 🚚\n\n₹{total} paid. Thanks for shopping with Nukkad.`,
     `All done, order #{id}. 🚚\n\nAmount paid: ₹{total}. Thank you.`,
     `Order #{id} delivered. 🚚\n\n₹{total} received. Thanks for ordering with us.`,
-    `That is order #{id} delivered. 🚚\n\nAmount paid: ₹{total}. Thank you for choosing Dukaan.`,
+    `That is order #{id} delivered. 🚚\n\nAmount paid: ₹{total}. Thank you for choosing Nukkad.`,
     `Order #{id} completed. 🚚\n\n₹{total} settled. Thanks again for your order.`,
     `Delivered, #{id}. 🚚\n\nAmount paid: ₹{total}. Hope you enjoy your order.`,
-    `Order #{id} delivered successfully. 🚚\n\n₹{total} paid. Thanks for shopping with Dukaan.`,
+    `Order #{id} delivered successfully. 🚚\n\n₹{total} paid. Thanks for shopping with Nukkad.`,
     `Done, order #{id} delivered. 🚚\n\nAmount paid: ₹{total}. Thank you for your order.`,
-    `Order #{id} is delivered. 🚚\n\n₹{total} received. Thanks for choosing Dukaan.`,
+    `Order #{id} is delivered. 🚚\n\n₹{total} received. Thanks for choosing Nukkad.`,
   ],
 
   // --- Shopkeeper could not accept the order --------------------------------
