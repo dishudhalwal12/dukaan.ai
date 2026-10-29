@@ -287,14 +287,10 @@ export const getCurrentUser = async (): Promise<User | null> => {
 
 export interface AuthReport {
   /**
-   * Whether this report is proof of who the user is.
+   * Whether this report is confirmed by the auth server.
    *
-   * A `getSession()` answer of "no session" is NOT proof. The shell boots from
-   * the cached identity, and that request can answer long after the page has
-   * painted as signed in — or after a session it has not seen yet was stored by
-   * a token refresh. Treating that answer as a sign-out made the app drop its
-   * cache and hard-reload underneath an order popup. Only a session Supabase
-   * accepted, or an explicit SIGNED_OUT, is proof.
+   * A confirmed session (or confirmed absence of session) is verified by Supabase.
+   * Stale or unverified localStorage entries are purged when confirmed is true and user is null.
    */
   confirmed: boolean;
 }
@@ -308,6 +304,9 @@ export const listenToAuthState = (
 ): (() => void) => {
   try {
     if (!isSupabaseConfigured()) {
+      try {
+        localStorage.removeItem('dukan-auth-user');
+      } catch {}
       callback(null, { confirmed: true });
       return () => {};
     }
@@ -338,10 +337,7 @@ export const listenToAuthState = (
         localStorage.removeItem('dukan-guest-mode');
         localStorage.removeItem('dukan-oauth-in-progress');
       } else if (confirmed) {
-        // Only a confirmed sign-out may erase the cached identity. An
-        // unconfirmed "no session yet" must leave it alone: it is what the
-        // shell reads on the next boot, and wiping it made a signed-in
-        // shopkeeper look like a guest.
+        // A confirmed absence of session or sign-out erases the cached identity.
         localStorage.removeItem('dukan-auth-user');
       }
       // Cleaned on both branches. A refused callback leaves `error=...` in the
@@ -353,17 +349,17 @@ export const listenToAuthState = (
     // 1. Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        deliver(session.user);
+        deliver(session.user, true);
       } else {
-        // If no active session and not in the middle of OAuth redirect, notify
-        // null — unconfirmed, because this answer only says "not yet here".
+        // When there is no active session and not in the middle of OAuth redirect,
+        // confirm the lack of session so any stale or spoofed entry is removed.
         const isOAuth = window.location.search.includes('code=') || window.location.hash.includes('access_token=');
         if (!isOAuth) {
-          deliver(null, false);
+          deliver(null, true);
         }
       }
     }).catch(() => {
-      deliver(null, false);
+      deliver(null, true);
     });
 
     // 2. Realtime auth state listener
@@ -371,9 +367,9 @@ export const listenToAuthState = (
       console.log('Supabase Auth Event:', event, session?.user?.email);
 
       if (session?.user) {
-        deliver(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        deliver(null);
+        deliver(session.user, true);
+      } else if (event === 'SIGNED_OUT' || !session) {
+        deliver(null, true);
       }
     });
 

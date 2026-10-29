@@ -19,7 +19,7 @@ import { createApiAuth } from './apiAuth.js';
 import { corsOptionsFor, parseOrigins, FIRST_PARTY_ORIGINS } from './corsPolicy.js';
 import { buildUpstreamRequest, resolveModelConfig } from './aiProxy.js';
 import { resolveLocation } from './locationFetcher.js';
-import { transcribeAudioMessage } from './audioTranscriber.js';
+import { transcribeAudioMessage, validateAudioMessageDescriptor } from './audioTranscriber.js';
 
 // Load Baileys from cloned directory
 import {
@@ -370,14 +370,19 @@ async function initWhatsApp() {
           // 1. Process Voice Note / Audio Message
           if (unwrappedMsg?.audioMessage) {
             isVoiceNote = true;
-            try {
-              const transcribed = await transcribeAudioMessage(unwrappedMsg.audioMessage);
-              if (transcribed) {
-                text = transcribed;
-                console.log(`[Voice Note -> Text]: "${transcribed}"`);
+            const validation = validateAudioMessageDescriptor(unwrappedMsg.audioMessage);
+            if (!validation.valid) {
+              console.warn('[Voice Note Refused]:', validation.error);
+            } else {
+              try {
+                const transcribed = await transcribeAudioMessage(unwrappedMsg.audioMessage);
+                if (transcribed) {
+                  text = transcribed;
+                  console.log(`[Voice Note -> Text]: "${transcribed}"`);
+                }
+              } catch (audioErr) {
+                console.error('[Voice Note Error]:', audioErr.message);
               }
-            } catch (audioErr) {
-              console.error('[Voice Note Error]:', audioErr.message);
             }
           }
 
