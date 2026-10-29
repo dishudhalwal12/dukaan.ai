@@ -143,15 +143,8 @@ const AppContent: React.FC = () => {
   // Opened from the consent line on the sign-in sheet, which renders over the
   // modal rather than replacing the app.
   const [showPrivacy, setShowPrivacy] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const cached = localStorage.getItem('dukan-auth-user');
-      return cached ? JSON.parse(cached) : null;
-    } catch {
-      return null;
-    }
-  });
-  const currentUserRef = useRef<User | null>(currentUser);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUserRef = useRef<User | null>(null);
   useEffect(() => {
     currentUserRef.current = currentUser;
   }, [currentUser]);
@@ -195,6 +188,18 @@ const AppContent: React.FC = () => {
         // A confirmed sign-out leaves this device on its stored language; there
         // is no account left to restore from.
         markLanguageResolved();
+
+        const isOrdersRoute = typeof window !== 'undefined' &&
+            (window.location.hash.toLowerCase().includes('orders') || window.location.search.toLowerCase().includes('orders'));
+        const hasOAuthParams = typeof window !== 'undefined' &&
+            (window.location.search.includes('code=') || window.location.hash.includes('access_token='));
+        const isOAuth = isOAuthPending() || hasOAuthParams;
+        const isGuest = typeof window !== 'undefined' && localStorage.getItem('dukan-guest-mode') === 'true';
+
+        if (!isOrdersRoute && !isOAuth && !isGuest && !authChecked.current) {
+          authChecked.current = true;
+          setShowAuthModal(true);
+        }
       }
 
       // Local store data belongs to one account. If this device still holds a
@@ -365,8 +370,6 @@ const AppContent: React.FC = () => {
             isOAuthInProgress = false;
         }
 
-        const isAuthenticated = Boolean(currentUserRef.current || localStorage.getItem('dukan-auth-user'));
-
         // Returning from Google OAuth is an interactive sign-in, so the
         // welcome-back popup may fire once auth resolves.
         if (hasOAuthParams || isOAuthInProgress) {
@@ -381,25 +384,15 @@ const AppContent: React.FC = () => {
             return;
         }
 
-        if (isAuthenticated) {
+        if (currentUserRef.current) {
             // Onboarding, if still needed, is raised by the auth listener.
             setInteractionDone(true); // Returning users: start webhook polling immediately on mount
             return;
-        }
-
-        // Onboarding is no longer a mount-time gate. Sign in / sign up comes
-        // first; the auth listener starts onboarding only for accounts that
-        // have not completed it. See the listener below.
-        markLanguageResolved();
-        if (!authChecked.current) {
-            authChecked.current = true;
-            setShowAuthModal(true);
         }
     } catch (error) {
         console.error("Failed to check onboarding status from localStorage", error);
         markLanguageResolved();
         setError("Failed to load onboarding status.");
-        setShowAuthModal(true);
     }
   }, []);
 
