@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { OAuthError } from '@modelcontextprotocol/server';
 import { parseJwtPayload } from './authConfig.js';
+import { sharedRevocationStore } from './tokenRevocation.js';
 
 /**
  * Verifies Supabase-issued OAuth access tokens for the MCP server.
@@ -24,8 +25,17 @@ function hash(token) {
  * @param {Function} [options.fetchImpl]
  * @param {number} [options.ttlMs]
  * @param {Function} [options.now]
+ * @param {object} [options.revocationStore]
  */
-export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = DEFAULT_TTL_MS, now = () => Date.now() } = {}) {
+export function createVerifier(
+  config,
+  {
+    fetchImpl = globalThis.fetch,
+    ttlMs = DEFAULT_TTL_MS,
+    now = () => Date.now(),
+    revocationStore = sharedRevocationStore,
+  } = {}
+) {
   const base = String(config.supabaseUrl || '').replace(/\/+$/, '');
   const apiKey = String(config.serviceKey || config.anonKey || '');
   if (!base || !apiKey) throw new Error('Supabase URL and key are required to verify MCP tokens');
@@ -34,11 +44,29 @@ export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = D
   const issuer = String(config.issuer || '').replace(/\/+$/, '');
   const expectedResource = String(config.expectedResource || '').replace(/\/+$/, '');
 
+  function revoke(token) {
+    const raw = String(token || '').trim();
+    if (!raw) return;
+    const key = hash(raw);
+    cache.delete(key);
+    const payload = parseJwtPayload(raw);
+    const tokenExpMs = Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+    if (revocationStore) {
+      revocationStore.revoke(raw, tokenExpMs);
+    }
+  }
+
   async function verifyAccessToken(token) {
     const raw = String(token || '').trim();
     if (!raw) throw new OAuthError('invalid_token', 'A bearer token is required.');
 
     const key = hash(raw);
+
+    if (revocationStore && revocationStore.isRevoked(raw)) {
+      cache.delete(key);
+      throw new OAuthError('invalid_token', 'The token has been revoked.');
+    }
+
     const hit = cache.get(key);
     if (hit && hit.expiresAt > now()) return hit.info;
     if (hit) cache.delete(key);
@@ -94,7 +122,7 @@ export function createVerifier(config, { fetchImpl = globalThis.fetch, ttlMs = D
     return info;
   }
 
-  return { verifyAccessToken };
+  return { verifyAccessToken, revoke };
 }
 
 /** The authenticated user id carried by a verified AuthInfo. */

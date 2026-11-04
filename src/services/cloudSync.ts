@@ -1,11 +1,11 @@
 import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { isMcpOrderId } from '../utils/orderOwnership.ts';
-import { Product, Order } from '../types.ts';
+import type { Product, Order } from '../types.ts';
 import type { User } from './auth.ts';
 import { isSignupAfterCutoff } from '../utils/walkthroughGate.js';
 import { staleExternalIds } from '../utils/catalogSync.js';
 import { collectDeviceSession, noteSyncError } from '../utils/telemetry.ts';
-import { getStoredStoreLocation, StoreLocation } from '../utils/location.ts';
+import { getStoredStoreLocation, type StoreLocation } from '../utils/location.ts';
 import {
   ownerColumnsFromAuthUser,
   identityRowFromAuthUser,
@@ -15,8 +15,8 @@ import {
 } from '../utils/cloudRows.ts';
 
 /**
- * Helper to resolve the active user ID from explicit argument, Supabase session,
- * or localStorage cached auth state (dukan-auth-user).
+ * Helper to resolve the active user ID from explicit argument or confirmed Supabase session.
+ * Unauthenticated localStorage entries are never trusted as proof of an identity.
  */
 export const resolveActiveUserId = async (explicitUserId?: string): Promise<string | null> => {
   if (explicitUserId) return explicitUserId;
@@ -24,16 +24,6 @@ export const resolveActiveUserId = async (explicitUserId?: string): Promise<stri
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.id) return session.user.id;
-  } catch (e) {
-    // Ignore error
-  }
-
-  try {
-    const cached = localStorage.getItem('dukan-auth-user');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (parsed?.id) return parsed.id;
-    }
   } catch (e) {
     // Ignore error
   }

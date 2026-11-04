@@ -79,6 +79,8 @@ export const claimOwnershipReboot = (now: number = Date.now()): boolean => {
 export const currentIdentity = (): string => {
   if (typeof window === 'undefined') return 'guest';
   try {
+    const sessionToken = localStorage.getItem('dukan_supabase_auth_token');
+    if (!sessionToken) return 'guest';
     const cached = localStorage.getItem('dukan-auth-user');
     if (cached) {
       const parsed = JSON.parse(cached);

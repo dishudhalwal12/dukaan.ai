@@ -58,3 +58,8 @@ supabase/.temp/
 
 # Spreadsheet exports
 *.xlsx
+
+#seperate landing page from main repo
+Landing/
+Landing/*
+.Landing/*
