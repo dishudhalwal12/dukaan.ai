@@ -1,6 +1,8 @@
 import './test_setup_orders_file.js'; // pin the stores, blank the live credentials
 import assert from 'assert';
 import { createApiAuth } from './apiAuth.js';
+import { createVerifier } from '../mcp/auth.js';
+import { createRevocationStore, sharedRevocationStore } from '../mcp/tokenRevocation.js';
 
 console.log('--- RUNNING API AUTH TESTS ---');
 let n = 0;
@@ -199,6 +201,132 @@ ok('an undeclared route defaults to auth — the policy fails closed');
   await a.run(fakeReq({ url: '/api/dukan/orders', headers: { authorization: 'Bearer t' } }), fakeRes(), freshNext());
   assert.strictEqual(f.calls.length, 2, 'an expired token is re-verified');
   ok('a cached token is re-verified once it expires');
+}
+
+// ─── 4. Issue #67: Token expiry capping & immediate revocation ───────────────
+function makeJwt(expSeconds) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ exp: expSeconds, sub: 'user-issue-67' })).toString('base64url');
+  return `${header}.${payload}.sig`;
+}
+
+// 4a. Cached entry expires no later than token's own expiry
+{
+  let now = 100_000;
+  const shortExp = Math.floor((now + 5_000) / 1000); // expires in 5 seconds
+  const token = makeJwt(shortExp);
+  const f = supabaseOk('user-issue-67');
+  const a = createApiAuth({
+    supabaseUrl: 'https://example.supabase.co',
+    supabaseKey: 'k',
+    fetchImpl: f,
+    ttlMs: 60_000, // 60s TTL
+    now: () => now,
+  });
+
+  // Call 1: initial verification
+  const req1 = fakeReq({ url: '/api/dukan/orders', headers: { authorization: `Bearer ${token}` } });
+  const nx1 = freshNext();
+  await a.run(req1, fakeRes(), nx1);
+  assert.strictEqual(nx1.called, true);
+  assert.strictEqual(f.calls.length, 1);
+
+  // Call 2: at 4s, still within token's 5s expiry -> cache hit
+  now = 104_000;
+  const nx2 = freshNext();
+  await a.run(req1, fakeRes(), nx2);
+  assert.strictEqual(nx2.called, true);
+  assert.strictEqual(f.calls.length, 1, '4s in is still cached');
+
+  // Call 3: at 6s, token has expired -> cache miss and rejected
+  now = 106_000;
+  const res3 = fakeRes();
+  const nx3 = freshNext();
+  await a.run(req1, res3, nx3);
+  assert.strictEqual(res3.statusCode, 401, 'expired token must be refused even though 60s ttl has not elapsed');
+  assert.strictEqual(nx3.called, undefined);
+  ok('cached entry expires no later than the token it stands for (capped at token expiry)');
+}
+
+// 4b. Immediate revocation takes effect on the very next request
+{
+  let now = 100_000;
+  const longExp = Math.floor((now + 600_000) / 1000); // 10 minutes expiry
+  const token = makeJwt(longExp);
+  const f = supabaseOk('user-issue-67');
+  const store = createRevocationStore({ now: () => now });
+  const a = createApiAuth({
+    supabaseUrl: 'https://example.supabase.co',
+    supabaseKey: 'k',
+    fetchImpl: f,
+    ttlMs: 60_000,
+    now: () => now,
+    revocationStore: store,
+  });
+
+  // Sign in / first request: cached
+  const req = fakeReq({ url: '/api/dukan/orders', headers: { authorization: `Bearer ${token}` } });
+  const nx1 = freshNext();
+  await a.run(req, fakeRes(), nx1);
+  assert.strictEqual(nx1.called, true);
+  assert.strictEqual(f.calls.length, 1);
+
+  // Revoke token / sign out inside the minute
+  a.revoke(token);
+
+  // Next call within the minute: must be rejected immediately with 401
+  const res2 = fakeRes();
+  const nx2 = freshNext();
+  await a.run(req, res2, nx2);
+  assert.strictEqual(res2.statusCode, 401, 'revoked token must be refused immediately');
+  assert.strictEqual(nx2.called, undefined);
+  ok('revoking a token immediately invalidates cached session on the next request');
+}
+
+// 4c. Shared revocation store across apiAuth and mcpVerifier
+{
+  let now = 100_000;
+  const store = createRevocationStore({ now: () => now });
+  const tokenBot = makeJwt(Math.floor((now + 300_000) / 1000));
+  const tokenMcp = makeJwt(Math.floor((now + 300_000) / 1000));
+
+  const fBot = supabaseOk('user-shared-bot');
+  const a = createApiAuth({
+    supabaseUrl: 'https://example.supabase.co',
+    supabaseKey: 'k',
+    fetchImpl: fBot,
+    ttlMs: 60_000,
+    now: () => now,
+    revocationStore: store,
+  });
+
+  const fMcp = supabaseOk('user-shared-mcp');
+  const mcp = createVerifier(
+    { supabaseUrl: 'https://example.supabase.co', anonKey: 'k' },
+    { fetchImpl: fMcp, ttlMs: 60_000, now: () => now, revocationStore: store }
+  );
+
+  // Both tokens verified and cached in their respective verifiers
+  await a.verify(tokenBot);
+  await mcp.verifyAccessToken(tokenMcp);
+
+  // 1. Revoking tokenBot via apiAuth also invalidates it in mcp
+  a.revoke(tokenBot);
+  let mcpThrew = false;
+  try {
+    await mcp.verifyAccessToken(tokenBot);
+  } catch (err) {
+    mcpThrew = true;
+    assert.strictEqual(err.message, 'The token has been revoked.');
+  }
+  assert.strictEqual(mcpThrew, true, 'mcp verifier must reject token revoked via apiAuth');
+
+  // 2. Revoking tokenMcp via mcpVerifier also invalidates it in apiAuth
+  mcp.revoke(tokenMcp);
+  const botResult = await a.verify(tokenMcp);
+  assert.strictEqual(botResult, null, 'apiAuth must reject token revoked via mcpVerifier');
+
+  ok('both verifiers consult the shared store, making revocation immediate across services');
 }
 
 console.log('\n========================================');

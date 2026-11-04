@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from '../supabase.ts';
 import { clearFreshSignIn, markFreshSignIn } from '../utils/authOutcome.ts';
 import { CONFIRM_TYPES, parseConfirmationStatus } from '../utils/confirmLink.ts';
 import { shouldAbandonPendingOAuth, shouldIgnoreFocusSession, urlCarriesOAuthCallback } from '../utils/oauthState.ts';
+import { resolveApiUrl, buildAuthHeaders } from './apiClient.ts';
 
 export type { User };
 
@@ -258,6 +259,22 @@ export const signOutUser = async (): Promise<boolean> => {
 
     if (!isSupabaseConfigured()) {
       return true;
+    }
+
+    // Proactively revoke the session token with the bot so cached access is immediately revoked
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      if (token) {
+        const base = import.meta.env?.VITE_API_BASE as string | undefined;
+        const revokeUrl = resolveApiUrl(base, '/api/auth/revoke', typeof window !== 'undefined' ? window.location : null);
+        await fetch(revokeUrl, {
+          method: 'POST',
+          headers: buildAuthHeaders(token),
+        }).catch(() => {});
+      }
+    } catch {
+      // Fire-and-forget notification; signout must complete regardless of network state
     }
 
     const { error } = await supabase.auth.signOut();

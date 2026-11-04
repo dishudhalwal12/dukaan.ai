@@ -788,6 +788,12 @@ app.get('/api/webhook/logs', (req, res) => {
 
 // Logout & Clear Session
 app.post('/api/logout', async (req, res) => {
+  const authHeader = req.headers && (req.headers.authorization || req.headers.Authorization);
+  const match = /^Bearer\s+(.+)$/i.exec(String(authHeader || '').trim());
+  if (match) {
+    apiAuth.revoke(match[1].trim());
+  }
+
   try {
     if (sock) {
       await sock.logout().catch(() => {});
@@ -808,6 +814,16 @@ app.post('/api/logout', async (req, res) => {
   setTimeout(() => initWhatsApp(), 1500);
 
   res.json({ success: true, message: 'Logged out. Initializing new QR code...' });
+});
+
+// Revoke API token immediately on sign-out / session termination
+app.post('/api/auth/revoke', (req, res) => {
+  const authHeader = req.headers && (req.headers.authorization || req.headers.Authorization);
+  const match = /^Bearer\s+(.+)$/i.exec(String(authHeader || '').trim());
+  if (match) {
+    apiAuth.revoke(match[1].trim());
+  }
+  res.json({ success: true, revoked: true });
 });
 
 // ======================== DUKAN SHOPKEEPER & ORDER APIS ========================

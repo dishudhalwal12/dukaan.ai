@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { parseJwtPayload } from '../mcp/authConfig.js';
+import { sharedRevocationStore } from '../mcp/tokenRevocation.js';
 
 /**
  * Who may call what on the bot's HTTP API.
@@ -63,6 +65,7 @@ function hashToken(token) {
  * @param {number} [options.maxEntries] cap on the verification cache
  * @param {Function} [options.now]
  * @param {Set<string>} [options.operatorIds]
+ * @param {object} [options.revocationStore]
  */
 export function createApiAuth({
   supabaseUrl = '',
@@ -72,6 +75,7 @@ export function createApiAuth({
   maxEntries = 500,
   now = () => Date.now(),
   operatorIds = new Set(),
+  revocationStore = sharedRevocationStore,
 } = {}) {
   const base = String(supabaseUrl || '').replace(/\/+$/, '');
   const projectKey = String(supabaseKey || '');
@@ -79,14 +83,19 @@ export function createApiAuth({
 
   // The POS polls orders every 2.5s. Verifying the token against Supabase on
   // every poll would double the project's request volume for no security gain,
-  // so a verified token is trusted for `ttlMs`.
+  // so a verified token is trusted for `ttlMs` (capped at the token's own expiry).
   const cache = new Map();
 
   function cached(token) {
-    const hit = cache.get(hashToken(token));
+    const key = hashToken(token);
+    if (revocationStore && revocationStore.isRevoked(token)) {
+      cache.delete(key);
+      return null;
+    }
+    const hit = cache.get(key);
     if (!hit) return null;
     if (hit.expiresAt <= now()) {
-      cache.delete(hashToken(token));
+      cache.delete(key);
       return null;
     }
     return hit.userId;
@@ -95,14 +104,44 @@ export function createApiAuth({
   function remember(token, userId) {
     const key = hashToken(token);
     cache.delete(key);
-    cache.set(key, { userId, expiresAt: now() + ttlMs });
+
+    const payload = parseJwtPayload(token);
+    const tokenExpMs = Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+
+    if (tokenExpMs !== null && tokenExpMs <= now()) {
+      return; // Token has expired, do not cache
+    }
+
+    const expiresAt = tokenExpMs !== null
+      ? Math.min(tokenExpMs, now() + ttlMs)
+      : now() + ttlMs;
+
+    cache.set(key, { userId, expiresAt });
     while (cache.size > maxEntries) {
       const oldest = cache.keys().next().value;
       cache.delete(oldest);
     }
   }
 
+  function revoke(token) {
+    if (!token) return;
+    const key = hashToken(token);
+    cache.delete(key);
+    const payload = parseJwtPayload(token);
+    const tokenExpMs = Number.isFinite(payload?.exp) ? payload.exp * 1000 : null;
+    if (revocationStore) {
+      revocationStore.revoke(token, tokenExpMs);
+    }
+  }
+
   async function verify(token) {
+    if (revocationStore && revocationStore.isRevoked(token)) return null;
+
+    const payload = parseJwtPayload(token);
+    if (payload?.exp && payload.exp * 1000 <= now()) {
+      return null;
+    }
+
     const hit = cached(token);
     if (hit) return hit;
     if (!base || !projectKey || typeof fetchImpl !== 'function') return null;
@@ -158,5 +197,5 @@ export function createApiAuth({
     );
   }
 
-  return { policyFor: resolvePolicy, run, verify };
+  return { policyFor: resolvePolicy, run, verify, revoke };
 }
