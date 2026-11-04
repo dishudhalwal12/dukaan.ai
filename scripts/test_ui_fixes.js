@@ -17,6 +17,8 @@ import {
   LANGUAGES,
   isSupportedLanguage,
   shouldAdoptRemoteLanguage,
+  LOCALE_PATHS,
+  localePathFor,
 } from '../src/data/languages.ts';
 import { languageInstruction, languageName } from '../src/utils/languageName.ts';
 import { normalizeStock, normalizeQuantity, isValidStockInput } from '../src/utils/stock.ts';
@@ -139,6 +141,16 @@ console.log('\nTest 4: language precedence');
 
   assert.strictEqual(isSupportedLanguage('HI'), true, 'codes are compared case-insensitively');
   assert.strictEqual(isSupportedLanguage('en-GB'), false, 'a regional tag is not a shipped locale');
+  assert.strictEqual(isSupportedLanguage('../evil/path'), false, 'path traversal values are not supported');
+
+  // Locale static mapping (Issue #68)
+  assert.strictEqual(localePathFor('hi'), './i18n/locales/hi.json');
+  assert.strictEqual(localePathFor('HI'), './i18n/locales/hi.json', 'locale paths normalize case');
+  assert.strictEqual(localePathFor('../evil/path'), './i18n/locales/en.json', 'path traversal falls back to English');
+  assert.strictEqual(localePathFor('klingon'), './i18n/locales/en.json', 'unknown languages fall back to English');
+  assert.strictEqual(localePathFor(null), './i18n/locales/en.json');
+  assert.strictEqual(localePathFor(undefined), './i18n/locales/en.json');
+  assert.strictEqual(LOCALE_PATHS.en, './i18n/locales/en.json');
 
   // Every advertised language must have a translation file, or the picker offers
   // a language that renders as an empty app.

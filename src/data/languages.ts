@@ -26,9 +26,69 @@ export const LANGUAGES: LanguageOption[] = [
 
 export const LANGUAGE_CODES: string[] = LANGUAGES.map((language) => language.code);
 
+/** Static lookup table from supported language code to its bundled locale path. */
+export const LOCALE_PATHS: Readonly<Record<string, string>> = Object.freeze({
+  en: './i18n/locales/en.json',
+  hi: './i18n/locales/hi.json',
+  ur: './i18n/locales/ur.json',
+  ta: './i18n/locales/ta.json',
+  pa: './i18n/locales/pa.json',
+  gu: './i18n/locales/gu.json',
+  kn: './i18n/locales/kn.json',
+});
+
+/** Resolves the bundled locale path for a language, falling back strictly to English. */
+export const localePathFor = (code?: string | null): string => {
+  if (isSupportedLanguage(code)) {
+    const key = String(code).trim().toLowerCase();
+    return LOCALE_PATHS[key] ?? LOCALE_PATHS.en;
+  }
+  return LOCALE_PATHS.en;
+};
+
 /** Whether a stored or remote code is one this build has translations for. */
 export const isSupportedLanguage = (code?: string | null): boolean =>
   typeof code === 'string' && LANGUAGE_CODES.includes(code.trim().toLowerCase());
+
+/**
+ * Storage keys for language settings in browser localStorage.
+ */
+export const LANGUAGE_STORAGE_KEY = 'dukan-language';
+
+/**
+ * Set only when the user picked a language on THIS device.
+ *
+ * Without it there is no way to tell "never chose, has the default English" from
+ * "chose English on purpose", and restoring the account's value would silently
+ * undo a deliberate choice.
+ */
+export const LANGUAGE_CHOSEN_KEY = 'dukan-language-chosen';
+
+/**
+ * Reads the stored language code, validating it against supported languages.
+ * If unknown, clears the storage key on read and falls back to 'en'.
+ */
+export const readStoredLanguage = (): string => {
+  try {
+    if (typeof localStorage === 'undefined') return 'en';
+    const raw = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (!raw) return 'en';
+    const normalized = raw.trim().toLowerCase();
+    if (isSupportedLanguage(normalized)) {
+      return normalized;
+    }
+    // Unknown or invalid stored code: clear from storage and fall back strictly to English
+    try {
+      localStorage.removeItem(LANGUAGE_STORAGE_KEY);
+      localStorage.removeItem(LANGUAGE_CHOSEN_KEY);
+    } catch {
+      // Storage unavailable
+    }
+    return 'en';
+  } catch {
+    return 'en';
+  }
+};
 
 /**
  * Whether a language restored from the account should be applied.

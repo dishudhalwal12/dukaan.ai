@@ -1,7 +1,16 @@
 
 import React, { createContext, useState, useContext, useEffect, ReactNode, useCallback } from 'react';
-import { isSupportedLanguage, shouldAdoptRemoteLanguage } from '../data/languages.ts';
+import {
+  isSupportedLanguage,
+  shouldAdoptRemoteLanguage,
+  localePathFor,
+  LANGUAGE_STORAGE_KEY,
+  LANGUAGE_CHOSEN_KEY,
+  readStoredLanguage,
+} from '../data/languages.ts';
 import { saveMerchantPreferencesToCloud } from '../services/cloudSync.ts';
+
+export { LANGUAGE_STORAGE_KEY, LANGUAGE_CHOSEN_KEY, readStoredLanguage };
 
 // Define translations structure
 interface Translations {
@@ -38,25 +47,6 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-export const LANGUAGE_STORAGE_KEY = 'dukan-language';
-
-/**
- * Set only when the user picked a language on THIS device.
- *
- * Without it there is no way to tell "never chose, has the default English" from
- * "chose English on purpose", and restoring the account's value would silently
- * undo a deliberate choice.
- */
-export const LANGUAGE_CHOSEN_KEY = 'dukan-language-chosen';
-
-const readStoredLanguage = (): string => {
-  try {
-    return localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en';
-  } catch {
-    return 'en';
-  }
-};
-
 const hasLocalChoice = (): boolean => {
   try {
     return localStorage.getItem(LANGUAGE_CHOSEN_KEY) === 'true';
@@ -74,23 +64,33 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   useEffect(() => {
     const fetchTranslations = async (lang: string) => {
+      const safeLang = isSupportedLanguage(lang) ? lang.trim().toLowerCase() : 'en';
+      const targetPath = localePathFor(safeLang);
       try {
-        const response = await fetch(`./i18n/locales/${lang}.json`);
+        const response = await fetch(targetPath);
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
         setTranslations(data);
-        setTranslationsLanguage(lang);
+        setTranslationsLanguage(safeLang);
       } catch (error) {
-        console.error(`Could not load translations for ${lang}`, error);
+        console.error(`Could not load translations for ${safeLang}`, error);
         // Fallback to English if fetch fails
-        if (lang !== 'en') {
-            await fetchTranslations('en');
-            // The English bundle is the best text available; let language-bound
-            // generation proceed rather than wait forever for a bundle that is
-            // not coming.
-            setTranslationsLanguage(lang);
+        if (safeLang !== 'en') {
+          try {
+            const fallbackResponse = await fetch(localePathFor('en'));
+            if (fallbackResponse.ok) {
+              const fallbackData = await fallbackResponse.json();
+              setTranslations(fallbackData);
+            }
+          } catch (fallbackError) {
+            console.error('Could not load fallback English translations', fallbackError);
+          }
+          // The English bundle is the best text available; let language-bound
+          // generation proceed rather than wait forever for a bundle that is
+          // not coming.
+          setTranslationsLanguage(safeLang);
         }
       }
     };
@@ -102,10 +102,12 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
   }, []);
 
   const setLanguage = (lang: string) => {
+    const normalized = typeof lang === 'string' ? lang.trim().toLowerCase() : '';
+    const safeLang = isSupportedLanguage(normalized) ? normalized : 'en';
     try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, safeLang);
       localStorage.setItem(LANGUAGE_CHOSEN_KEY, 'true');
-      setLanguageState(lang);
+      setLanguageState(safeLang);
       // A deliberate choice is final: nothing restored later may override it.
       setLanguageReady(true);
     } catch (error) {
@@ -126,12 +128,13 @@ export const LanguageProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     const next = String(remote).trim().toLowerCase();
+    const safeLang = isSupportedLanguage(next) ? next : 'en';
     try {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, safeLang);
     } catch {
       // Storage unavailable: the value still applies to this session.
     }
-    setLanguageState(next);
+    setLanguageState(safeLang);
     setLanguageReady(true);
   };
 
